@@ -1,12 +1,12 @@
 from starknet_py.net.models.typed_data import TypedData  # type: ignore[import-untyped]
 
 
-def build_onboarding_message(chainId: int) -> TypedData:
+def build_onboarding_message(chain_id: int) -> TypedData:
     message = {
         "message": {
             "action": "Onboarding",
         },
-        "domain": {"name": "Paradex", "chainId": hex(chainId), "version": "1"},
+        "domain": {"name": "Paradex", "chainId": hex(chain_id), "version": "1"},
         "primaryType": "Constant",
         "types": {
             "StarkNetDomain": [

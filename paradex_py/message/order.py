@@ -3,9 +3,9 @@ from starknet_py.net.models.typed_data import TypedData  # type: ignore[import-u
 from paradex_py.common.order import Order
 
 
-def build_order_message(chainId: int, o: Order) -> TypedData:
+def build_order_message(chain_id: int, o: Order) -> TypedData:
     message = {
-        "domain": {"name": "Paradex", "chainId": hex(chainId), "version": "1"},
+        "domain": {"name": "Paradex", "chainId": hex(chain_id), "version": "1"},
         "primaryType": "Order",
         "types": {
             "StarkNetDomain": [
