@@ -1,0 +1,25 @@
+{
+    "template": "https://github.com/fpgmaas/cookiecutter-poetry",
+    "commit": "41d853b1b2cbea457cf1c7c91bcca8b1291fc0ab",
+    "checkout": null,
+    "context": {
+        "cookiecutter": {
+            "author": "Paradex",
+            "email": "info@paradex.trade",
+            "author_github_handle": "tradeparadex",
+            "project_name": "paradex-py",
+            "project_slug": "paradex_py",
+            "project_description": "Paradex Python SDK",
+            "include_github_actions": "y",
+            "publish_to": "pypi",
+            "deptry": "y",
+            "mkdocs": "y",
+            "codecov": "y",
+            "dockerfile": "y",
+            "devcontainer": "y",
+            "open_source_license": "MIT license",
+            "_template": "https://github.com/fpgmaas/cookiecutter-poetry"
+        }
+    },
+    "directory": null
+}
