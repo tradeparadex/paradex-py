@@ -25,6 +25,7 @@ class SystemConfig:
     api_url: str
     ws_api_url: str
     starknet_gateway_url: str
+    starknet_fullnode_rpc_url: str
     starknet_chain_id: str
     block_explorer_url: str
     paraclear_address: str
