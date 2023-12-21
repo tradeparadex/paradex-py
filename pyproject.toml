@@ -13,6 +13,11 @@ packages = [
 [tool.poetry.dependencies]
 python = ">=3.9,<3.12"
 starknet-py = "^0.18.3"
+aiohttp = "^3.9.1"
+marshmallow-dataclass = "8.4.2"
+cairo-lang = "^0.12.0"
+eth-account = "^0.10.0"
+web3 = "^6.11.4"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.2.0"
@@ -21,6 +26,7 @@ deptry = "^0.12.0"
 mypy = "^1.5.1"
 pre-commit = "^3.4.0"
 tox = "^4.11.1"
+pytest-asyncio = "^0.23.2"
 
 [tool.poetry.group.docs.dependencies]
 mkdocs = "^1.4.2"
@@ -44,6 +50,13 @@ no_implicit_optional = "False"
 show_error_codes = "True"
 warn_return_any = "False"
 warn_unused_ignores = "True"
+
+[[tool.mypy.overrides]]
+module = [
+    "starknet_py.*",
+    "starkware.*",
+]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
