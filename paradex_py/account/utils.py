@@ -1,6 +1,6 @@
 import hashlib
 
-from starknet_py.common import int_from_hex  # type: ignore[import-untyped]
+from starknet_py.common import int_from_hex
 
 SHA256_EC_MAX_DIGEST = 2**256
 

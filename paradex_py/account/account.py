@@ -1,9 +1,9 @@
 from eth_account.messages import encode_typed_data
-from starknet_py.common import int_from_hex  # type: ignore[import-untyped]
-from starknet_py.hash.address import compute_address  # type: ignore[import-untyped]
-from starknet_py.hash.selector import get_selector_from_name  # type: ignore[import-untyped]
-from starknet_py.net.signer.stark_curve_signer import KeyPair  # type: ignore[import-untyped]
-from starkware.crypto.signature.signature import EC_ORDER  # type: ignore[import-untyped]
+from starknet_py.common import int_from_hex
+from starknet_py.hash.address import compute_address
+from starknet_py.hash.selector import get_selector_from_name
+from starknet_py.net.signer.stark_curve_signer import KeyPair
+from starkware.crypto.signature.signature import EC_ORDER
 from web3.auto import w3
 
 from paradex_py.account.utils import grind_key
