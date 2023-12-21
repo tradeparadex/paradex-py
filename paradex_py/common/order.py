@@ -1,5 +1,6 @@
 from decimal import Decimal
 from enum import Enum
+from typing import Optional
 
 from paradex_py.utils import time_now_milli_secs
 
@@ -28,36 +29,28 @@ class OrderSide(Enum):
     Sell = "SELL"
 
     def opposite_side(self) -> "OrderSide":
-        if self == OrderSide.Buy:
-            return OrderSide.Sell
-        else:
-            return OrderSide.Buy
+        return OrderSide.Sell if self == OrderSide.Buy else OrderSide.Buy
 
     def sign(self) -> int:
-        if self == OrderSide.Buy:
-            return 1
-        else:
-            return -1
+        return 1 if self == OrderSide.Buy else -1
 
+    # 1 = buy, 2 = sell (for chain)
     def chain_side(self) -> str:
-        if self == OrderSide.Buy:
-            return "1"
-        else:
-            return "2"
+        return "1" if self == OrderSide.Buy else "2"
 
 
 class Order:
     def __init__(
         self,
-        market,
+        market: str,
         order_type: OrderType,
         order_side: OrderSide,
         size: Decimal,
         limit_price: Decimal = decimal_zero,
         client_id: str = "",
-        signature_timestamp=None,
+        signature_timestamp: Optional[int] = None,
     ) -> None:
-        ts = int(time_now_milli_secs())
+        ts = time_now_milli_secs()
         self.id: str = ""
         self.account: str = ""
         self.status = OrderStatus.NEW
