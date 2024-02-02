@@ -1,56 +1,85 @@
-from eth_account.messages import encode_typed_data
-from starknet_py.common import int_from_hex
+from enum import IntEnum
+from typing import Optional
+
+from starknet_py.common import int_from_bytes, int_from_hex
 from starknet_py.hash.address import compute_address
 from starknet_py.hash.selector import get_selector_from_name
+from starknet_py.net.full_node_client import FullNodeClient
 from starknet_py.net.signer.stark_curve_signer import KeyPair
-from starkware.crypto.signature.signature import EC_ORDER
-from web3.auto import w3
 
-from paradex_py.account.utils import grind_key
+from paradex_py.account.starknet import Account as StarknetAccount
+from paradex_py.account.utils import derive_stark_key, flatten_signature
 from paradex_py.api.models import SystemConfig
+from paradex_py.message.auth import build_auth_message
+from paradex_py.message.onboarding import build_onboarding_message
 from paradex_py.message.stark_key import build_stark_key_message
 
 
+# For matching existing chainId type
+class CustomStarknetChainId(IntEnum):
+    PRIVATE_SN_MAINNET = int_from_bytes(b"PRIVATE_SN_PARACLEAR_MAINNET")
+    PRIVATE_SN_TESTNET_MOCK_SEPOLIA = int_from_bytes(b"PRIVATE_SN_POTC_MOCK_SEPOLIA")
+    PRIVATE_SN_TESTNET_SEPOLIA = int_from_bytes(b"PRIVATE_SN_POTC_SEPOLIA")
+
+
 class ParadexAccount:
-    def __init__(self, config: SystemConfig, eth_private_key: str):
+    address: int
+    private_key: int
+    public_key: int
+    l1_address: str
+
+    def __init__(
+        self,
+        config: SystemConfig,
+        l1_private_key: Optional[int] = None,
+        private_key: Optional[int] = None,
+    ):
         self.config = config
-        self.eth_private_key = eth_private_key
 
-        private_key = self._derive_stark_key()
-        key_pair = KeyPair.from_private_key(private_key)
+        if l1_private_key is not None:
+            stark_key_msg = build_stark_key_message(int(config.l1_chain_id))
+            self.private_key = derive_stark_key(l1_private_key, stark_key_msg)
+        elif private_key is not None:
+            self.private_key = private_key
+        else:
+            raise ValueError("Paradex: Invalid private key")
 
-        self.public_key = hex(key_pair.public_key)
-        self.private_key = hex(key_pair.private_key)
-        self.address = self._get_account_address(self.public_key)
+        key_pair = KeyPair.from_private_key(int_from_hex(self.private_key))
+        self.public_key = key_pair.public_key
+        self.address = self._account_address()
 
-    def _sign_stark_key_message(self, stark_key_message) -> str:
-        encoded = encode_typed_data(full_message=stark_key_message)
-        signed = w3.eth.account.sign_message(encoded, int_from_hex(self.eth_private_key))
-        return signed.signature.hex()
+        # Create starknet account
+        client = FullNodeClient(node_url=config.starknet_fullnode_rpc_url)
+        chain = CustomStarknetChainId(int_from_bytes(config.starknet_chain_id.encode()))
+        self.starknet = StarknetAccount(
+            client=client,
+            address=self.address,
+            key_pair=key_pair,
+            chain=chain,
+        )
 
-    def _get_private_key_from_eth_signature(self, eth_signature_hex: str) -> int:
-        r = eth_signature_hex[2 : 64 + 2]
-        return grind_key(int_from_hex(r), EC_ORDER)
-
-    def _derive_stark_key(self) -> int:
-        eth_chain_id = int(self.config.l1_chain_id)
-        stark_key_msg = build_stark_key_message(eth_chain_id)
-        message_signature = self._sign_stark_key_message(stark_key_msg)
-        private_key = self._get_private_key_from_eth_signature(message_signature)
-        return private_key
-
-    def _get_account_address(self, public_key: str) -> str:
+    def _account_address(self) -> int:
         calldata = [
             int_from_hex(self.config.paraclear_account_hash),
             get_selector_from_name("initialize"),
             2,
-            int_from_hex(public_key),
+            self.public_key,
             0,
         ]
 
         address = compute_address(
             class_hash=int_from_hex(self.config.paraclear_account_proxy_hash),
             constructor_calldata=calldata,
-            salt=int_from_hex(public_key),
+            salt=self.public_key,
         )
-        return hex(address)
+        return address
+
+    def onboarding_signature(self) -> str:
+        message = build_onboarding_message(int(self.config.l1_chain_id))
+        sig = self.starknet.sign_message(message)
+        return flatten_signature(sig)
+
+    def auth_signature(self, timestamp: int, expiry: int) -> str:
+        message = build_auth_message(int(self.config.l1_chain_id), timestamp, expiry)
+        sig = self.starknet.sign_message(message)
+        return flatten_signature(sig)
