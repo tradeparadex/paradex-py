@@ -143,3 +143,26 @@ class ParadexApiClient:
         else:
             logging.warning(f"{FN} response:{response} Failed to get balances")
         return result
+
+    def public_get(
+        self,
+        path_ext: str,
+        params: dict,
+    ) -> list[dict]:
+        """
+        Paradex RESToverHTTP endpoint.
+        [GET] /markets
+        """
+        FN = f"public_get {path_ext} params:{params}"
+        path: str = f"{self.config.api_url}/{path_ext}"
+        logging.info(f"{FN} path:{path} START")
+        response = None
+        try:
+            response = await self.http_client.request(
+                path,
+                http_method=HttpMethod.GET,
+                params=params,
+            )
+        except Exception as err:
+            logging.error(f"{FN} path:{path} exception:{err}")
+        return response
