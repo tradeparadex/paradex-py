@@ -1,14 +1,14 @@
+import logging
 from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 
 from aiohttp import ClientSession
 
-from paradex_py.api.models import ApiErrorSchema
-
 
 class HttpMethod(Enum):
     GET = "GET"
     POST = "POST"
+    DELETE = "DELETE"
 
 
 class HttpClient:
@@ -19,10 +19,18 @@ class HttpClient:
         self,
         url: str,
         http_method: HttpMethod,
+        headers: Optional[Dict[str, str]] = None,
         params: Optional[dict] = None,
         payload: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]] = None,
-    ):
-        async with self.session.request(method=http_method.value, url=url, params=params, json=payload) as request:
-            if request.status >= 300:
-                return ApiErrorSchema().loads(await request.json())
-            return await request.json(content_type=None)
+    ) -> dict:
+        async with self.session.request(
+            method=http_method.value,
+            url=url,
+            headers=headers,
+            params=params,
+            json=str(payload),
+        ) as response:
+            if response.status >= 300:
+                # return ApiErrorSchema().loads(str(await response.json()))
+                logging.error(f"Error: {response.status} {response.reason} {await response.json()}")
+            return await response.json(content_type=None)

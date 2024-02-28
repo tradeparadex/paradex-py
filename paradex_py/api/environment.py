@@ -1,6 +1,6 @@
 from typing import Literal
 
-MAINNET = "mainnet"
+PROD = "prod"
 TESTNET = "testnet"
 
-Environment = Literal["mainnet", "testnet"]
+Environment = Literal["prod", "testnet"]
