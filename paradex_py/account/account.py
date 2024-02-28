@@ -27,6 +27,7 @@ class ParadexAccount:
     l1_address: str
     l1_private_key: int
     l2_address: int
+    l2_chain_id: int
     l2_private_key: int
     l2_public_key: int
 
@@ -58,12 +59,12 @@ class ParadexAccount:
 
         # Create starknet account
         client = FullNodeClient(node_url=config.starknet_fullnode_rpc_url)
-        chain = CustomStarknetChainId(int_from_bytes(config.starknet_chain_id.encode()))
+        self.l2_chain_id = int_from_bytes(config.starknet_chain_id.encode())
         self.starknet = StarknetAccount(
             client=client,
             address=self.l2_address,
             key_pair=key_pair,
-            chain=chain,
+            chain=CustomStarknetChainId(self.l2_chain_id),
         )
 
     def _account_address(self) -> int:
@@ -85,19 +86,19 @@ class ParadexAccount:
     def onboarding_signature(self) -> str:
         if self.config is None:
             raise ValueError("Paradex: System config not loaded")
-        message = build_onboarding_message(int(self.config.l1_chain_id))
+        message = build_onboarding_message(self.l2_chain_id)
         sig = self.starknet.sign_message(message)
         return flatten_signature(sig)
 
     def onboarding_headers(self) -> dict:
         return {
             "PARADEX-ETHEREUM-ACCOUNT": self.l1_address,
-            "PARADEX-STARKNET-ACCOUNT": self.l2_address,
+            "PARADEX-STARKNET-ACCOUNT": hex(self.l2_address),
             "PARADEX-STARKNET-SIGNATURE": self.onboarding_signature(),
         }
 
     def auth_signature(self, timestamp: int, expiry: int) -> str:
-        message = build_auth_message(int(self.config.l1_chain_id), timestamp, expiry)
+        message = build_auth_message(int(self.l2_chain_id), timestamp, expiry)
         sig = self.starknet.sign_message(message)
         return flatten_signature(sig)
 
@@ -105,7 +106,7 @@ class ParadexAccount:
         timestamp = int(time.time())
         expiry = timestamp + 24 * 60 * 60
         return {
-            "PARADEX-STARKNET-ACCOUNT": self.l2_address,
+            "PARADEX-STARKNET-ACCOUNT": hex(self.l2_address),
             "PARADEX-STARKNET-SIGNATURE": self.auth_signature(timestamp, expiry),
             "PARADEX-TIMESTAMP": str(timestamp),
             "PARADEX-SIGNATURE-EXPIRATION": str(expiry),
