@@ -43,6 +43,21 @@ class SystemConfig:
 
 
 @dataclass
+class AccountSummary:
+    account: str
+    initial_margin_requirement: str
+    maintenance_margin_requirement: str
+    account_value: str
+    total_collateral: str
+    free_collateral: str
+    margin_cushion: str
+    settlement_asset: str
+    updated_at: int
+    status: str
+    seq_no: int
+
+
+@dataclass
 class Auth:
     jwt_token: str
 
@@ -50,3 +65,4 @@ class Auth:
 ApiErrorSchema = marshmallow_dataclass.class_schema(ApiError)
 SystemConfigSchema = marshmallow_dataclass.class_schema(SystemConfig)
 AuthSchema = marshmallow_dataclass.class_schema(Auth)
+AccountSummarySchema = marshmallow_dataclass.class_schema(AccountSummary)

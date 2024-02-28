@@ -1,15 +1,16 @@
-from typing import Optional
-
 from paradex_py.api.environment import Environment
 from paradex_py.api.http_client import HttpClient
-from paradex_py.api.models import AuthSchema, SystemConfig, SystemConfigSchema
+from paradex_py.api.models import (
+    AccountSummarySchema,
+    AuthSchema,
+    SystemConfig,
+    SystemConfigSchema,
+)
 
 
 class ParadexApiClient(HttpClient):
     env: Environment
     config: SystemConfig
-    http_client: HttpClient
-    authorization_header_value: Optional[str]
 
     def __init__(self, env: Environment):
         if env is None:
@@ -33,5 +34,9 @@ class ParadexApiClient(HttpClient):
 
     def auth(self, headers: dict):
         res = self.post(f"{self.config.api_url}/auth", headers=headers)
-        auth_data = AuthSchema().load(res)
-        self.authorization_header_value = f"Bearer {auth_data.jwt_token}"
+        data = AuthSchema().load(res)
+        self.client.headers.update({"Authorization": f"Bearer {data.jwt_token}"})
+
+    def get_account_summary(self):
+        res = self.get(f"{self.config.api_url}/account")
+        return AccountSummarySchema().load(res)

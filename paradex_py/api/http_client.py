@@ -39,7 +39,7 @@ class HttpClient:
         try:
             return res.json()
         except ValueError:
-            print("Paradex: No response")
+            print(f"Paradex: No response ({url})")
 
     def get(self, url: str, params: Optional[dict] = None) -> dict:
         return self.request(url=url, http_method=HttpMethod.GET, params=params)
