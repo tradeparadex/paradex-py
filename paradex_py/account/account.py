@@ -1,3 +1,4 @@
+import time
 from enum import IntEnum
 from typing import Optional
 
@@ -23,39 +24,47 @@ class CustomStarknetChainId(IntEnum):
 
 
 class ParadexAccount:
-    address: int
-    private_key: int
-    public_key: int
     l1_address: str
+    l1_private_key: int
+    l2_address: int
+    l2_chain_id: int
+    l2_private_key: int
+    l2_public_key: int
 
     def __init__(
         self,
         config: SystemConfig,
-        l1_private_key: Optional[int] = None,
-        private_key: Optional[int] = None,
+        l1_address: str,
+        l1_private_key: Optional[str] = None,
+        l2_private_key: Optional[str] = None,
     ):
         self.config = config
 
-        if l1_private_key is not None:
-            stark_key_msg = build_stark_key_message(int(config.l1_chain_id))
-            self.private_key = derive_stark_key(l1_private_key, stark_key_msg)
-        elif private_key is not None:
-            self.private_key = private_key
-        else:
-            raise ValueError("Paradex: Invalid private key")
+        if l1_address is None:
+            raise ValueError("Paradex: Provide Ethereum address")
+        self.l1_address = l1_address
 
-        key_pair = KeyPair.from_private_key(int_from_hex(self.private_key))
-        self.public_key = key_pair.public_key
-        self.address = self._account_address()
+        if l1_private_key is not None:
+            self.l1_private_key = int_from_hex(l1_private_key)
+            stark_key_msg = build_stark_key_message(int(config.l1_chain_id))
+            self.l2_private_key = derive_stark_key(self.l1_private_key, stark_key_msg)
+        elif l2_private_key is not None:
+            self.l2_private_key = int_from_hex(l2_private_key)
+        else:
+            raise ValueError("Paradex: Provide Ethereum or Paradex private key")
+
+        key_pair = KeyPair.from_private_key(self.l2_private_key)
+        self.l2_public_key = key_pair.public_key
+        self.l2_address = self._account_address()
 
         # Create starknet account
         client = FullNodeClient(node_url=config.starknet_fullnode_rpc_url)
-        chain = CustomStarknetChainId(int_from_bytes(config.starknet_chain_id.encode()))
+        self.l2_chain_id = int_from_bytes(config.starknet_chain_id.encode())
         self.starknet = StarknetAccount(
             client=client,
-            address=self.address,
+            address=self.l2_address,
             key_pair=key_pair,
-            chain=chain,
+            chain=CustomStarknetChainId(self.l2_chain_id),
         )
 
     def _account_address(self) -> int:
@@ -63,23 +72,42 @@ class ParadexAccount:
             int_from_hex(self.config.paraclear_account_hash),
             get_selector_from_name("initialize"),
             2,
-            self.public_key,
+            self.l2_public_key,
             0,
         ]
 
         address = compute_address(
             class_hash=int_from_hex(self.config.paraclear_account_proxy_hash),
             constructor_calldata=calldata,
-            salt=self.public_key,
+            salt=self.l2_public_key,
         )
         return address
 
     def onboarding_signature(self) -> str:
-        message = build_onboarding_message(int(self.config.l1_chain_id))
+        if self.config is None:
+            raise ValueError("Paradex: System config not loaded")
+        message = build_onboarding_message(self.l2_chain_id)
         sig = self.starknet.sign_message(message)
         return flatten_signature(sig)
 
+    def onboarding_headers(self) -> dict:
+        return {
+            "PARADEX-ETHEREUM-ACCOUNT": self.l1_address,
+            "PARADEX-STARKNET-ACCOUNT": hex(self.l2_address),
+            "PARADEX-STARKNET-SIGNATURE": self.onboarding_signature(),
+        }
+
     def auth_signature(self, timestamp: int, expiry: int) -> str:
-        message = build_auth_message(int(self.config.l1_chain_id), timestamp, expiry)
+        message = build_auth_message(int(self.l2_chain_id), timestamp, expiry)
         sig = self.starknet.sign_message(message)
         return flatten_signature(sig)
+
+    def auth_headers(self) -> dict:
+        timestamp = int(time.time())
+        expiry = timestamp + 24 * 60 * 60
+        return {
+            "PARADEX-STARKNET-ACCOUNT": hex(self.l2_address),
+            "PARADEX-STARKNET-SIGNATURE": self.auth_signature(timestamp, expiry),
+            "PARADEX-TIMESTAMP": str(timestamp),
+            "PARADEX-SIGNATURE-EXPIRATION": str(expiry),
+        }
