@@ -11,8 +11,10 @@ from starknet_py.net.signer.stark_curve_signer import KeyPair
 from paradex_py.account.starknet import Account as StarknetAccount
 from paradex_py.account.utils import derive_stark_key, flatten_signature
 from paradex_py.api.models import SystemConfig
+from paradex_py.common.order import Order
 from paradex_py.message.auth import build_auth_message
 from paradex_py.message.onboarding import build_onboarding_message
+from paradex_py.message.order import build_order_message
 from paradex_py.message.stark_key import build_stark_key_message
 
 
@@ -111,3 +113,7 @@ class ParadexAccount:
             "PARADEX-TIMESTAMP": str(timestamp),
             "PARADEX-SIGNATURE-EXPIRATION": str(expiry),
         }
+
+    def sign_order(self, order: Order) -> str:
+        sig = self.starknet.sign_message(build_order_message(self.l2_chain_id, order))
+        return flatten_signature(sig)

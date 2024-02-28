@@ -9,6 +9,7 @@ from paradex_py.api.models import ApiErrorSchema
 class HttpMethod(Enum):
     GET = "GET"
     POST = "POST"
+    DELETE = "DELETE"
 
 
 class HttpClient:
@@ -39,22 +40,4 @@ class HttpClient:
         try:
             return res.json()
         except ValueError:
-            print(f"Paradex: No response ({url})")
-
-    def get(self, url: str, params: Optional[dict] = None) -> dict:
-        return self.request(url=url, http_method=HttpMethod.GET, params=params)
-
-    def post(
-        self,
-        url: str,
-        payload: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]] = None,
-        params: Optional[dict] = None,
-        headers: Optional[dict] = None,
-    ) -> dict:
-        return self.request(
-            url=url,
-            http_method=HttpMethod.POST,
-            payload=payload,
-            params=params,
-            headers=headers,
-        )
+            print(f"HttpClient: No response request({url}, {http_method.value})")
