@@ -1,8 +1,8 @@
-from paradex_py.api.api_client import ApiClient
+from paradex_py.api.api_client import ParadexApiClient
 
 
 def test_system_config():
-    api_client = ApiClient(env="testnet")
+    api_client = ParadexApiClient(env="testnet")
     api_client.load_system_config()
 
     assert api_client.config.api_url == "https://api.testnet.paradex.trade/v1"

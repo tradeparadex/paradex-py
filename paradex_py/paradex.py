@@ -1,14 +1,14 @@
 from typing import Optional
 
 from paradex_py.account.account import ParadexAccount
-from paradex_py.api.api_client import ApiClient
+from paradex_py.api.api_client import ParadexApiClient
 from paradex_py.api.environment import Environment
 from paradex_py.api.models import SystemConfig
 
 
 class Paradex:
     account: ParadexAccount
-    api_client: ApiClient
+    api_client: ParadexApiClient
     config: SystemConfig
     env: Environment
 
@@ -24,7 +24,7 @@ class Paradex:
         self.env = env
 
         # Load api client and system config
-        self.api_client = ApiClient(env=env)
+        self.api_client = ParadexApiClient(env=env)
         self.config = self.api_client.load_system_config()
 
         # Initialize account if private key is provided

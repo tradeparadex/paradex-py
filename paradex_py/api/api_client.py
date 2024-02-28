@@ -1,39 +1,24 @@
-from typing import Any, Dict, List, Optional, Union
+from typing import Optional
 
 from paradex_py.api.environment import Environment
-from paradex_py.api.http_client import HttpClient, HttpMethod
+from paradex_py.api.http_client import HttpClient
 from paradex_py.api.models import AuthSchema, SystemConfig, SystemConfigSchema
 
 
-class ApiClient(HttpClient):
+class ParadexApiClient(HttpClient):
     env: Environment
     config: SystemConfig
     http_client: HttpClient
-    authorization_header: Optional[str]
+    authorization_header_value: Optional[str]
 
     def __init__(self, env: Environment):
         if env is None:
             raise ValueError("Paradex: Invalid environment")
         self.env = env
-        self.http_client = HttpClient()
+        super().__init__()
 
-    def get(self, url: str, params: Optional[dict] = None) -> dict:
-        return self.http_client.request(url=url, http_method=HttpMethod.GET, params=params)
-
-    def post(
-        self,
-        url: str,
-        payload: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]] = None,
-        params: Optional[dict] = None,
-        headers: Optional[dict] = None,
-    ) -> dict:
-        return self.http_client.request(
-            url=url,
-            http_method=HttpMethod.POST,
-            payload=payload,
-            params=params,
-            headers=headers,
-        )
+    async def __aexit__(self):
+        await self.client.close()
 
     def load_system_config(self) -> SystemConfig:
         api_url = f"https://api.{self.env}.paradex.trade/v1"
@@ -49,4 +34,4 @@ class ApiClient(HttpClient):
     def auth(self, headers: dict):
         res = self.post(f"{self.config.api_url}/auth", headers=headers)
         auth_data = AuthSchema().load(res)
-        self.authorization_header = f"Bearer {auth_data.jwt_token}"
+        self.authorization_header_value = f"Bearer {auth_data.jwt_token}"
