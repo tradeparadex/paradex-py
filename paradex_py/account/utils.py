@@ -40,9 +40,9 @@ def _grind_key(key_seed: int, key_value_limit: int) -> int:
     return key % key_value_limit
 
 
-def _sign_stark_key_message(stark_key_message, eth_private_key: int) -> str:
+def _sign_stark_key_message(stark_key_message, l1_private_key: int) -> str:
     encoded = encode_typed_data(full_message=stark_key_message)
-    signed = w3.eth.account.sign_message(encoded, eth_private_key)
+    signed = w3.eth.account.sign_message(encoded, l1_private_key)
     return signed.signature.hex()
 
 
@@ -51,10 +51,10 @@ def _get_private_key_from_eth_signature(eth_signature_hex: str) -> int:
     return _grind_key(int_from_hex(r), EC_ORDER)
 
 
-def derive_stark_key(eth_private_key: int, stark_key_msg: TypedData) -> int:
-    message_signature = _sign_stark_key_message(stark_key_msg, eth_private_key)
-    private_key = _get_private_key_from_eth_signature(message_signature)
-    return private_key
+def derive_stark_key(l1_private_key: int, stark_key_msg: TypedData) -> int:
+    message_signature = _sign_stark_key_message(stark_key_msg, l1_private_key)
+    l2_private_key = _get_private_key_from_eth_signature(message_signature)
+    return l2_private_key
 
 
 def flatten_signature(sig: List[int]) -> str:

@@ -1,7 +1,7 @@
 from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 
-from aiohttp import ClientSession
+import httpx
 
 from paradex_py.api.models import ApiErrorSchema
 
@@ -13,16 +13,24 @@ class HttpMethod(Enum):
 
 class HttpClient:
     def __init__(self):
-        self.session = ClientSession()
+        self.session = httpx.Client()
+        self.session.headers.update({"Content-Type": "application/json"})
 
-    async def request(
+    def request(
         self,
         url: str,
         http_method: HttpMethod,
         params: Optional[dict] = None,
         payload: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]] = None,
+        headers: Optional[dict] = None,
     ):
-        async with self.session.request(method=http_method.value, url=url, params=params, json=payload) as request:
-            if request.status >= 300:
-                return ApiErrorSchema().loads(await request.json())
-            return await request.json(content_type=None)
+        res = self.session.request(
+            method=http_method.value,
+            url=url,
+            params=params,
+            json=payload,
+            headers=headers,
+        )
+        if res.status_code >= 300:
+            return ApiErrorSchema().loads(res.json())
+        return res.json()

@@ -1,12 +1,9 @@
-import pytest
-
 from paradex_py.api.api_client import ApiClient
 
 
-@pytest.mark.asyncio
-async def test_system_config():
+def test_system_config():
     api_client = ApiClient(env="testnet")
-    await api_client.load_system_config()
+    api_client.load_system_config()
 
     assert api_client.config.api_url == "https://api.testnet.paradex.trade/v1"
     assert api_client.config.ws_api_url == "wss://ws.api.testnet.paradex.trade/v1"
