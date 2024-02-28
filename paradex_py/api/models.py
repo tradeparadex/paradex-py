@@ -1,12 +1,14 @@
 from dataclasses import dataclass
+from typing import Optional
 
 import marshmallow_dataclass
 
 
 @dataclass
 class ApiError:
-    code: str
+    error: str
     message: str
+    data: Optional[dict]
 
 
 @dataclass
@@ -40,5 +42,11 @@ class SystemConfig:
     liquidation_fee: str
 
 
+@dataclass
+class Auth:
+    jwt_token: str
+
+
 ApiErrorSchema = marshmallow_dataclass.class_schema(ApiError)
 SystemConfigSchema = marshmallow_dataclass.class_schema(SystemConfig)
+AuthSchema = marshmallow_dataclass.class_schema(Auth)

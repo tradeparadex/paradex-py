@@ -12,9 +12,11 @@ class HttpMethod(Enum):
 
 
 class HttpClient:
+    client: httpx.Client
+
     def __init__(self):
-        self.session = httpx.Client()
-        self.session.headers.update({"Content-Type": "application/json"})
+        self.client = httpx.Client()
+        self.client.headers.update({"Content-Type": "application/json"})
 
     def request(
         self,
@@ -24,7 +26,7 @@ class HttpClient:
         payload: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]] = None,
         headers: Optional[dict] = None,
     ):
-        res = self.session.request(
+        res = self.client.request(
             method=http_method.value,
             url=url,
             params=params,
@@ -32,5 +34,9 @@ class HttpClient:
             headers=headers,
         )
         if res.status_code >= 300:
-            return ApiErrorSchema().loads(res.json())
-        return res.json()
+            error = ApiErrorSchema().loads(res.text)
+            raise Exception(error)
+        try:
+            return res.json()
+        except ValueError:
+            print("Paradex: No response")

@@ -2,14 +2,14 @@ from typing import Any, Dict, List, Optional, Union
 
 from paradex_py.api.environment import Environment
 from paradex_py.api.http_client import HttpClient, HttpMethod
-from paradex_py.api.models import SystemConfig, SystemConfigSchema
+from paradex_py.api.models import AuthSchema, SystemConfig, SystemConfigSchema
 
 
 class ApiClient(HttpClient):
     env: Environment
     config: SystemConfig
     http_client: HttpClient
-    jwt_token: Optional[str]
+    authorization_header: Optional[str]
 
     def __init__(self, env: Environment):
         if env is None:
@@ -23,7 +23,7 @@ class ApiClient(HttpClient):
     def post(
         self,
         url: str,
-        payload: Union[Dict[str, Any], List[Dict[str, Any]]],
+        payload: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]] = None,
         params: Optional[dict] = None,
         headers: Optional[dict] = None,
     ) -> dict:
@@ -43,9 +43,10 @@ class ApiClient(HttpClient):
         self.config = SystemConfigSchema().load(res)
         return self.config
 
-    def onboarding(self):
-        return self.post(f"{self.config.api_url}/onboarding")
+    def onboarding(self, headers: dict, payload: dict):
+        self.post(f"{self.config.api_url}/onboarding", headers=headers, payload=payload)
 
-    def auth(self):
-        res = self.post(f"{self.config.api_url}/onboarding")
-        self.config = SystemConfigSchema().load(res)
+    def auth(self, headers: dict):
+        res = self.post(f"{self.config.api_url}/auth", headers=headers)
+        auth_data = AuthSchema().load(res)
+        self.authorization_header = f"Bearer {auth_data.jwt_token}"
