@@ -32,7 +32,7 @@ class ParadexWSClient:
                 extra_headers={"Authorization": f"Bearer {self.jwt}"},
             )
             self.logger.info(f"Paradex_WS: Connected to {self.ws_api_url}")
-            self.send_auth_id(self.ws, self.jwt)
+            await self.send_auth_id(self.ws, self.jwt)
             self.logger.info(f"Paradex_WS: Authenticated to {self.ws_api_url}")
         except (
             websockets.exceptions.ConnectionClosedOK,
@@ -121,7 +121,7 @@ class ParadexWSClient:
         except websockets.exceptions.ConnectionClosedError as e:
             self.logger.info(f"Paradex_WS: Restarted connection {e}")
             await self.reconnect()
-            await self.connection.send(message)
+            await self.ws.send(message)
         except Exception:
             self.logger.exception(f"Paradex_WS: send failed {traceback.format_exc()}")
             await self.reconnect()
