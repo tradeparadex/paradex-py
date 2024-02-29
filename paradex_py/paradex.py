@@ -74,7 +74,7 @@ class Paradex:
         self.api_client.auth(headers=headers)
 
     # SEND, CANCEL ORDERS
-    def submit_order(self, order: Order) -> dict:
+    def submit_order(self, order: Order) -> Optional[Dict]:
         response = None
         # order.signature_timestamp = int(time.time() * 1_000)
         order.signature = self.account.sign_order(order)
@@ -95,7 +95,7 @@ class Paradex:
         client_id: str = "",
         instruction: Literal["GTC", "IOC", "POST_ONLY"] = "GTC",
         reduce_only: bool = False,
-    ) -> dict:
+    ) -> Optional[Dict]:
         order = Order(
             market=market,
             order_type=order_type,
