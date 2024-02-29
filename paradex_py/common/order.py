@@ -94,7 +94,7 @@ class Order:
         return hash(self.id)
 
     def dump_to_dict(self) -> Dict[Any, Any]:
-        order_dict = {
+        order_dict: Dict[Any, Any] = {
             "market": self.market,
             "side": self.order_side.value,
             "size": str(self.size),
