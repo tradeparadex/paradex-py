@@ -67,3 +67,13 @@ class HttpClient:
             params=params,
             headers=use_headers,
         )
+
+    def delete(
+        self,
+        path: str,
+    ) -> dict:
+        return self.request(
+            url=f"{self.config.api_url}/{path}",
+            http_method=HttpMethod.DELETE,
+            headers=self.client.headers,
+        )

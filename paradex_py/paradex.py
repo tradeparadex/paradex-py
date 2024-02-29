@@ -107,3 +107,11 @@ class Paradex:
             reduce_only=reduce_only,
         )
         return self.submit_order(order=order)
+
+    def cancel_order(self, order_id: str) -> dict:
+        # TODO - Implement cancel order
+        pass
+
+    def cancel_order_by_client_id(self, client_order_id: str) -> dict:
+        # TODO - Implement cancel order by client id
+        pass
