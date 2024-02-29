@@ -2,7 +2,6 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 
 import httpx
-from httpx._types import HeaderTypes
 
 from paradex_py.api.models import ApiErrorSchema
 
@@ -26,7 +25,7 @@ class HttpClient:
         http_method: HttpMethod,
         params: Optional[dict] = None,
         payload: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]] = None,
-        headers: Optional[HeaderTypes] = None,
+        headers: Optional[Any] = None,
     ):
         res = self.client.request(
             method=http_method.value,

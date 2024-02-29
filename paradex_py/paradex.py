@@ -81,8 +81,8 @@ class Paradex:
         order_payload = order.dump_to_dict()
         try:
             response = self.api_client.submit_order(order_payload)
-        except Exception as err:
-            self.logger.error(f"submit_order payload:{order_payload} exception:{err}")
+        except Exception:
+            self.logger.exception(f"submit_order payload:{order_payload}")
         return response
 
     def send_order(

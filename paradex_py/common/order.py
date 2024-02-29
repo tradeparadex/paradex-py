@@ -1,6 +1,6 @@
 from decimal import Decimal
 from enum import Enum
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from paradex_py.utils import time_now_milli_secs
 
@@ -93,7 +93,7 @@ class Order:
     def __hash__(self) -> int:
         return hash(self.id)
 
-    def dump_to_dict(self) -> dict:
+    def dump_to_dict(self) -> Dict[Any, Any]:
         order_dict = {
             "market": self.market,
             "side": self.order_side.value,
