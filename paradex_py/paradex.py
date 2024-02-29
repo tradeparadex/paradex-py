@@ -1,6 +1,6 @@
 import logging
 from decimal import Decimal
-from typing import Literal, Optional
+from typing import Dict, Literal, Optional
 
 from paradex_py.account.account import ParadexAccount
 from paradex_py.api.api_client import ParadexApiClient
@@ -108,10 +108,8 @@ class Paradex:
         )
         return self.submit_order(order=order)
 
-    def cancel_order(self, order_id: str) -> dict:
-        # TODO - Implement cancel order
-        pass
+    def cancel_order(self, order_id: str) -> Optional[Dict]:
+        return self.api_client.cancel_order(order_id)
 
-    def cancel_order_by_client_id(self, client_order_id: str) -> dict:
-        # TODO - Implement cancel order by client id
-        pass
+    def cancel_order_by_client_id(self, client_order_id: str) -> Optional[Dict]:
+        return self.api_client.cancel_order_by_client_id(client_order_id)
