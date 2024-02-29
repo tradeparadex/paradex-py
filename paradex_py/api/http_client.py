@@ -9,6 +9,7 @@ from paradex_py.api.models import ApiErrorSchema
 class HttpMethod(Enum):
     GET = "GET"
     POST = "POST"
+    DELETE = "DELETE"
 
 
 class HttpClient:
@@ -24,7 +25,7 @@ class HttpClient:
         http_method: HttpMethod,
         params: Optional[dict] = None,
         payload: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]] = None,
-        headers: Optional[dict] = None,
+        headers: Optional[Any] = None,
     ):
         res = self.client.request(
             method=http_method.value,
@@ -39,22 +40,42 @@ class HttpClient:
         try:
             return res.json()
         except ValueError:
-            print(f"Paradex: No response ({url})")
+            print(f"HttpClient: No response request({url}, {http_method.value})")
 
-    def get(self, url: str, params: Optional[dict] = None) -> dict:
-        return self.request(url=url, http_method=HttpMethod.GET, params=params)
+    def get(self, api_url: str, path: str, params: Optional[dict] = None) -> dict:
+        return self.request(
+            url=f"{api_url}/{path}",
+            http_method=HttpMethod.GET,
+            params=params,
+            headers=self.client.headers,
+        )
 
+    # post is always private, use either provided headers
+    # or the client headers with JWT token
     def post(
         self,
-        url: str,
+        api_url: str,
+        path: str,
         payload: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]] = None,
         params: Optional[dict] = None,
         headers: Optional[dict] = None,
     ) -> dict:
+        use_headers = headers if headers else self.client.headers
         return self.request(
-            url=url,
+            url=f"{api_url}/{path}",
             http_method=HttpMethod.POST,
             payload=payload,
             params=params,
-            headers=headers,
+            headers=use_headers,
+        )
+
+    def delete(
+        self,
+        api_url: str,
+        path: str,
+    ) -> dict:
+        return self.request(
+            url=f"{api_url}/{path}",
+            http_method=HttpMethod.DELETE,
+            headers=self.client.headers,
         )

@@ -1,6 +1,6 @@
 from decimal import Decimal
 from enum import Enum
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from paradex_py.utils import time_now_milli_secs
 
@@ -49,6 +49,8 @@ class Order:
         limit_price: Decimal = decimal_zero,
         client_id: str = "",
         signature_timestamp: Optional[int] = None,
+        instruction: str = "GTC",
+        reduce_only: bool = False,
     ) -> None:
         ts = time_now_milli_secs()
         self.id: str = ""
@@ -61,6 +63,8 @@ class Order:
         self.order_type = order_type
         self.order_side = order_side
         self.client_id = client_id
+        self.instruction = instruction
+        self.reduce_only = reduce_only
         # created_at is in milliseconds
         self.created_at = ts
         self.cancel_reason = ""
@@ -89,19 +93,21 @@ class Order:
     def __hash__(self) -> int:
         return hash(self.id)
 
-    def dump_to_dict(self) -> dict:
-        order_dict = {
+    def dump_to_dict(self) -> Dict[Any, Any]:
+        order_dict: Dict[Any, Any] = {
             "market": self.market,
             "side": self.order_side.value,
             "size": str(self.size),
             "type": self.order_type.value,
             "client_id": self.client_id,
+            "instruction": self.instruction,
             "signature": self.signature,
             "signature_timestamp": self.signature_timestamp,
         }
         if self.order_type == OrderType.Limit:
             order_dict["price"] = str(self.limit_price)
-
+        if self.reduce_only:
+            order_dict["flags"] = ["REDUCE_ONLY"]
         return order_dict
 
     def chain_price(self) -> str:
