@@ -49,6 +49,7 @@ for market in markets:
     logger.info(f"Orders: {orders}")
     # break
 
+# Create Order object and submit order
 order = Order(
     market="ETH-USD-PERP",
     order_type=OrderType.Limit,
@@ -57,8 +58,21 @@ order = Order(
     limit_price=Decimal(1_500),
     client_id=f"test_buy_{datetime.now().strftime('%Y%m%d%H%M%S')}",
 )
+response = paradex.submit_order(order=order)
+logger.info(f"Buy Order Response: {response}")
 
-response = paradex.send_order(order=order)
-logger.info(f"Order Response: {response}")
+# Send order by calling send_order() method
+response = paradex.send_order(
+    market="ETH-USD-PERP",
+    order_type=OrderType.Limit,
+    order_side=OrderSide.Sell,
+    size=Decimal("0.1"),
+    limit_price=Decimal(5_500),
+    client_id=f"test_sell_{datetime.now().strftime('%Y%m%d%H%M%S')}",
+    instruction="POST_ONLY",
+    reduce_only=False,
+)
+logger.info(f"Sell Order Response: {response}")
+# Check all open orders
 orders = paradex.fetch_orders(market="ETH-USD-PERP")
 logger.info(f"Orders: {orders}")

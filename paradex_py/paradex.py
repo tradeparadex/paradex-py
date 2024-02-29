@@ -1,5 +1,6 @@
 import logging
-from typing import Optional
+from decimal import Decimal
+from typing import Literal, Optional
 
 from paradex_py.account.account import ParadexAccount
 from paradex_py.api.api_client import ParadexApiClient
@@ -9,7 +10,7 @@ from paradex_py.api.models import (
     AccountSummarySchema,
     SystemConfig,
 )
-from paradex_py.common.order import Order
+from paradex_py.common.order import Order, OrderSide, OrderType
 
 # from paradex_py.message.order import build_order_message
 
@@ -112,7 +113,7 @@ class Paradex:
         return self.api_client.get(path=f"orderbook/{market}")
 
     # SEND, CANCEL ORDERS
-    def send_order(self, order: Order) -> dict:
+    def submit_order(self, order: Order) -> dict:
         response = None
         # order.signature_timestamp = int(time.time() * 1_000)
         order.signature = self.account.sign_order(order)
@@ -122,3 +123,26 @@ class Paradex:
         except Exception as err:
             logging.error(f"send_order payload:{order_payload} exception:{err}")
         return response
+
+    def send_order(
+        self,
+        market: str,
+        order_type: OrderType,
+        order_side: OrderSide,
+        size: Decimal,
+        limit_price: Decimal,
+        client_id: str = "",
+        instruction: Literal["GTC", "IOC", "POST_ONLY"] = "GTC",
+        reduce_only: bool = False,
+    ) -> dict:
+        order = Order(
+            market=market,
+            order_type=order_type,
+            order_side=order_side,
+            size=size,
+            limit_price=limit_price,
+            client_id=client_id,
+            instruction=instruction,
+            reduce_only=reduce_only,
+        )
+        return self.submit_order(order=order)
