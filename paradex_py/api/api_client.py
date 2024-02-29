@@ -121,7 +121,8 @@ class ParadexWSClient:
         except websockets.exceptions.ConnectionClosedError as e:
             self.logger.info(f"Paradex_WS: Restarted connection {e}")
             await self.reconnect()
-            await self.ws.send(message)
+            if self.ws:
+                await self.ws.send(message)
         except Exception:
             self.logger.exception(f"Paradex_WS: send failed {traceback.format_exc()}")
             await self.reconnect()
