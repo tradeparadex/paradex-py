@@ -144,6 +144,12 @@ class ParadexWSClient:
     async def subscribe_to_positions(self) -> None:
         await self.subscribe("positions")
 
+    async def subscribe_to_account(self) -> None:
+        await self.subscribe("account")
+
+    async def subscribe_to_all_fills(self) -> None:
+        await self.subscribe("fills.ALL")
+
 
 class ParadexApiClient(HttpClient):
     env: Environment
