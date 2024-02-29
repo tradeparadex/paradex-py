@@ -80,7 +80,7 @@ class Paradex:
         order.signature = self.account.sign_order(order)
         order_payload = order.dump_to_dict()
         try:
-            response = self.api_client.post(path="orders", payload=order_payload)
+            response = self.api_client.submit_order(order_payload)
         except Exception as err:
             self.logger.error(f"submit_order payload:{order_payload} exception:{err}")
         return response
