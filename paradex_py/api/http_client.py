@@ -41,3 +41,29 @@ class HttpClient:
             return res.json()
         except ValueError:
             print(f"HttpClient: No response request({url}, {http_method.value})")
+
+    def get(self, path: str, params: Optional[dict] = None) -> dict:
+        return self.request(
+            url=f"{self.config.api_url}/{path}",
+            http_method=HttpMethod.GET,
+            params=params,
+            headers=self.client.headers,
+        )
+
+    # post is always private, use either provided headers
+    # or the client headers with JWT token
+    def post(
+        self,
+        path: str,
+        payload: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]] = None,
+        params: Optional[dict] = None,
+        headers: Optional[dict] = None,
+    ) -> dict:
+        use_headers = headers if headers else self.client.headers
+        return self.request(
+            url=f"{self.config.api_url}/{path}",
+            http_method=HttpMethod.POST,
+            payload=payload,
+            params=params,
+            headers=use_headers,
+        )

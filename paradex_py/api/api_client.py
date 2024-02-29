@@ -1,9 +1,11 @@
 import logging
-from typing import Any, Dict, List, Optional, Union
+from typing import Optional
 
 from paradex_py.api.environment import Environment
 from paradex_py.api.http_client import HttpClient, HttpMethod
 from paradex_py.api.models import (
+    AccountSummary,
+    AccountSummarySchema,
     AuthSchema,
     SystemConfig,
     SystemConfigSchema,
@@ -14,7 +16,11 @@ class ParadexApiClient(HttpClient):
     env: Environment
     config: SystemConfig
 
-    def __init__(self, env: Environment, logger: Optional[logging.Logger] = None):
+    def __init__(
+        self,
+        env: Environment,
+        logger: Optional[logging.Logger] = None,
+    ):
         if env is None:
             raise ValueError("Paradex: Invalid environment")
         self.env = env
@@ -50,35 +56,47 @@ class ParadexApiClient(HttpClient):
         self.client.headers.update({"Authorization": f"Bearer {data.jwt_token}"})
         self.logger.info(f"ParadexApiClient: JWT:{data.jwt_token}")
 
-    def get(self, path: str, params: Optional[dict] = None) -> dict:
-        return self.request(
-            url=f"{self.config.api_url}/{path}",
-            http_method=HttpMethod.GET,
-            params=params,
-        )
+    # PRIVATE GET METHODS
+    def fetch_orders(self, market: str) -> list:
+        params = {"market": market} if market else {}
+        response = self.get(path="orders", params=params)
+        return response.get("results") if response else None
 
-    def private_get(self, path: str, params: Optional[dict] = None) -> dict:
-        return self.request(
-            url=f"{self.config.api_url}/{path}",
-            http_method=HttpMethod.GET,
-            params=params,
-            headers=self.client.headers,
-        )
+    def fetch_account_summary(self) -> AccountSummary:
+        res = self.get(path="account")
+        return AccountSummarySchema().load(res)
 
-    # post is always private, use either provided headers
-    # or the client headers with JWT token
-    def post(
-        self,
-        path: str,
-        payload: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]] = None,
-        params: Optional[dict] = None,
-        headers: Optional[dict] = None,
-    ) -> dict:
-        use_headers = headers if headers else self.client.headers
-        return self.request(
-            url=f"{self.config.api_url}/{path}",
-            http_method=HttpMethod.POST,
-            payload=payload,
-            params=params,
-            headers=use_headers,
+    def fetch_balances(self) -> list:
+        """Fetch all balances for the account"""
+        response = self.get(path="balance")
+        return response.get("results") if response else None
+
+    def fetch_positions(self) -> list:
+        """Fetch all derivs positions for the account"""
+        response = self.get(path="positions")
+        return response.get("results") if response else None
+
+    # PUBLIC GET METHODS
+    def fetch_markets(self) -> list:
+        """Public RestAPI call to fetch all markets"""
+        response = self.get(path="markets")
+        return response.get("results") if response else None
+
+    def fetch_markets_summary(self, market: str) -> list:
+        """Public RestAPI call to fetch market summary"""
+        response = self.get(
+            path="markets/summary",
+            params={"market": market},
         )
+        return response.get("results") if response else None
+
+    def fetch_orderbook(self, market: str) -> dict:
+        return self.get(path=f"orderbook/{market}")
+
+    def submit_order(self, order_payload: dict) -> dict:
+        response = None
+        try:
+            response = self.post(path="orders", payload=order_payload)
+        except Exception as err:
+            self.logger.error(f"submit_order payload:{order_payload} exception:{err}")
+        return response

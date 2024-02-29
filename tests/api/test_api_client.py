@@ -23,6 +23,19 @@ logger = logging.getLogger(__name__)
 TEST_AMM_L1_PRIVATE_KEY = int_from_hex(os.getenv("L1_PRIVATE_KEY", ""))
 TEST_AMM_L1_ADDRESS = os.getenv("L1_ADDRESS", "")
 
+# Test Public API calls
+public_paradex = Paradex(env=TESTNET, logger=logger)
+markets = public_paradex.api_client.fetch_markets()
+logger.info(f"Markets: {markets}")
+for market in markets:
+    if not int(market.get("position_limit")):
+        continue
+    mkt_summary = public_paradex.api_client.fetch_markets_summary(market=market["symbol"])
+    logger.info(f"Market Summary: {mkt_summary}")
+    ob = public_paradex.api_client.fetch_orderbook(market=market["symbol"])
+    logger.info(f"OB: {ob}")
+
+# Test Private API calls
 paradex = Paradex(
     env=TESTNET,
     l1_address=TEST_AMM_L1_ADDRESS,
@@ -30,22 +43,16 @@ paradex = Paradex(
     logger=logger,
 )
 
-account_summary = paradex.fetch_account_summary()
+account_summary = paradex.api_client.fetch_account_summary()
 logger.info(f"Account Summary: {account_summary}")
-balances = paradex.fetch_balances()
+balances = paradex.api_client.fetch_balances()
 logger.info(f"Balances: {balances}")
-positions = paradex.fetch_positions()
+positions = paradex.api_client.fetch_positions()
 logger.info(f"Positions: {positions}")
-markets = paradex.fetch_markets()
-logger.info(f"Markets: {markets}")
 for market in markets:
     if not int(market.get("position_limit")):
         continue
-    mkt_summary = paradex.fetch_markets_summary(market=market["symbol"])
-    logger.info(f"Market Summary: {mkt_summary}")
-    ob = paradex.fetch_orderbook(market=market["symbol"])
-    logger.info(f"OB: {ob}")
-    orders = paradex.fetch_orders(market=market["symbol"])
+    orders = paradex.api_client.fetch_orders(market=market["symbol"])
     logger.info(f"Orders: {orders}")
     # break
 
@@ -74,5 +81,5 @@ response = paradex.send_order(
 )
 logger.info(f"Sell Order Response: {response}")
 # Check all open orders
-orders = paradex.fetch_orders(market="ETH-USD-PERP")
+orders = paradex.api_client.fetch_orders(market="ETH-USD-PERP")
 logger.info(f"Orders: {orders}")
