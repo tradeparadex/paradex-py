@@ -21,8 +21,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-TEST_AMM_L1_PRIVATE_KEY = int_from_hex(os.getenv("L1_PRIVATE_KEY", ""))
-TEST_AMM_L1_ADDRESS = os.getenv("L1_ADDRESS", "")
+TEST_L1_ADDRESS = os.getenv("L1_ADDRESS", "")
+TEST_L1_PRIVATE_KEY = int_from_hex(os.getenv("L1_PRIVATE_KEY", ""))
 
 # Test Public API calls
 public_paradex = Paradex(env=TESTNET, logger=logger)
@@ -45,8 +45,8 @@ for market in markets:
 # Test Private API calls
 paradex = Paradex(
     env=TESTNET,
-    l1_address=TEST_AMM_L1_ADDRESS,
-    l1_private_key=TEST_AMM_L1_PRIVATE_KEY,
+    l1_address=TEST_L1_ADDRESS,
+    l1_private_key=TEST_L1_PRIVATE_KEY,
     logger=logger,
 )
 
