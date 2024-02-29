@@ -1,5 +1,5 @@
 import logging
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from paradex_py.api.environment import Environment
 from paradex_py.api.http_client import HttpClient, HttpMethod
@@ -122,7 +122,7 @@ class ParadexApiClient(HttpClient):
     def fetch_orderbook(self, market: str) -> dict:
         return self.get(api_url=self.config.api_url, path=f"orderbook/{market}")
 
-    def fetch_insurance_fund(self) -> Optional[List]:
+    def fetch_insurance_fund(self) -> Optional[Dict[Any, Any]]:
         return self.get(api_url=self.config.api_url, path="insurance")
 
     def fetch_trades(self, market: str) -> Optional[List]:

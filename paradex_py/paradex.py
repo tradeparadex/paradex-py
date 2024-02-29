@@ -30,14 +30,14 @@ class Paradex:
         if env is None:
             raise ValueError("Paradex: Invalid environment")
         self.env = env
-        self.logger = logger
+        self.logger: logging.Logger = logger or logging.getLogger(__name__)
         # Load api client and system config
         self.api_client = ParadexApiClient(env=env, logger=logger)
         self.config = self.api_client.load_system_config()
         self.logger.info(f"Paradex: SystemConfig:{self.config}")
 
         # Initialize account if private key is provided
-        if l2_private_key is not None or l1_private_key is not None:
+        if l1_address and (l2_private_key is not None or l1_private_key is not None):
             self.init_account(
                 l1_address=l1_address,
                 l1_private_key=l1_private_key,
