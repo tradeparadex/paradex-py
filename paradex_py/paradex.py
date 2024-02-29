@@ -73,6 +73,9 @@ class Paradex:
         headers = self.account.auth_headers()
         self.api_client.auth(headers=headers)
 
+    async def connect_ws(self):
+        await self.api_client.connect_ws()
+
     # SEND, CANCEL ORDERS
     def submit_order(self, order: Order) -> Optional[Dict]:
         response = None
