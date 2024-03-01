@@ -7,10 +7,10 @@ from decimal import Decimal
 
 from starknet_py.common import int_from_hex
 
+from paradex_py import Paradex
 from paradex_py.api.environment import TESTNET
 from paradex_py.api.ws_client import ParadexWSChannel
 from paradex_py.common.order import Order, OrderSide, OrderStatus, OrderType
-from paradex_py.paradex import Paradex
 
 LOG_TIMESTAMP = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
 RUNFILE_BASE_NAME = os.path.splitext(os.path.basename(__file__))[0]
@@ -56,7 +56,7 @@ def order_from_ws_message(msg: dict) -> Order:
 # Assumes paradex has L1 address and private key
 async def paradex_ws_test(paradex: Paradex):
     try:
-        await paradex.connect_ws()
+        await paradex.ws_client.connect()
         await paradex.ws_client.subscribe_to_channel(ParadexWSChannel.ACCOUNT)
         await paradex.ws_client.subscribe_to_channel(ParadexWSChannel.MARKETS_SUMMARY)
         await paradex.ws_client.subscribe_to_channel(ParadexWSChannel.POSITIONS)

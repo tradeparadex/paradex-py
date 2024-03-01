@@ -1,4 +1,4 @@
-from paradex_py.paradex import Paradex
+from paradex_py import Paradex
 
 
 def test_system_config():

@@ -1,15 +1,15 @@
 import logging
+import time
 from typing import Any, Dict, List, Optional
 
+from paradex_py.account.account import ParadexAccount
 from paradex_py.api.environment import Environment
 from paradex_py.api.http_client import HttpClient, HttpMethod
 from paradex_py.api.models import AccountSummary, AccountSummarySchema, AuthSchema, SystemConfig, SystemConfigSchema
+from paradex_py.common.order import Order
 
 
 class ParadexApiClient(HttpClient):
-    api_url: str
-    env: Environment
-
     def __init__(
         self,
         env: Environment,
@@ -19,7 +19,6 @@ class ParadexApiClient(HttpClient):
         self.logger = logger or logging.getLogger(__name__)
         super().__init__()
         self.api_url = f"https://api.{self.env}.paradex.trade/v1"
-        self.jwt: str = ""
 
     async def __aexit__(self):
         await self.client.close()
@@ -34,7 +33,14 @@ class ParadexApiClient(HttpClient):
         self.logger.info(f"ParadexApiClient: SystemConfig:{config}")
         return config
 
-    def onboarding(self, headers: dict, payload: dict):
+    def init_account(self, account: ParadexAccount):
+        self.account = account
+        self.onboarding()
+        self.auth()
+
+    def onboarding(self):
+        headers = self.account.onboarding_headers()
+        payload = {"public_key": hex(self.account.l2_public_key)}
         self.post(
             api_url=self.api_url,
             path="onboarding",
@@ -42,59 +48,71 @@ class ParadexApiClient(HttpClient):
             payload=payload,
         )
 
-    def auth(self, headers: dict) -> str:
+    def auth(self):
+        headers = self.account.auth_headers()
         res = self.post(api_url=self.api_url, path="auth", headers=headers)
         data = AuthSchema().load(res)
-        self.jwt = data.jwt_token
-        self.client.headers.update({"Authorization": f"Bearer {self.jwt}"})
-        self.logger.info(f"ParadexApiClient: JWT:{self.jwt}")
-        return self.jwt
+        self.auth_timestamp = time.time()
+        self.account.set_jwt_token(data.jwt_token)
+        self.client.headers.update({"Authorization": f"Bearer {data.jwt_token}"})
+        self.logger.info(f"ParadexApiClient: JWT:{data.jwt_token}")
+
+    def _validate_auth(self):
+        if self.account is None:
+            raise ValueError("ParadexApiClient: Account not found")
+        # Refresh JWT if it's older than 4 minutes
+        if time.time() - self.auth_timestamp > 4 * 60:
+            self.auth(headers=self.account.auth_headers())
+
+    def _get_authorized(self, api_url: str, path: str, params: Optional[dict] = None) -> dict:
+        self._validate_auth()
+        return self.get(api_url=api_url, path=path, params=params)
 
     # PRIVATE GET METHODS
     def fetch_orders(self, market: str) -> Optional[List]:
         params = {"market": market} if market else {}
-        response = self.get(api_url=self.api_url, path="orders", params=params)
+        response = self._get_authorized(api_url=self.api_url, path="orders", params=params)
         return response.get("results") if response else None
 
     def fetch_orders_history(self, market: str = "") -> Optional[List]:
         params = {"market": market} if market else {}
-        response = self.get(api_url=self.api_url, path="orders-history", params=params)
+        response = self._get_authorized(api_url=self.api_url, path="orders-history", params=params)
         return response.get("results") if response else None
 
     def fetch_order(self, order_id: str) -> Optional[Dict]:
         path: str = f"orders/{order_id}"
-        return self.get(api_url=self.api_url, path=path)
+        return self._get_authorized(api_url=self.api_url, path=path)
 
     def fetch_order_by_client_id(self, client_order_id: str) -> Optional[Dict]:
         path: str = f"orders/by_client_id/{client_order_id}"
-        return self.get(api_url=self.api_url, path=path)
+        return self._get_authorized(api_url=self.api_url, path=path)
 
     def fetch_fills(self, market: str = "") -> Optional[List]:
         params = {"market": market} if market else {}
-        response = self.get(api_url=self.api_url, path="fills", params=params)
+        response = self._get_authorized(api_url=self.api_url, path="fills", params=params)
         return response.get("results") if response else None
 
     def fetch_funding_payments(self, market: str = "ALL") -> Optional[List]:
         params = {"market": market} if market else {}
-        response = self.get(api_url=self.api_url, path="funding/payments", params=params)
+        response = self._get_authorized(api_url=self.api_url, path="funding/payments", params=params)
         return response.get("results") if response else None
 
     def fetch_transactions(self) -> Optional[List]:
-        response = self.get(api_url=self.api_url, path="transactions")
+        response = self._get_authorized(api_url=self.api_url, path="transactions")
         return response.get("results") if response else None
 
     def fetch_account_summary(self) -> AccountSummary:
-        res = self.get(api_url=self.api_url, path="account")
+        res = self._get_authorized(api_url=self.api_url, path="account")
         return AccountSummarySchema().load(res)
 
     def fetch_balances(self) -> Optional[List]:
         """Fetch all balances for the account"""
-        response = self.get(api_url=self.api_url, path="balance")
+        response = self._get_authorized(api_url=self.api_url, path="balance")
         return response.get("results") if response else None
 
     def fetch_positions(self) -> Optional[List]:
-        """Fetch all derivs positions for the account"""
-        response = self.get(api_url=self.api_url, path="positions")
+        """Fetch all positions for the account"""
+        response = self._get_authorized(api_url=self.api_url, path="positions")
         return response.get("results") if response else None
 
     # PUBLIC GET METHODS
@@ -123,8 +141,10 @@ class ParadexApiClient(HttpClient):
         return response.get("results") if response else None
 
     # order helper functions
-    def submit_order(self, order_payload: dict) -> Optional[Dict]:
+    def submit_order(self, order: Order) -> Optional[Dict]:
         response = None
+        order.signature = self.account.sign_order(order)
+        order_payload = order.dump_to_dict()
         try:
             response = self.post(api_url=self.api_url, path="orders", payload=order_payload)
         except Exception as err:
