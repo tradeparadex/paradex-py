@@ -26,14 +26,6 @@ class CustomStarknetChainId(IntEnum):
 
 
 class ParadexAccount:
-    config: SystemConfig
-    l1_address: str
-    l1_private_key: int
-    l2_address: int
-    l2_chain_id: int
-    l2_private_key: int
-    l2_public_key: int
-
     def __init__(
         self,
         config: SystemConfig,
@@ -85,6 +77,9 @@ class ParadexAccount:
             salt=self.l2_public_key,
         )
         return address
+
+    def set_jwt_token(self, jwt_token: str) -> None:
+        self.jwt_token = jwt_token
 
     def onboarding_signature(self) -> str:
         if self.config is None:
