@@ -33,7 +33,7 @@ clean-build: ## Clean build artifacts
 .PHONY: publish
 publish: ## Publish a release to pypi
 	@echo "🚀 Publishing: Dry run."
-	@poetry config pypi-token.pypi $(PYPI_TOKEN)
+	@poetry config pypi-token.pypi $(PYPI_API_TOKEN)
 	@poetry publish --dry-run
 	@echo "🚀 Publishing."
 	@poetry publish
