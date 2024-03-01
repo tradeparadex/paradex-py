@@ -6,9 +6,9 @@ from decimal import Decimal
 
 from starknet_py.common import int_from_hex
 
+from paradex_py import Paradex
 from paradex_py.api.environment import TESTNET
 from paradex_py.common.order import Order, OrderSide, OrderType
-from paradex_py.paradex import Paradex
 
 LOG_TIMESTAMP = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
 RUNFILE_BASE_NAME = os.path.splitext(os.path.basename(__file__))[0]
@@ -75,7 +75,7 @@ for market in markets:
 
 # Create Order object and submit order
 buy_client_id = f"test_buy_{datetime.now().strftime('%Y%m%d%H%M%S')}"
-order = Order(
+buy_order = Order(
     market="ETH-USD-PERP",
     order_type=OrderType.Limit,
     order_side=OrderSide.Buy,
@@ -83,13 +83,12 @@ order = Order(
     limit_price=Decimal(1_500),
     client_id=buy_client_id,
 )
-response = paradex.submit_order(order=order)
+response = paradex.api_client.submit_order(order=buy_order)
 buy_id = response.get("id")
 logger.info(f"Buy Order Response: {response}")
 
-# Send order by calling send_order() method
 sell_client_id = f"test_sell_{datetime.now().strftime('%Y%m%d%H%M%S')}"
-order = Order(
+sell_order = Order(
     market="ETH-USD-PERP",
     order_type=OrderType.Limit,
     order_side=OrderSide.Sell,
@@ -99,7 +98,7 @@ order = Order(
     instruction="POST_ONLY",
     reduce_only=False,
 )
-response = paradex.submit_order(order=order)
+response = paradex.api_client.submit_order(order=sell_order)
 logger.info(f"Sell Order Response: {response}")
 sell_id = response.get("id")
 # Check all open orders
@@ -108,9 +107,9 @@ logger.info(f"Orders: {orders}")
 logger.info("Sleeping for 10 seconds")
 time.sleep(10)
 # Cancel open orders
-response = paradex.cancel_order(order_id=buy_id)
+response = paradex.api_client.cancel_order(order_id=buy_id)
 orders = paradex.api_client.fetch_orders(market="ETH-USD-PERP")
 logger.info(f"After BUY Cancel Orders: {orders}")
-response = paradex.cancel_order_by_client_id(client_order_id=sell_client_id)
+response = paradex.api_client.cancel_order_by_client_id(client_order_id=sell_client_id)
 orders = paradex.api_client.fetch_orders(market="ETH-USD-PERP")
 logger.info(f"After BUY/SELL Cancel Orders: {orders}")

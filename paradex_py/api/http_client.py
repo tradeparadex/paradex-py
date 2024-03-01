@@ -13,8 +13,6 @@ class HttpMethod(Enum):
 
 
 class HttpClient:
-    client: httpx.Client
-
     def __init__(self):
         self.client = httpx.Client()
         self.client.headers.update({"Content-Type": "application/json"})

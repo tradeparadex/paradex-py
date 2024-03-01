@@ -7,13 +7,11 @@ from typing import Optional
 
 import websockets
 
+from paradex_py.account.account import ParadexAccount
 from paradex_py.api.environment import Environment
 
 
 class ParadexWebsocketClient:
-    api_url: str
-    env: Environment
-
     def __init__(
         self,
         env: Environment,
@@ -22,19 +20,22 @@ class ParadexWebsocketClient:
         self.env = env
         self.api_url = f"wss://ws.api.{self.env}.paradex.trade/v1"
         self.logger = logger or logging.getLogger(__name__)
-        self.jwt: str = ""
         self.ws: Optional[websockets.WebSocketClientProtocol] = None
 
-    async def connect(self, jwt: Optional[str] = None) -> None:
-        if jwt:
-            self.jwt = jwt
+    def init_account(self, account: ParadexAccount) -> None:
+        self.account = account
+
+    async def connect(self) -> None:
         try:
+            extra_headers = {}
+            if self.account:
+                extra_headers.update({"Authorization": f"Bearer {self.account.jwt_token}"})
             self.ws = await websockets.connect(
                 self.api_url,
-                extra_headers={"Authorization": f"Bearer {self.jwt}"},
+                extra_headers=extra_headers,
             )
             self.logger.info(f"Paradex_WS: Connected to {self.api_url}")
-            await self.send_auth_id(self.ws, self.jwt)
+            await self.send_auth_id(self.ws, self.account.jwt_token)
             self.logger.info(f"Paradex_WS: Authenticated to {self.api_url}")
         except (
             websockets.exceptions.ConnectionClosedOK,
