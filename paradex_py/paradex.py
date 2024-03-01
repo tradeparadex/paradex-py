@@ -1,6 +1,5 @@
 import logging
-from decimal import Decimal
-from typing import Dict, Literal, Optional
+from typing import Dict, Optional
 
 from paradex_py.account.account import ParadexAccount
 from paradex_py.api.api_client import ParadexApiClient
@@ -8,7 +7,8 @@ from paradex_py.api.environment import Environment
 from paradex_py.api.models import (
     SystemConfig,
 )
-from paradex_py.common.order import Order, OrderSide, OrderType
+from paradex_py.api.ws_client import ParadexWSClient
+from paradex_py.common.order import Order
 
 # from paradex_py.message.order import build_order_message
 
@@ -16,8 +16,10 @@ from paradex_py.common.order import Order, OrderSide, OrderType
 class Paradex:
     account: ParadexAccount
     api_client: ParadexApiClient
+    ws_client: ParadexWSClient
     config: SystemConfig
     env: Environment
+    jwt: str
 
     def __init__(
         self,
@@ -33,7 +35,9 @@ class Paradex:
         self.logger: logging.Logger = logger or logging.getLogger(__name__)
         # Load api client and system config
         self.api_client = ParadexApiClient(env=env, logger=logger)
+        self.ws_client = ParadexWSClient(env=env, logger=logger)
         self.config = self.api_client.load_system_config()
+        self.jwt = ""
         self.logger.info(f"Paradex: SystemConfig:{self.config}")
 
         # Initialize account if private key is provided
@@ -71,10 +75,10 @@ class Paradex:
         if self.account is None:
             raise ValueError("Paradex: Account not initialized")
         headers = self.account.auth_headers()
-        self.api_client.auth(headers=headers)
+        self.jwt: str = self.api_client.auth(headers=headers)
 
     async def connect_ws(self):
-        await self.api_client.connect_ws()
+        await self.ws_client.connect(jwt=self.jwt)
 
     # SEND, CANCEL ORDERS
     def submit_order(self, order: Order) -> Optional[Dict]:
@@ -87,29 +91,6 @@ class Paradex:
         except Exception:
             self.logger.exception(f"submit_order payload:{order_payload}")
         return response
-
-    def send_order(
-        self,
-        market: str,
-        order_type: OrderType,
-        order_side: OrderSide,
-        size: Decimal,
-        limit_price: Decimal,
-        client_id: str = "",
-        instruction: Literal["GTC", "IOC", "POST_ONLY"] = "GTC",
-        reduce_only: bool = False,
-    ) -> Optional[Dict]:
-        order = Order(
-            market=market,
-            order_type=order_type,
-            order_side=order_side,
-            size=size,
-            limit_price=limit_price,
-            client_id=client_id,
-            instruction=instruction,
-            reduce_only=reduce_only,
-        )
-        return self.submit_order(order=order)
 
     def cancel_order(self, order_id: str) -> Optional[Dict]:
         return self.api_client.cancel_order(order_id)

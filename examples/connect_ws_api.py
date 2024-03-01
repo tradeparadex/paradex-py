@@ -52,14 +52,15 @@ def order_from_ws_message(msg: dict) -> Order:
     return order
 
 
+# Assumes paradex has L1 address and private key
 async def paradex_ws_test(paradex: Paradex):
     try:
         await paradex.connect_ws()
-        await paradex.api_client.ws_client.subscribe_to_markets_summary()
-        await paradex.api_client.ws_client.subscribe_to_positions()
-        await paradex.api_client.ws_client.subscribe_to_orderbook("ETH-USD-PERP")
+        await paradex.ws_client.subscribe_to_markets_summary()
+        await paradex.ws_client.subscribe_to_positions()
+        await paradex.ws_client.subscribe_to_orderbook("ETH-USD-PERP")
 
-        async for message in paradex.api_client.ws_client.read_ws_messages():
+        async for message in paradex.ws_client.read_ws_messages():
             if "params" in message:
                 message_channel = message["params"].get("channel")
                 logger.info(f"Channel: {message_channel} message:{message}")
