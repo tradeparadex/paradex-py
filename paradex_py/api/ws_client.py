@@ -3,11 +3,29 @@ import json
 import logging
 import time
 import traceback
+from enum import Enum
 from typing import Optional
 
 import websockets
 
 from paradex_py.api.environment import Environment
+
+
+class ParadexWSChannel(Enum):
+    FILLS = "fills.{market}"
+    ACCOUNT = "account"
+    MARKETS_SUMMARY = "markets_summary"
+    ORDERS = "orders.{market}"
+    ORDER_BOOK = "order_book.{market}.snapshot@15@100ms"
+    POSITIONS = "positions"
+    TRADES = "trades.{market}"
+    TRADEBUSTS = "tradebusts"
+    TRANSACTIONS = "transaction"
+    BALANCE_EVENTS = "balance_events"
+    FUNDING_DATA = "funding_data.{market}"
+
+    def prefix(self) -> str:
+        return self.value.split(".")[0]
 
 
 class ParadexWebsocketClient:
@@ -133,23 +151,11 @@ class ParadexWebsocketClient:
     async def __aexit__(self):
         await self.close_connection()
 
-    async def subscribe_to_orderbook(self, market: str) -> None:
-        await self.subscribe(f"order_book.{market}.snapshot@15@100ms")
-
-    async def subscribe_to_all_orders(self) -> None:
-        await self.subscribe("orders.ALL")
-
-    async def subscribe_to_markets_summary(self) -> None:
-        await self.subscribe("markets_summary")
-
-    async def subscribe_to_trades(self, market: str) -> None:
-        await self.subscribe(f"trades.{market}")
-
-    async def subscribe_to_positions(self) -> None:
-        await self.subscribe("positions")
-
-    async def subscribe_to_account(self) -> None:
-        await self.subscribe("account")
-
-    async def subscribe_to_all_fills(self) -> None:
-        await self.subscribe("fills.ALL")
+    async def subscribe_to_channel(
+        self,
+        channel: ParadexWSChannel,
+        market: Optional[str] = None,
+    ) -> None:
+        channel_name = channel.value.format(market=market)
+        self.logger.info(f"Paradex_WS: subscribe_to_channel {channel}/{market} name:{channel_name}")
+        await self.subscribe(channel_name)
