@@ -95,8 +95,8 @@ class ParadexApiClient(HttpClient):
         path: str = f"orders/{order_id}"
         return self._get_authorized(path=path)
 
-    def fetch_order_by_client_id(self, client_order_id: str) -> Optional[Dict]:
-        path: str = f"orders/by_client_id/{client_order_id}"
+    def fetch_order_by_client_id(self, order_client_id: str) -> Optional[Dict]:
+        path: str = f"orders/by_client_id/{order_client_id}"
         return self._get_authorized(path=path)
 
     def fetch_fills(self, market: str = "") -> Optional[List]:
@@ -162,5 +162,5 @@ class ParadexApiClient(HttpClient):
     def cancel_order(self, order_id: str) -> Optional[Dict]:
         return self._delete_authorized(path=f"orders/{order_id}")
 
-    def cancel_order_by_client_id(self, client_order_id: str) -> Optional[Dict]:
-        return self._delete_authorized(path=f"orders/by_client_id/{client_order_id}")
+    def cancel_order_by_client_id(self, order_client_id: str) -> Optional[Dict]:
+        return self._delete_authorized(path=f"orders/by_client_id/{order_client_id}")
