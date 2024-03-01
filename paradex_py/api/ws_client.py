@@ -3,12 +3,30 @@ import json
 import logging
 import time
 import traceback
+from enum import Enum
 from typing import Optional
 
 import websockets
 
 from paradex_py.account.account import ParadexAccount
 from paradex_py.api.environment import Environment
+
+
+class ParadexWebsocketChannel(Enum):
+    FILLS = "fills.{market}"
+    ACCOUNT = "account"
+    MARKETS_SUMMARY = "markets_summary"
+    ORDERS = "orders.{market}"
+    ORDER_BOOK = "order_book.{market}.snapshot@15@100ms"
+    POSITIONS = "positions"
+    TRADES = "trades.{market}"
+    TRADEBUSTS = "tradebusts"
+    TRANSACTIONS = "transaction"
+    BALANCE_EVENTS = "balance_events"
+    FUNDING_DATA = "funding_data.{market}"
+
+    def prefix(self) -> str:
+        return self.value.split(".")[0]
 
 
 class ParadexWebsocketClient:
@@ -21,6 +39,9 @@ class ParadexWebsocketClient:
         self.api_url = f"wss://ws.api.{self.env}.paradex.trade/v1"
         self.logger = logger or logging.getLogger(__name__)
         self.ws: Optional[websockets.WebSocketClientProtocol] = None
+
+    async def __aexit__(self):
+        await self.close_connection()
 
     def init_account(self, account: ParadexAccount) -> None:
         self.account = account
@@ -84,20 +105,7 @@ class ParadexWebsocketClient:
             )
         )
 
-    async def subscribe(self, channel: str) -> None:
-        await self.send(
-            json.dumps(
-                {
-                    "id": int(time.time() * 1_000_000),
-                    "jsonrpc": "2.0",
-                    "method": "subscribe",
-                    "params": {"channel": channel},
-                }
-            )
-        )
-        self.logger.info(f"Paradex_WS: sent subscription for:{channel}")
-
-    async def read_ws_messages(self, read_timeout=0.1, backoff=0.1):
+    async def read_messages(self, read_timeout=0.1, backoff=0.1):
         while True:
             try:
                 response = await asyncio.wait_for(self.ws.recv(), timeout=read_timeout)
@@ -119,7 +127,7 @@ class ParadexWebsocketClient:
                 self.logger.exception(f"Paradex_WS: connection failed {traceback.format_exc()}")
                 await asyncio.sleep(1)
 
-    async def send(self, message: str):
+    async def _send(self, message: str):
         try:
             if self.ws:
                 await self.ws.send(message)
@@ -132,26 +140,20 @@ class ParadexWebsocketClient:
             self.logger.exception(f"Paradex_WS: send failed {traceback.format_exc()}")
             await self.reconnect()
 
-    async def __aexit__(self):
-        await self.close_connection()
-
-    async def subscribe_to_orderbook(self, market: str) -> None:
-        await self.subscribe(f"order_book.{market}.snapshot@15@100ms")
-
-    async def subscribe_to_all_orders(self) -> None:
-        await self.subscribe("orders.ALL")
-
-    async def subscribe_to_markets_summary(self) -> None:
-        await self.subscribe("markets_summary")
-
-    async def subscribe_to_trades(self, market: str) -> None:
-        await self.subscribe(f"trades.{market}")
-
-    async def subscribe_to_positions(self) -> None:
-        await self.subscribe("positions")
-
-    async def subscribe_to_account(self) -> None:
-        await self.subscribe("account")
-
-    async def subscribe_to_all_fills(self) -> None:
-        await self.subscribe("fills.ALL")
+    async def subscribe(
+        self,
+        channel: ParadexWebsocketChannel,
+        market: Optional[str] = None,
+    ) -> None:
+        channel_name = channel.value.format(market=market)
+        self.logger.info(f"Paradex_WS: subscribe {channel}/{market} name:{channel_name}")
+        await self._send(
+            json.dumps(
+                {
+                    "id": int(time.time() * 1_000_000),
+                    "jsonrpc": "2.0",
+                    "method": "subscribe",
+                    "params": {"channel": channel_name},
+                }
+            )
+        )

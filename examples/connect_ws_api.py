@@ -9,6 +9,7 @@ from starknet_py.common import int_from_hex
 
 from paradex_py import Paradex
 from paradex_py.api.environment import TESTNET
+from paradex_py.api.ws_client import ParadexWebsocketChannel
 from paradex_py.common.order import Order, OrderSide, OrderStatus, OrderType
 
 LOG_TIMESTAMP = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
@@ -56,30 +57,32 @@ def order_from_ws_message(msg: dict) -> Order:
 async def paradex_ws_test(paradex: Paradex):
     try:
         await paradex.ws_client.connect()
-        await paradex.ws_client.subscribe_to_markets_summary()
-        await paradex.ws_client.subscribe_to_positions()
-        await paradex.ws_client.subscribe_to_orderbook("ETH-USD-PERP")
+        await paradex.ws_client.subscribe(ParadexWebsocketChannel.ACCOUNT)
+        await paradex.ws_client.subscribe(ParadexWebsocketChannel.MARKETS_SUMMARY)
+        await paradex.ws_client.subscribe(ParadexWebsocketChannel.POSITIONS)
+        await paradex.ws_client.subscribe(ParadexWebsocketChannel.ORDER_BOOK, "ETH-USD-PERP")
+        await paradex.ws_client.subscribe(ParadexWebsocketChannel.ORDERS, "ALL")
 
-        async for message in paradex.ws_client.read_ws_messages():
+        async for message in paradex.ws_client.read_messages():
             if "params" in message:
                 message_channel = message["params"].get("channel")
                 logger.info(f"Channel: {message_channel} message:{message}")
-                if message_channel == "account":
+                if message_channel.startswith(ParadexWebsocketChannel.ACCOUNT.prefix()):
                     # Account Summary
                     account_state = message["params"]["data"]
                     logger.info(f"Account Summary: {account_state}")
-                elif message_channel == "markets_summary":
+                elif message_channel.startswith(ParadexWebsocketChannel.MARKETS_SUMMARY.prefix()):
                     summary = message["params"]["data"]
                     market: str = summary["symbol"]
                     logger.info(f"{market} Summary:{summary}")
-                elif message_channel == "orders.ALL":
+                elif message_channel.startswith(ParadexWebsocketChannel.ORDERS.prefix()):
                     order_data = message["params"]["data"]
                     order = order_from_ws_message(order_data)
                     logger.info(f"Order update:{order}")
-                elif message_channel == "positions":
+                elif message_channel.startswith(ParadexWebsocketChannel.POSITIONS.prefix()):
                     positions = message["params"]["data"]
                     logging.info(f"Positions update: {positions}")
-                elif message_channel.startswith("order_book"):
+                elif message_channel.startswith(ParadexWebsocketChannel.ORDER_BOOK.prefix()):
                     market = message_channel.split(".")[1]
                     ob = message["params"]["data"]
                     logging.debug(f"{market} {message_channel} Orderbook: {ob}")
