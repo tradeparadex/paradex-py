@@ -89,7 +89,7 @@ logger.info(f"Buy Order Response: {response}")
 
 # Send order by calling send_order() method
 sell_client_id = f"test_sell_{datetime.now().strftime('%Y%m%d%H%M%S')}"
-response = paradex.send_order(
+order = Order(
     market="ETH-USD-PERP",
     order_type=OrderType.Limit,
     order_side=OrderSide.Sell,
@@ -99,6 +99,7 @@ response = paradex.send_order(
     instruction="POST_ONLY",
     reduce_only=False,
 )
+response = paradex.submit_order(order=order)
 logger.info(f"Sell Order Response: {response}")
 sell_id = response.get("id")
 # Check all open orders

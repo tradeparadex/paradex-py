@@ -26,6 +26,7 @@ class CustomStarknetChainId(IntEnum):
 
 
 class ParadexAccount:
+    config: SystemConfig
     l1_address: str
     l1_private_key: int
     l2_address: int
