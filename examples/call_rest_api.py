@@ -49,6 +49,7 @@ positions = paradex.api_client.fetch_positions()
 logger.info(f"Positions: {positions}")
 transactions = paradex.api_client.fetch_transactions()
 logger.info(f"Transactions: {transactions}")
+
 for market in markets:
     if not int(market.get("position_limit")):
         continue
@@ -91,14 +92,16 @@ response = paradex.api_client.submit_order(order=sell_order)
 logger.info(f"Sell Order Response: {response}")
 sell_id = response.get("id")
 # Check all open orders
-orders = paradex.api_client.fetch_orders(market="ETH-USD-PERP")
-logger.info(f"Orders: {orders}")
+orders = paradex.api_client.fetch_orders(market="")
+logger.info(f"ALL Orders: {orders}")
 logger.info("Sleeping for 10 seconds")
 time.sleep(10)
 # Cancel open orders
 response = paradex.api_client.cancel_order(order_id=buy_id)
+logger.info(f"BUY Cancel response:{response}")
 orders = paradex.api_client.fetch_orders(market="ETH-USD-PERP")
 logger.info(f"After BUY Cancel Orders: {orders}")
 response = paradex.api_client.cancel_order_by_client_id(client_id=sell_client_id)
+logger.info(f"SELL Cancel response:{response}")
 orders = paradex.api_client.fetch_orders(market="ETH-USD-PERP")
 logger.info(f"After BUY/SELL Cancel Orders: {orders}")
