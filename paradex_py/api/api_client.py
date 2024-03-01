@@ -46,7 +46,7 @@ class ParadexApiClient(HttpClient):
     def auth(self, headers: dict) -> str:
         res = self.post(api_url=self.config.api_url, path="auth", headers=headers)
         data = AuthSchema().load(res)
-        self.jwt: str = data.jwt_token
+        self.jwt = data.jwt_token
         self.client.headers.update({"Authorization": f"Bearer {self.jwt}"})
         self.logger.info(f"ParadexApiClient: JWT:{self.jwt}")
         return self.jwt
