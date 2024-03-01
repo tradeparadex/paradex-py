@@ -1,13 +1,9 @@
-from paradex_py.api.api_client import ParadexApiClient
+from paradex_py.paradex import Paradex
 
 
 def test_system_config():
-    api_client = ParadexApiClient(env="testnet")
-    api_client.load_system_config()
-
-    assert api_client.config.api_url == "https://api.testnet.paradex.trade/v1"
-    assert api_client.config.ws_api_url == "wss://ws.api.testnet.paradex.trade/v1"
-    assert api_client.config.starknet_gateway_url == "https://potc-testnet-sepolia.starknet.io"
-    assert api_client.config.starknet_chain_id == "PRIVATE_SN_POTC_SEPOLIA"
-    assert api_client.config.block_explorer_url == "https://voyager.testnet.paradex.trade/"
-    assert api_client.config.bridged_tokens[0].name == "TEST USDC"
+    paradex = Paradex(env="testnet")
+    assert paradex.config.starknet_gateway_url == "https://potc-testnet-sepolia.starknet.io"
+    assert paradex.config.starknet_chain_id == "PRIVATE_SN_POTC_SEPOLIA"
+    assert paradex.config.block_explorer_url == "https://voyager.testnet.paradex.trade/"
+    assert paradex.config.bridged_tokens[0].name == "TEST USDC"

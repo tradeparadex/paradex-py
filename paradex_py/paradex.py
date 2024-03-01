@@ -7,7 +7,7 @@ from paradex_py.api.environment import Environment
 from paradex_py.api.models import (
     SystemConfig,
 )
-from paradex_py.api.ws_client import ParadexWSClient
+from paradex_py.api.ws_client import ParadexWebsocketClient
 from paradex_py.common.order import Order
 
 # from paradex_py.message.order import build_order_message
@@ -16,7 +16,7 @@ from paradex_py.common.order import Order
 class Paradex:
     account: ParadexAccount
     api_client: ParadexApiClient
-    ws_client: ParadexWSClient
+    ws_client: ParadexWebsocketClient
     config: SystemConfig
     env: Environment
     jwt: str
@@ -35,7 +35,7 @@ class Paradex:
         self.logger: logging.Logger = logger or logging.getLogger(__name__)
         # Load api client and system config
         self.api_client = ParadexApiClient(env=env, logger=logger)
-        self.ws_client = ParadexWSClient(env=env, logger=logger)
+        self.ws_client = ParadexWebsocketClient(env=env, logger=logger)
         self.config = self.api_client.load_system_config()
         self.jwt = ""
         self.logger.info(f"Paradex: SystemConfig:{self.config}")

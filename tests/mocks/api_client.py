@@ -1,8 +1,6 @@
 from paradex_py.api.models import SystemConfig, SystemConfigSchema
 
 MOCK_CONFIG = {
-    "api_url": "https://api.testnet.paradex.trade/v1",
-    "ws_api_url": "wss://ws.api.testnet.paradex.trade/v1",
     "starknet_gateway_url": "https://potc-testnet-sepolia.starknet.io",
     "starknet_fullnode_rpc_url": "https://pathfinder.api.testnet.paradex.trade/rpc/v0.5",
     "starknet_chain_id": "PRIVATE_SN_POTC_SEPOLIA",

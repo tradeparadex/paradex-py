@@ -10,7 +10,8 @@ import websockets
 from paradex_py.api.environment import Environment
 
 
-class ParadexWSClient:
+class ParadexWebsocketClient:
+    api_url: str
     env: Environment
 
     def __init__(
@@ -19,7 +20,7 @@ class ParadexWSClient:
         logger: Optional[logging.Logger] = None,
     ):
         self.env = env
-        self.ws_api_url = f"wss://ws.api.{self.env}.paradex.trade/v1"
+        self.api_url = f"wss://ws.api.{self.env}.paradex.trade/v1"
         self.logger = logger or logging.getLogger(__name__)
         self.jwt: str = ""
         self.ws: Optional[websockets.WebSocketClientProtocol] = None
@@ -29,12 +30,12 @@ class ParadexWSClient:
             self.jwt = jwt
         try:
             self.ws = await websockets.connect(
-                self.ws_api_url,
+                self.api_url,
                 extra_headers={"Authorization": f"Bearer {self.jwt}"},
             )
-            self.logger.info(f"Paradex_WS: Connected to {self.ws_api_url}")
+            self.logger.info(f"Paradex_WS: Connected to {self.api_url}")
             await self.send_auth_id(self.ws, self.jwt)
-            self.logger.info(f"Paradex_WS: Authenticated to {self.ws_api_url}")
+            self.logger.info(f"Paradex_WS: Authenticated to {self.api_url}")
         except (
             websockets.exceptions.ConnectionClosedOK,
             websockets.exceptions.ConnectionClosed,
