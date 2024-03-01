@@ -35,8 +35,9 @@ class ParadexWebsocketClient:
                 extra_headers=extra_headers,
             )
             self.logger.info(f"Paradex_WS: Connected to {self.api_url}")
-            await self.send_auth_id(self.ws, self.account.jwt_token)
-            self.logger.info(f"Paradex_WS: Authenticated to {self.api_url}")
+            if self.account:
+                await self.send_auth_id(self.ws, self.account.jwt_token)
+                self.logger.info(f"Paradex_WS: Authenticated to {self.api_url}")
         except (
             websockets.exceptions.ConnectionClosedOK,
             websockets.exceptions.ConnectionClosed,
