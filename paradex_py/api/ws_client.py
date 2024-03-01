@@ -9,7 +9,7 @@ from typing import Optional
 import websockets
 
 from paradex_py.account.account import ParadexAccount
-from paradex_py.api.environment import Environment
+from paradex_py.environment import Environment
 
 
 class ParadexWebsocketChannel(Enum):

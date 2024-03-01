@@ -1,4 +1,3 @@
-import logging
 import os
 import time
 from datetime import datetime
@@ -6,23 +5,15 @@ from decimal import Decimal
 
 from starknet_py.common import int_from_hex
 
+from examples.shared import logger
 from paradex_py import Paradex
-from paradex_py.api.environment import TESTNET
 from paradex_py.common.order import Order, OrderSide, OrderType
+from paradex_py.environment import TESTNET
 
-LOG_TIMESTAMP = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
-RUNFILE_BASE_NAME = os.path.splitext(os.path.basename(__file__))[0]
-
-logging.basicConfig(
-    # filename=f"logs/{RUNFILE_BASE_NAME}_{LOG_TIMESTAMP}.log",
-    level=os.getenv("LOGGING_LEVEL", "INFO"),
-    format="%(asctime)s.%(msecs)03d | %(levelname)s | %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
-logger = logging.getLogger(__name__)
-
+# Environment variables
 TEST_L1_ADDRESS = os.getenv("L1_ADDRESS", "")
 TEST_L1_PRIVATE_KEY = int_from_hex(os.getenv("L1_PRIVATE_KEY", ""))
+
 
 # Test Public API calls
 public_paradex = Paradex(env=TESTNET, logger=logger)
@@ -71,8 +62,6 @@ for market in markets:
     funding_payments = paradex.api_client.fetch_funding_payments(market=symbol)
     logger.info(f"{symbol} Funding Payments: {funding_payments}")
 
-    # break
-
 # Create Order object and submit order
 buy_client_id = f"test_buy_{datetime.now().strftime('%Y%m%d%H%M%S')}"
 buy_order = Order(
@@ -110,6 +99,6 @@ time.sleep(10)
 response = paradex.api_client.cancel_order(order_id=buy_id)
 orders = paradex.api_client.fetch_orders(market="ETH-USD-PERP")
 logger.info(f"After BUY Cancel Orders: {orders}")
-response = paradex.api_client.cancel_order_by_client_id(client_order_id=sell_client_id)
+response = paradex.api_client.cancel_order_by_client_id(client_id=sell_client_id)
 orders = paradex.api_client.fetch_orders(market="ETH-USD-PERP")
 logger.info(f"After BUY/SELL Cancel Orders: {orders}")

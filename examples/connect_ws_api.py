@@ -2,27 +2,17 @@ import asyncio
 import logging
 import os
 import time
-from datetime import datetime
 from decimal import Decimal
 
 from starknet_py.common import int_from_hex
 
+from examples.shared import logger
 from paradex_py import Paradex
-from paradex_py.api.environment import TESTNET
 from paradex_py.api.ws_client import ParadexWebsocketChannel
 from paradex_py.common.order import Order, OrderSide, OrderStatus, OrderType
+from paradex_py.environment import TESTNET
 
-LOG_TIMESTAMP = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
-RUNFILE_BASE_NAME = os.path.splitext(os.path.basename(__file__))[0]
-
-logging.basicConfig(
-    # filename=f"logs/{RUNFILE_BASE_NAME}_{LOG_TIMESTAMP}.log",
-    level=os.getenv("LOGGING_LEVEL", "INFO"),
-    format="%(asctime)s.%(msecs)03d | %(levelname)s | %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
-logger = logging.getLogger(__name__)
-
+# Environment variables
 TEST_L1_ADDRESS = os.getenv("L1_ADDRESS", "")
 TEST_L1_PRIVATE_KEY = int_from_hex(os.getenv("L1_PRIVATE_KEY", ""))
 

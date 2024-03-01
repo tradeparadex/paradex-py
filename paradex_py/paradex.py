@@ -3,8 +3,8 @@ from typing import Optional
 
 from paradex_py.account.account import ParadexAccount
 from paradex_py.api.api_client import ParadexApiClient
-from paradex_py.api.environment import Environment
 from paradex_py.api.ws_client import ParadexWebsocketClient
+from paradex_py.environment import Environment
 
 # from paradex_py.message.order import build_order_message
 
