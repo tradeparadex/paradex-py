@@ -307,7 +307,7 @@ class ParadexApiClient(HttpClient):
         Returns:
             None
         """
-        return self._delete_authorized(path=f"orders/{order_id}")
+        self._delete_authorized(path=f"orders/{order_id}")
 
     def cancel_order_by_client_id(self, client_id: str) -> None:
         """Cancel open order previously sent to Paradex from this account.
@@ -318,4 +318,4 @@ class ParadexApiClient(HttpClient):
         Returns:
             None
         """
-        return self._delete_authorized(path=f"orders/by_client_id/{client_id}")
+        self._delete_authorized(path=f"orders/by_client_id/{client_id}")
