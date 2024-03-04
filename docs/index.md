@@ -1,8 +1,39 @@
-# paradex-py
+---
+hide:
+  - navigation
+---
 
-[![Release](https://img.shields.io/github/v/release/tradeparadex/paradex-py)](https://img.shields.io/github/v/release/tradeparadex/paradex-py)
-[![Build status](https://img.shields.io/github/actions/workflow/status/tradeparadex/paradex-py/main.yml?branch=main)](https://github.com/tradeparadex/paradex-py/actions/workflows/main.yml?query=branch%3Amain)
-[![Commit activity](https://img.shields.io/github/commit-activity/m/tradeparadex/paradex-py)](https://img.shields.io/github/commit-activity/m/tradeparadex/paradex-py)
-[![License](https://img.shields.io/github/license/tradeparadex/paradex-py)](https://img.shields.io/github/license/tradeparadex/paradex-py)
+# Paradex Python SDK
 
-Paradex Python SDK
+!!! warning
+    Experimental SDK, library API is subject to change
+
+::: paradex_py.paradex.Paradex
+    handler: python
+    options:
+      show_source: false
+      show_root_heading: true
+
+::: paradex_py.api.api_client.ParadexApiClient
+    handler: python
+    options:
+      show_source: false
+      show_root_heading: true
+
+::: paradex_py.api.ws_client.ParadexWebsocketChannel
+    handler: python
+    options:
+      show_source: false
+      show_root_heading: true
+
+::: paradex_py.api.ws_client.ParadexWebsocketClient
+    handler: python
+    options:
+      show_source: false
+      show_root_heading: true
+
+::: paradex_py.account.account.ParadexAccount
+    handler: python
+    options:
+      show_source: false
+      show_root_heading: true

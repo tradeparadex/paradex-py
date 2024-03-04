@@ -13,6 +13,22 @@ from paradex_py.environment import Environment
 
 
 class ParadexWebsocketChannel(Enum):
+    """ParadexWebsocketChannel Enum class to define the channels for Paradex WS API.
+
+    Attributes:
+        FILLS (str): Fills channel
+        ACCOUNT (str): Account channel
+        MARKETS_SUMMARY (str): Markets summary channel
+        ORDERS (str): Orders channel
+        ORDER_BOOK (str): Order book channel
+        POSITIONS (str): Positions channel
+        TRADES (str): Trades channel
+        TRADEBUSTS (str): Tradebusts channel
+        TRANSACTIONS (str): Transactions channel
+        BALANCE_EVENTS (str): Balance events channel
+        FUNDING_DATA (str): Funding data channel
+    """
+
     FILLS = "fills.{market}"
     ACCOUNT = "account"
     MARKETS_SUMMARY = "markets_summary"
@@ -30,6 +46,20 @@ class ParadexWebsocketChannel(Enum):
 
 
 class ParadexWebsocketClient:
+    """ParadexWebsocketChannel class to interact with Paradex WS API.
+    Initialized along with Paradex class.
+
+    Args:
+        env (Environment): Environment
+        logger (Optional[logging.Logger], optional): Logger. Defaults to None.
+
+    Examples:
+        >>> from paradex_py import Paradex
+        >>> from paradex_py.environment import Environment
+        >>> paradex = Paradex(env=Environment.TESTNET)
+        >>> paradex.ws_client.connect()
+    """
+
     def __init__(
         self,
         env: Environment,

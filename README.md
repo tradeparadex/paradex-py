@@ -1,4 +1,4 @@
-# paradex-py
+# Paradex Python SDK
 
 [![Release](https://img.shields.io/github/v/release/tradeparadex/paradex-py)](https://img.shields.io/github/v/release/tradeparadex/paradex-py)
 [![Build status](https://img.shields.io/github/actions/workflow/status/tradeparadex/paradex-py/main.yml?branch=main)](https://github.com/tradeparadex/paradex-py/actions/workflows/main.yml?query=branch%3Amain)
@@ -6,12 +6,9 @@
 [![Commit activity](https://img.shields.io/github/commit-activity/m/tradeparadex/paradex-py)](https://img.shields.io/github/commit-activity/m/tradeparadex/paradex-py)
 [![License](https://img.shields.io/github/license/tradeparadex/paradex-py)](https://img.shields.io/github/license/tradeparadex/paradex-py)
 
-Paradex Python SDK
+Paradex Python SDK provides a simple interface to interact with the Paradex REST and WS API.
 
-- **Github repository**: <https://github.com/tradeparadex/paradex-py/>
-- **Documentation** <https://tradeparadex.github.io/paradex-py/>
-
-## Commands
+## Development
 
 ```bash
 make install
@@ -26,4 +23,9 @@ make docs
 make help
 ```
 
-The CI/CD pipeline will be triggered when you open a pull request, merge to main, or when you create a new release.
+The CI/CD pipeline will be triggered when a new pull request is opened, code is merged to main, or when new release is created.
+
+## Notes
+
+> [!WARNING]
+> Experimental SDK, library API is subject to change
