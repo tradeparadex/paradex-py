@@ -27,4 +27,5 @@ The CI/CD pipeline will be triggered when a new pull request is opened, code is 
 
 ## Notes
 
-> [!WARNING] > _Experimental SDK, library API is subject to change_
+> [!WARNING]
+> Experimental SDK, library API is subject to change
