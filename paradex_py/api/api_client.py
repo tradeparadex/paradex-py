@@ -10,6 +10,20 @@ from paradex_py.environment import Environment
 
 
 class ParadexApiClient(HttpClient):
+    """ParadexApiClient class to interact with Paradex API.
+    Initialized along with Paradex class.
+
+    Args:
+        env (Environment): Environment
+        logger (logging.Logger, optional): Logger. Defaults to None.
+
+    Examples:
+        >>> from paradex_py import Paradex
+        >>> from paradex_py.environment import Environment
+        >>> paradex = Paradex(env=Environment.TESTNET)
+        >>> paradex.ws_client.connect()
+    """
+
     def __init__(
         self,
         env: Environment,
@@ -164,11 +178,9 @@ class ParadexApiClient(HttpClient):
         return response.get("results") if response else None
 
     def fetch_transactions(self) -> Optional[List]:
-        """Fetch history of transactions initiateted by this account.
+        """Fetch history of transactions initiated by this account.
             Private call requires authorization.
 
-        Args:
-            None
         Returns:
             None: if received invalid response from Paradex API
             List: list of dictionaries, each dict representing a transaction
@@ -180,8 +192,6 @@ class ParadexApiClient(HttpClient):
         """Fetch current summary for this account.
             Private call requires authorization.
 
-        Args:
-            None
         Returns:
             AccountSummary: objects with fields representing account summary
         """
@@ -192,8 +202,6 @@ class ParadexApiClient(HttpClient):
         """Fetch all coin balances for this account
             Private call requires authorization.
 
-        Args:
-            None
         Returns:
             None: if received invalid response from Paradex API
             List: list of dictionaries, each dict representing a balance in specific coin
@@ -205,8 +213,6 @@ class ParadexApiClient(HttpClient):
         """Fetch all derivatives positions for this account
             Private call requires authorization.
 
-        Args:
-            None
         Returns:
             None: if received invalid response from Paradex API
             List: list of dictionaries, each dict representing a position in specific instrument
@@ -219,8 +225,6 @@ class ParadexApiClient(HttpClient):
         """Fetch all markets information
             Public call, no authorization required.
 
-        Args:
-            None
         Returns:
             None: if received invalid response from Paradex API
             List: list of dictionaries, each dict representing a market
@@ -257,8 +261,6 @@ class ParadexApiClient(HttpClient):
         """Fetch insurance fund information
             Public call, no authorization required.
 
-        Args:
-            None
         Returns:
             None: if received invalid response from Paradex API
             Dict: dictionary representing a state of Paradex Insurance Fund

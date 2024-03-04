@@ -6,10 +6,26 @@ from paradex_py.api.api_client import ParadexApiClient
 from paradex_py.api.ws_client import ParadexWebsocketClient
 from paradex_py.environment import Environment
 
-# from paradex_py.message.order import build_order_message
-
 
 class Paradex:
+    """Paradex class to interact with Paradex REST API.
+
+    Args:
+        env (Environment): Environment
+        l1_address (str, optional): L1 address. Defaults to None.
+        l1_private_key (str, optional): L1 private key. Defaults to None.
+        l2_private_key (str, optional): L2 private key. Defaults to None.
+        logger (logging.Logger, optional): Logger. Defaults to None.
+
+    Examples:
+        >>> from paradex_py import Paradex
+        >>> from paradex_py.environment import Environment
+        >>> paradex = Paradex(env=Environment.TESTNET)
+    """
+
+    # Required for mypy to recognize the type of account
+    account: Optional[ParadexAccount] = None
+
     def __init__(
         self,
         env: Environment,
@@ -42,6 +58,16 @@ class Paradex:
         l1_private_key: Optional[str] = None,
         l2_private_key: Optional[str] = None,
     ):
+        """Initialize paradex account with l1 or l2 private keys.
+        Cannot be called if account is already initialized
+
+        Args:
+            l1_address (str): L1 address
+            l1_private_key (str): L1 private key
+            l2_private_key (str): L2 private key
+        """
+        if self.account is not None:
+            raise ValueError("Paradex: Account already initialized")
         self.account = ParadexAccount(
             config=self.config,
             l1_address=l1_address,
