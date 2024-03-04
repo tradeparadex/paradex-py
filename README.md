@@ -6,7 +6,7 @@
 [![Commit activity](https://img.shields.io/github/commit-activity/m/tradeparadex/paradex-py)](https://img.shields.io/github/commit-activity/m/tradeparadex/paradex-py)
 [![License](https://img.shields.io/github/license/tradeparadex/paradex-py)](https://img.shields.io/github/license/tradeparadex/paradex-py)
 
-Paradex Python SDK provides a simple interface to interact with the Paradex RESET and WS API.
+Paradex Python SDK provides a simple interface to interact with the Paradex REST and WS API.
 
 ## Development
 
