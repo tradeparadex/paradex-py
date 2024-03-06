@@ -4,7 +4,7 @@ import logging
 import time
 import traceback
 from enum import Enum
-from typing import Optional
+from typing import Literal, Optional
 
 import websockets
 
@@ -16,33 +16,65 @@ class ParadexWebsocketChannel(Enum):
     """ParadexWebsocketChannel Enum class to define the channels for Paradex WS API.
 
     Attributes:
-        FILLS (str): Fills channel
         ACCOUNT (str): Account channel
+        BALANCE_EVENTS (str): Balance events channel
+        BBO (str): Best Bid Offer channel
+        FILLS (str): Fills channel
+        FUNDING_DATA (str): Funding data channel
+        FUNDING_PAYMENTS (str): Funding payments channel
         MARKETS_SUMMARY (str): Markets summary channel
         ORDERS (str): Orders channel
-        ORDER_BOOK (str): Order book channel
+        ORDER_BOOK (str): Order book snapshots channel
+        ORDER_BOOK_DELTAS (str): Order book deltas channel
+        POINTS_DATA (str): Points data channel
         POSITIONS (str): Positions channel
         TRADES (str): Trades channel
         TRADEBUSTS (str): Tradebusts channel
         TRANSACTIONS (str): Transactions channel
-        BALANCE_EVENTS (str): Balance events channel
-        FUNDING_DATA (str): Funding data channel
+        TRANSFERS (str): Transfers channel
     """
 
-    FILLS = "fills.{market}"
     ACCOUNT = "account"
+    BALANCE_EVENTS = "balance_events"
+    BBO = "bbo.{market}"
+    FILLS = "fills.{market}"
+    FUNDING_DATA = "funding_data.{market}"
+    FUNDING_PAYMENTS = "funding_payments.{market}"
     MARKETS_SUMMARY = "markets_summary"
     ORDERS = "orders.{market}"
     ORDER_BOOK = "order_book.{market}.snapshot@15@100ms"
+    ORDER_BOOK_DELTAS = "order_book.{market}.deltas"
+    POINTS_DATA = "points_data.{market}.{program}"
     POSITIONS = "positions"
     TRADES = "trades.{market}"
     TRADEBUSTS = "tradebusts"
     TRANSACTIONS = "transaction"
-    BALANCE_EVENTS = "balance_events"
-    FUNDING_DATA = "funding_data.{market}"
+    TRANSFERS = "transfers"
 
-    def prefix(self) -> str:
-        return self.value.split(".")[0]
+
+def paradex_channel_prefix(value: str) -> str:
+    return value.split(".")[0]
+
+
+def paradex_channel_suffix(value: str) -> str:
+    return value.split(".")[-1]
+
+
+def paradex_channel_market(value: str) -> Optional[str]:
+    value_split = value.split(".")
+    if len(value_split) > 1:
+        return value_split[1]
+    return None
+
+
+def get_ws_channel_from_name(message_channel: str) -> Optional[ParadexWebsocketChannel]:
+    for channel in ParadexWebsocketChannel:
+        if message_channel.startswith(paradex_channel_prefix(channel.value)):
+            return channel
+    return None
+
+
+PointsProgram = Literal["LiquidityProvider", "Trader"]
 
 
 class ParadexWebsocketClient:
@@ -174,9 +206,10 @@ class ParadexWebsocketClient:
         self,
         channel: ParadexWebsocketChannel,
         market: Optional[str] = None,
+        program: Optional[PointsProgram] = None,
     ) -> None:
-        channel_name = channel.value.format(market=market)
-        self.logger.info(f"Paradex_WS: subscribe {channel}/{market} name:{channel_name}")
+        channel_name = channel.value.format(market=market, program=program)
+        self.logger.info(f"Paradex_WS: subscribe {channel}/{market}/{program} name:{channel_name}")
         await self._send(
             json.dumps(
                 {

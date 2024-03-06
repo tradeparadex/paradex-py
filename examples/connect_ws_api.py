@@ -1,5 +1,4 @@
 import asyncio
-import logging
 import os
 import time
 from decimal import Decimal
@@ -8,15 +7,18 @@ from starknet_py.common import int_from_hex
 
 from examples.shared import logger
 from paradex_py import Paradex
-from paradex_py.api.ws_client import ParadexWebsocketChannel
+from paradex_py.api.ws_client import (
+    ParadexWebsocketChannel,
+    get_ws_channel_from_name,
+    paradex_channel_market,
+    paradex_channel_suffix,
+)
 from paradex_py.common.order import Order, OrderSide, OrderStatus, OrderType
 from paradex_py.environment import TESTNET
 
 # Environment variables
 TEST_L1_ADDRESS = os.getenv("L1_ADDRESS", "")
 TEST_L1_PRIVATE_KEY = int_from_hex(os.getenv("L1_PRIVATE_KEY", ""))
-
-# Test Private API calls
 
 
 def order_from_ws_message(msg: dict) -> Order:
@@ -43,44 +45,55 @@ def order_from_ws_message(msg: dict) -> Order:
     return order
 
 
+async def paradex_ws_subscribe(paradex: Paradex) -> None:
+    await paradex.ws_client.connect()
+    await paradex.ws_client.subscribe(ParadexWebsocketChannel.ACCOUNT)
+    await paradex.ws_client.subscribe(ParadexWebsocketChannel.BALANCE_EVENTS)
+    await paradex.ws_client.subscribe(ParadexWebsocketChannel.BBO, "ETH-USD-PERP")
+    await paradex.ws_client.subscribe(ParadexWebsocketChannel.FILLS, "ETH-USD-PERP")
+    await paradex.ws_client.subscribe(ParadexWebsocketChannel.FUNDING_DATA, "ETH-USD-PERP")
+    await paradex.ws_client.subscribe(ParadexWebsocketChannel.FUNDING_PAYMENTS, "ETH-USD-PERP")
+    await paradex.ws_client.subscribe(ParadexWebsocketChannel.MARKETS_SUMMARY)
+    await paradex.ws_client.subscribe(ParadexWebsocketChannel.ORDERS, "ALL")
+    await paradex.ws_client.subscribe(ParadexWebsocketChannel.ORDER_BOOK, "ETH-USD-PERP")
+    await paradex.ws_client.subscribe(ParadexWebsocketChannel.ORDER_BOOK_DELTAS, "ETH-USD-PERP")
+    await paradex.ws_client.subscribe(ParadexWebsocketChannel.POINTS_DATA, "ETH-USD-PERP", "LiquidityProvider")
+    await paradex.ws_client.subscribe(ParadexWebsocketChannel.POINTS_DATA, "ETH-USD-PERP", "Trader")
+    await paradex.ws_client.subscribe(ParadexWebsocketChannel.POSITIONS)
+    await paradex.ws_client.subscribe(ParadexWebsocketChannel.TRADES, "ETH-USD-PERP")
+    await paradex.ws_client.subscribe(ParadexWebsocketChannel.TRADEBUSTS)
+    await paradex.ws_client.subscribe(ParadexWebsocketChannel.TRANSACTIONS)
+    await paradex.ws_client.subscribe(ParadexWebsocketChannel.TRANSFERS)
+
+
 # Assumes paradex has L1 address and private key
 async def paradex_ws_test(paradex: Paradex):
     try:
-        await paradex.ws_client.connect()
-        await paradex.ws_client.subscribe(ParadexWebsocketChannel.ACCOUNT)
-        await paradex.ws_client.subscribe(ParadexWebsocketChannel.MARKETS_SUMMARY)
-        await paradex.ws_client.subscribe(ParadexWebsocketChannel.POSITIONS)
-        await paradex.ws_client.subscribe(ParadexWebsocketChannel.ORDER_BOOK, "ETH-USD-PERP")
-        await paradex.ws_client.subscribe(ParadexWebsocketChannel.ORDERS, "ALL")
-
+        await paradex_ws_subscribe(paradex)
         async for message in paradex.ws_client.read_messages():
-            if "params" in message:
+            if "params" not in message:
+                logger.info(f"Non-actionable {message}")
+            else:
                 message_channel = message["params"].get("channel")
                 logger.info(f"Channel: {message_channel} message:{message}")
-                if message_channel.startswith(ParadexWebsocketChannel.ACCOUNT.prefix()):
-                    # Account Summary
-                    account_state = message["params"]["data"]
-                    logger.info(f"Account Summary: {account_state}")
-                elif message_channel.startswith(ParadexWebsocketChannel.MARKETS_SUMMARY.prefix()):
-                    summary = message["params"]["data"]
-                    market: str = summary["symbol"]
-                    logger.info(f"{market} Summary:{summary}")
-                elif message_channel.startswith(ParadexWebsocketChannel.ORDERS.prefix()):
-                    order_data = message["params"]["data"]
-                    order = order_from_ws_message(order_data)
-                    logger.info(f"Order update:{order}")
-                elif message_channel.startswith(ParadexWebsocketChannel.POSITIONS.prefix()):
-                    positions = message["params"]["data"]
-                    logging.info(f"Positions update: {positions}")
-                elif message_channel.startswith(ParadexWebsocketChannel.ORDER_BOOK.prefix()):
-                    market = message_channel.split(".")[1]
-                    ob = message["params"]["data"]
-                    logging.debug(f"{market} {message_channel} Orderbook: {ob}")
-                else:
+                ws_channel = get_ws_channel_from_name(message_channel)
+                if ws_channel is None:
                     logger.info(f"Non-actionable channel:{message_channel} {message}")
-            else:
-                logger.info(f"Non-actionable {message}")
-
+                else:
+                    if ws_channel == ParadexWebsocketChannel.ORDERS:
+                        data = order_from_ws_message(message["params"]["data"])
+                    else:
+                        data = message["params"]["data"]
+                    market = paradex_channel_market(message_channel)
+                    if ws_channel == ParadexWebsocketChannel.ORDER_BOOK:
+                        update_type = paradex_channel_suffix(message_channel)
+                        logger.info(f"Order Book update_type:{update_type}")
+                    program = (
+                        paradex_channel_suffix(message_channel)
+                        if ws_channel == ParadexWebsocketChannel.POINTS_DATA
+                        else ""
+                    )
+                    logger.info(f"Channel:{ws_channel}  Market:{market} Program:{program} data:{data}")
     except Exception:
         logger.exception("Connection closed unexpectedly:")
         time.sleep(1)
