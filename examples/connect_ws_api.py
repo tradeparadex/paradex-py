@@ -1,110 +1,134 @@
 import asyncio
 import os
-import time
-from decimal import Decimal
 
 from starknet_py.common import int_from_hex
 
-from examples.shared import logger
 from paradex_py import Paradex
 from paradex_py.api.ws_client import (
     ParadexWebsocketChannel,
-    get_ws_channel_from_name,
+    order_from_ws_message,
     paradex_channel_market,
     paradex_channel_suffix,
 )
-from paradex_py.common.order import Order, OrderSide, OrderStatus, OrderType
 from paradex_py.environment import TESTNET
 
 # Environment variables
 TEST_L1_ADDRESS = os.getenv("L1_ADDRESS", "")
 TEST_L1_PRIVATE_KEY = int_from_hex(os.getenv("L1_PRIVATE_KEY", ""))
 
+if os.getenv("LOG_FILE", "FALSE").lower() == "true":
+    from examples.file_logging import file_logger
 
-def order_from_ws_message(msg: dict) -> Order:
-    """
-    Creates an Order object from a Paradex websocket message.
-    """
-    client_id = msg["client_id"] if msg["client_id"] else msg["id"]
-    order = Order(
-        market=msg["market"],
-        order_type=OrderType(msg["type"]),
-        order_side=OrderSide(msg["side"]),
-        size=Decimal(msg["size"]),
-        limit_price=Decimal(msg["price"]),
-        client_id=client_id,
-        instruction=msg.get("instruction", "GTC"),
-        reduce_only=bool("REDUCE_ONLY" in msg.get("flags", [])),
-    )
-    order.id = msg["id"]
-    order.status = OrderStatus(msg["status"])
-    order.account = msg["account"]
-    order.remaining = Decimal(msg["remaining_size"])
-    order.created_at = int(msg["created_at"])
-    order.cancel_reason = msg["cancel_reason"]
-    return order
+    my_logger = file_logger
+    my_logger.info("Using file logger")
+else:
+    from examples.shared import logger
+
+    my_logger = logger
+    my_logger.info("Using console logger")
+
+
+async def handle_order(ws_channel: ParadexWebsocketChannel, message: dict) -> None:
+    order = order_from_ws_message(message["params"]["data"])
+    my_logger.info(f"handle_order(): Channel:{ws_channel} order:{order}")
+
+
+async def handle_order_book(ws_channel: ParadexWebsocketChannel, message: dict) -> None:
+    data = message["params"]["data"]
+    message_channel = message["params"].get("channel")
+    market = paradex_channel_market(message_channel)
+    update_type = paradex_channel_suffix(message_channel)
+    my_logger.info(f"handle_order_book(): Channel:{ws_channel} market:{market} update_type:{update_type} data:{data}")
+
+
+async def handle_points_data(ws_channel: ParadexWebsocketChannel, message: dict) -> None:
+    data = message["params"]["data"]
+    message_channel = message["params"].get("channel")
+    market = paradex_channel_market(message_channel)
+    program = paradex_channel_suffix(message_channel)
+    my_logger.info(f"handle_points_data(): Channel:{ws_channel} market:{market} program:{program} data:{data}")
+
+
+async def handle_general_message(ws_channel: ParadexWebsocketChannel, message: dict) -> None:
+    message_channel = message["params"].get("channel")
+    market = paradex_channel_market(message_channel)
+    my_logger.info(f"handle_general_message(): Channel:{ws_channel} market:{market} message:{message}")
 
 
 async def paradex_ws_subscribe(paradex: Paradex) -> None:
+    """This function subscribes to all Websocket channels
+    For market specific channels subscribe to ETH-USD-PERP market"""
     await paradex.ws_client.connect()
-    await paradex.ws_client.subscribe(ParadexWebsocketChannel.ACCOUNT)
-    await paradex.ws_client.subscribe(ParadexWebsocketChannel.BALANCE_EVENTS)
-    await paradex.ws_client.subscribe(ParadexWebsocketChannel.BBO, "ETH-USD-PERP")
-    await paradex.ws_client.subscribe(ParadexWebsocketChannel.FILLS, "ETH-USD-PERP")
-    await paradex.ws_client.subscribe(ParadexWebsocketChannel.FUNDING_DATA, "ETH-USD-PERP")
-    await paradex.ws_client.subscribe(ParadexWebsocketChannel.FUNDING_PAYMENTS, "ETH-USD-PERP")
-    await paradex.ws_client.subscribe(ParadexWebsocketChannel.MARKETS_SUMMARY)
-    await paradex.ws_client.subscribe(ParadexWebsocketChannel.ORDERS, "ALL")
-    await paradex.ws_client.subscribe(ParadexWebsocketChannel.ORDER_BOOK, "ETH-USD-PERP")
-    await paradex.ws_client.subscribe(ParadexWebsocketChannel.ORDER_BOOK_DELTAS, "ETH-USD-PERP")
-    await paradex.ws_client.subscribe(ParadexWebsocketChannel.POINTS_DATA, "ETH-USD-PERP", "LiquidityProvider")
-    await paradex.ws_client.subscribe(ParadexWebsocketChannel.POINTS_DATA, "ETH-USD-PERP", "Trader")
-    await paradex.ws_client.subscribe(ParadexWebsocketChannel.POSITIONS)
-    await paradex.ws_client.subscribe(ParadexWebsocketChannel.TRADES, "ETH-USD-PERP")
-    await paradex.ws_client.subscribe(ParadexWebsocketChannel.TRADEBUSTS)
-    await paradex.ws_client.subscribe(ParadexWebsocketChannel.TRANSACTIONS)
-    await paradex.ws_client.subscribe(ParadexWebsocketChannel.TRANSFERS)
-
-
-# Assumes paradex has L1 address and private key
-async def paradex_ws_test(paradex: Paradex):
-    try:
-        await paradex_ws_subscribe(paradex)
-        async for message in paradex.ws_client.read_messages():
-            if "params" not in message:
-                logger.info(f"Non-actionable {message}")
-            else:
-                message_channel = message["params"].get("channel")
-                logger.info(f"Channel: {message_channel} message:{message}")
-                ws_channel = get_ws_channel_from_name(message_channel)
-                if ws_channel is None:
-                    logger.info(f"Non-actionable channel:{message_channel} {message}")
-                else:
-                    if ws_channel == ParadexWebsocketChannel.ORDERS:
-                        data = order_from_ws_message(message["params"]["data"])
-                    else:
-                        data = message["params"]["data"]
-                    market = paradex_channel_market(message_channel)
-                    if ws_channel == ParadexWebsocketChannel.ORDER_BOOK:
-                        update_type = paradex_channel_suffix(message_channel)
-                        logger.info(f"Order Book update_type:{update_type}")
-                    program = (
-                        paradex_channel_suffix(message_channel)
-                        if ws_channel == ParadexWebsocketChannel.POINTS_DATA
-                        else ""
-                    )
-                    logger.info(f"Channel:{ws_channel}  Market:{market} Program:{program} data:{data}")
-    except Exception:
-        logger.exception("Connection closed unexpectedly:")
-        time.sleep(1)
-        await paradex_ws_test()
+    await paradex.ws_client.subscribe(
+        ParadexWebsocketChannel.ACCOUNT,
+        handle_general_message,
+    )
+    await paradex.ws_client.subscribe(
+        ParadexWebsocketChannel.BALANCE_EVENTS,
+        handle_general_message,
+    )
+    await paradex.ws_client.subscribe(
+        ParadexWebsocketChannel.BBO,
+        callback=handle_general_message,
+        params={"market": "ETH-USD-PERP"},
+    )
+    await paradex.ws_client.subscribe(
+        ParadexWebsocketChannel.FILLS,
+        callback=handle_general_message,
+        params={"market": "ETH-USD-PERP"},
+    )
+    await paradex.ws_client.subscribe(
+        ParadexWebsocketChannel.FUNDING_DATA,
+        callback=handle_general_message,
+        params={"market": "ETH-USD-PERP"},
+    )
+    await paradex.ws_client.subscribe(
+        ParadexWebsocketChannel.FUNDING_PAYMENTS,
+        callback=handle_general_message,
+        params={"market": "ETH-USD-PERP"},
+    )
+    await paradex.ws_client.subscribe(
+        ParadexWebsocketChannel.MARKETS_SUMMARY,
+        callback=handle_general_message,
+    )
+    await paradex.ws_client.subscribe(ParadexWebsocketChannel.ORDERS, callback=handle_order, params={"market": "ALL"})
+    await paradex.ws_client.subscribe(
+        ParadexWebsocketChannel.ORDER_BOOK,
+        callback=handle_order_book,
+        params={"market": "ETH-USD-PERP"},
+    )
+    await paradex.ws_client.subscribe(
+        ParadexWebsocketChannel.ORDER_BOOK_DELTAS,
+        callback=handle_order_book,
+        params={"market": "ETH-USD-PERP"},
+    )
+    await paradex.ws_client.subscribe(
+        ParadexWebsocketChannel.POINTS_DATA,
+        callback=handle_points_data,
+        params={"market": "ETH-USD-PERP", "program": "LiquidityProvider"},
+    )
+    await paradex.ws_client.subscribe(
+        ParadexWebsocketChannel.POINTS_DATA,
+        callback=handle_points_data,
+        params={"market": "ETH-USD-PERP", "program": "Trader"},
+    )
+    await paradex.ws_client.subscribe(ParadexWebsocketChannel.POSITIONS, handle_general_message)
+    await paradex.ws_client.subscribe(
+        ParadexWebsocketChannel.TRADES,
+        callback=handle_general_message,
+        params={"market": "ETH-USD-PERP"},
+    )
+    await paradex.ws_client.subscribe(ParadexWebsocketChannel.TRADEBUSTS, handle_general_message)
+    await paradex.ws_client.subscribe(ParadexWebsocketChannel.TRANSACTIONS, handle_general_message)
+    await paradex.ws_client.subscribe(ParadexWebsocketChannel.TRANSFERS, handle_general_message)
 
 
 paradex = Paradex(
     env=TESTNET,
     l1_address=TEST_L1_ADDRESS,
     l1_private_key=TEST_L1_PRIVATE_KEY,
-    logger=logger,
+    logger=my_logger,
 )
 
-asyncio.get_event_loop().run_until_complete(paradex_ws_test(paradex))
+asyncio.get_event_loop().run_until_complete(paradex_ws_subscribe(paradex))
+asyncio.get_event_loop().run_forever()
