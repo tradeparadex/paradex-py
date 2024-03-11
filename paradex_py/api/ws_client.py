@@ -131,10 +131,10 @@ class ParadexWebsocketClient:
         self.ws: Optional[websockets.WebSocketClientProtocol] = None
         self.callbacks: Dict[str, Callable] = {}
         self.subscribed_channels: Dict[str, bool] = {}
-        asyncio.get_event_loop().create_task(self.read_messages())
+        asyncio.get_event_loop().create_task(self._read_messages())
 
     async def __aexit__(self):
-        await self.close_connection()
+        await self._close_connection()
 
     def init_account(self, account: ParadexAccount) -> None:
         self.account = account
@@ -151,7 +151,7 @@ class ParadexWebsocketClient:
             )
             self.logger.info(f"{self.classname} Connected to {self.api_url}")
             if self.account:
-                await self.send_auth_id(self.ws, self.account.jwt_token)
+                await self._send_auth_id(self.ws, self.account.jwt_token)
                 self.logger.info(f"{self.classname} Authenticated to {self.api_url}")
         except (
             websockets.exceptions.ConnectionClosedOK,
@@ -164,7 +164,7 @@ class ParadexWebsocketClient:
             self.logger.warning(f"error:{e} traceback:{traceback.format_exc()}")
             self.ws = None
 
-    async def close_connection(self):
+    async def _close_connection(self):
         try:
             if self.ws:
                 self.logger.info(f"{self.classname} Closing connection...")
@@ -175,23 +175,23 @@ class ParadexWebsocketClient:
         except Exception:
             self.logger.exception(f"{self.classname} Error thrown when closing connection {traceback.format_exc()}")
 
-    async def reconnect(self):
+    async def _reconnect(self):
         try:
             self.logger.info("{self.classname} to reconnect websocket...")
-            await self.close_connection()
+            await self._close_connection()
             await self.connect()
-            await self.re_subscribe()
+            await self._re_subscribe()
         except Exception:
-            self.logger.exception(f"{self.classname} reconnect failed {traceback.format_exc()}")
+            self.logger.exception(f"{self.classname} _reconnect failed {traceback.format_exc()}")
 
-    async def re_subscribe(self):
+    async def _re_subscribe(self):
         if self.ws and self.ws.open:
             for channel_name in self.callbacks:
                 await self._subscribe_to_channel_by_name(channel_name)
         else:
-            self.logger.warning(f"{self.classname} re_subscribe - No connection.")
+            self.logger.warning(f"{self.classname} _re_subscribe - No connection.")
 
-    async def send_auth_id(
+    async def _send_auth_id(
         self,
         websocket: websockets.WebSocketClientProtocol,
         paradex_jwt: str,
@@ -210,21 +210,21 @@ class ParadexWebsocketClient:
             )
         )
 
-    def check_susbcribed_channel(self, message: dict) -> None:
+    def _check_susbcribed_channel(self, message: dict) -> None:
         if "id" in message:
             channel_subscribed: Optional[str] = message.get("result", {}).get("channel")
             if channel_subscribed:
                 self.logger.info(f"{self.classname} subscribed to channel:{channel_subscribed}")
                 self.subscribed_channels[channel_subscribed] = True
 
-    async def read_messages(self, read_timeout=5, backoff=0.1):
-        FN = f"{self.classname} read_messages"
+    async def _read_messages(self, read_timeout=5, backoff=0.1):
+        FN = f"{self.classname} _read_messages"
         while True:
             if self.ws and self.ws.open:
                 try:
                     response = await asyncio.wait_for(self.ws.recv(), timeout=read_timeout)
                     message = json.loads(response)
-                    self.check_susbcribed_channel(message)
+                    self._check_susbcribed_channel(message)
                     if "params" not in message:
                         self.logger.debug(f"{FN} Non-actionable message:{message}")
                     else:
@@ -249,7 +249,7 @@ class ParadexWebsocketClient:
                     websockets.exceptions.ConnectionClosedOK,
                 ):
                     self.logger.exception(f"{FN} connection closed {traceback.format_exc()}")
-                    await self.reconnect()
+                    await self._reconnect()
                 except asyncio.TimeoutError:
                     await asyncio.sleep(backoff)
                 except Exception:
@@ -264,12 +264,12 @@ class ParadexWebsocketClient:
                 await self.ws.send(message)
         except websockets.exceptions.ConnectionClosedError as e:
             self.logger.info(f"{self.classname} _send() Restarted connection {e}")
-            await self.reconnect()
+            await self._reconnect()
             if self.ws:
                 await self.ws.send(message)
         except Exception:
             self.logger.exception(f"{self.classname} send failed {traceback.format_exc()}")
-            await self.reconnect()
+            await self._reconnect()
 
     async def subscribe(
         self,
