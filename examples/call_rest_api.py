@@ -1,4 +1,5 @@
 import os
+import sys
 import time
 from datetime import datetime
 from decimal import Decimal
@@ -26,6 +27,10 @@ else:
 
 # Test Public API calls
 public_paradex = Paradex(env=TESTNET, logger=my_logger)
+# trades = public_paradex.api_client.fetch_trades({"market": "ETH-USD-PERP"})
+# my_logger.info(f"Trades: {trades[:(min(5, len(trades)))]}")
+# sys.exit(0)
+
 insurance_fund = public_paradex.api_client.fetch_insurance_fund()
 my_logger.info(f"Insurance Fund: {insurance_fund}")
 markets = public_paradex.api_client.fetch_markets()
@@ -34,11 +39,11 @@ for market in markets:
     if not int(market.get("position_limit")):
         continue
     symbol = market["symbol"]
-    mkt_summary = public_paradex.api_client.fetch_markets_summary(market=symbol)
+    mkt_summary = public_paradex.api_client.fetch_markets_summary({"market": symbol})
     my_logger.info(f"Market Summary: {mkt_summary}")
-    ob = public_paradex.api_client.fetch_orderbook(market=symbol)
-    my_logger.info(f"OB: {ob}")
-    trades = public_paradex.api_client.fetch_trades(market=symbol)
+    ob = public_paradex.api_client.fetch_orderbook(market=symbol, params={"depth": 5})
+    my_logger.info(f"OB[5]: {ob}")
+    trades = public_paradex.api_client.fetch_trades({"market": symbol})
     my_logger.info(f"Trades: {trades[:(min(5, len(trades)))]}")
 
 
@@ -52,12 +57,18 @@ paradex = Paradex(
 
 account_summary = paradex.api_client.fetch_account_summary()
 my_logger.info(f"Account Summary: {account_summary}")
+account_profile = paradex.api_client.fetch_account_profile()
+my_logger.info(f"Account Profile: {account_profile}")
+sys.exit(0)
+
 balances = paradex.api_client.fetch_balances()
 my_logger.info(f"Balances: {balances}")
 positions = paradex.api_client.fetch_positions()
 my_logger.info(f"Positions: {positions}")
 transactions = paradex.api_client.fetch_transactions()
 my_logger.info(f"Transactions: {transactions}")
+fills = paradex.api_client.fetch_fills()
+my_logger.info(f"All Fills: {fills[:(min(5, len(fills)))]}")
 
 for market in markets:
     if not int(market.get("position_limit")):
@@ -69,7 +80,7 @@ for market in markets:
     # my_logger.info(f"{symbol} History Orders: {hist_orders}")
     fills = paradex.api_client.fetch_fills(market=symbol)
     my_logger.info(f"{symbol} Fills:{fills[:(min(5, len(fills)))]}")
-    funding_payments = paradex.api_client.fetch_funding_payments(market=symbol)
+    funding_payments = paradex.api_client.fetch_funding_payments()  # market=symbol)
     my_logger.info(f"{symbol} Funding Payments: {funding_payments}")
 
 # Create Order object and submit order
