@@ -85,11 +85,11 @@ for market in markets["results"]:
 # Create Order object and submit order
 buy_client_id = f"test_buy_{datetime.now().strftime('%Y%m%d%H%M%S')}"
 buy_order = Order(
-    market="ETH-USD-PERP",
+    market="BTC-USD-PERP",
     order_type=OrderType.Limit,
     order_side=OrderSide.Buy,
-    size=Decimal("0.1"),
-    limit_price=Decimal(1_500),
+    size=Decimal("0.01"),
+    limit_price=Decimal(11_500),
     client_id=buy_client_id,
     instruction="POST_ONLY",
     reduce_only=False,
@@ -121,11 +121,10 @@ orders = paradex.api_client.fetch_orders()
 logger.info(f"ALL {orders=}")
 logger.info("Sleeping for 10 seconds")
 time.sleep(10)
-# Cancel open orders
+# Cancel ETH open order
+paradex.api_client.cancel_all_orders({"market": "ETH-USD-PERP"})
+orders = paradex.api_client.fetch_orders()
+logger.info(f"After ETH-USD-PERP Cancel {orders=}")
 paradex.api_client.cancel_order(order_id=buy_id)
 orders = paradex.api_client.fetch_orders()
 logger.info(f"After BUY Cancel {orders=}")
-time.sleep(3)
-paradex.api_client.cancel_order_by_client_id(client_id=sell_client_id)
-orders = paradex.api_client.fetch_orders()
-logger.info(f"After BUY/SELL Cancel {orders=}")

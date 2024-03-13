@@ -105,9 +105,9 @@ class ParadexApiClient(HttpClient):
         self._validate_auth()
         return self.post(api_url=self.api_url, path=path, payload=payload, params=params, headers=headers)
 
-    def _delete_authorized(self, path: str) -> dict:
+    def _delete_authorized(self, path: str, params: Optional[dict] = None) -> dict:
         self._validate_auth()
-        return self.delete(api_url=self.api_url, path=path)
+        return self.delete(api_url=self.api_url, path=path, params=params)
 
     # PRIVATE GET METHODS
 
@@ -403,3 +403,15 @@ class ParadexApiClient(HttpClient):
             None
         """
         self._delete_authorized(path=f"orders/by_client_id/{client_id}")
+
+    def cancel_all_orders(self, params: Optional[Dict] = None) -> None:
+        """Cancel all open orders for specific market or for all markets.
+            Private call requires authorization.
+
+        Args:
+            params (dict): dictionary with additional parameters. Possible keys are:
+                market (str): instrument's symbol.
+        Returns:
+            None
+        """
+        self._delete_authorized(path="orders", params=params)
