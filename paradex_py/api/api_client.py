@@ -111,7 +111,7 @@ class ParadexApiClient(HttpClient):
 
     # PRIVATE GET METHODS
 
-    def fetch_orders(self, params: Optional[Dict] = None) -> Optional[List]:
+    def fetch_orders(self, params: Optional[Dict] = None) -> Dict[Any, Any]:
         """Fetch open orders for the account.
             Private call requires authorization.
 
@@ -119,13 +119,12 @@ class ParadexApiClient(HttpClient):
             params (dict): optional dictionary with additional parameters. Possible keys are:
                 market (str): instrument symbol. If empty then fetch orders for all markets.
         Returns:
-            None: if received invalid response from Paradex API.
-            List: list of dictionaries, each dict represent an order.
+            Dict:
+                results - a list of dictionaries, each dict represent an order.
         """
-        response = self._get_authorized(path="orders", params=params)
-        return response.get("results") if response else None
+        return self._get_authorized(path="orders", params=params)
 
-    def fetch_orders_history(self, params: Optional[Dict] = None) -> Optional[List]:
+    def fetch_orders_history(self, params: Optional[Dict] = None) -> Dict[Any, Any]:
         """Fetch history of orders for the account.
             Private call requires authorization.
             See https://docs.api.prod.paradex.trade/?shell#get-orders for details.
@@ -141,39 +140,35 @@ class ParadexApiClient(HttpClient):
                 status (str):       Order status
                 type (str):         Order type
         Returns:
-            None: if received invalid response from Paradex API.
-            List: list of dictionaries, each dict representing an order.
+            Dict: with fields
+                next, prev - pagination tokens
+                results - a list of dictionaries, each dict representing an order.
         """
-        response = self._get_authorized(path="orders-history", params=params)
-        return response.get("results") if response else None
+        return self._get_authorized(path="orders-history", params=params)
 
-    def fetch_order(self, order_id: str) -> Optional[Dict]:
+    def fetch_order(self, order_id: str) -> Dict[Any, Any]:
         """Fetch a state of specific order sent from this account.
             Private call requires authorization.
 
         Args:
             order_id (str): order's id as assigned by Paradex.
         Returns:
-            None: if received invalid response from Paradex API.
             Dict: dictionary representing an order.
         """
-        path: str = f"orders/{order_id}"
-        return self._get_authorized(path=path)
+        return self._get_authorized(path=f"orders/{order_id}")
 
-    def fetch_order_by_client_id(self, client_id: str) -> Optional[Dict]:
+    def fetch_order_by_client_id(self, client_id: str) -> Dict[Any, Any]:
         """Fetch a state of specific order sent from this account.
             Private call requires authorization.
 
         Args:
             client_id (str): order's client_id as assigned by a trader.
         Returns:
-            None: if received invalid response from Paradex API.
             Dict: dictionary representing an order.
         """
-        path: str = f"orders/by_client_id/{client_id}"
-        return self._get_authorized(path=path)
+        return self._get_authorized(path=f"orders/by_client_id/{client_id}")
 
-    def fetch_fills(self, params: Optional[Dict] = None) -> Optional[List]:
+    def fetch_fills(self, params: Optional[Dict] = None) -> Dict[Any, Any]:
         """Fetch history of fills for this account.
             Private call requires authorization.
 
@@ -185,13 +180,30 @@ class ParadexApiClient(HttpClient):
                 end_at (int):       End Time in unix time milliseconds.
                 page_size (int):    Limit the number of responses in the page.
         Returns:
-            None: if received invalid response from Paradex API.
-            List: list of dictionaries, each dict representing a fill.
+            Dict: with fields
+                next, prev - pagination tokens
+                results - a list of dictionaries, each dict representing a fill.
         """
-        response = self._get_authorized(path="fills", params=params)
-        return response.get("results") if response else None
+        return self._get_authorized(path="fills", params=params)
 
-    def fetch_funding_payments(self, params: Optional[Dict] = None) -> Optional[List]:
+    def fetch_tradebusts(self, params: Optional[Dict] = None) -> Dict[Any, Any]:
+        """Fetch history of tradebusts for this account.
+            Private call requires authorization.
+
+        Args:
+            params (dict): optional dictionary with additional parameters. Possible keys are:
+                cursor (string):    Returns the `next` paginated page.
+                start_at (int):     Start Time in unix time milliseconds.
+                end_at (int):       End Time in unix time milliseconds.
+                page_size (int):    Limit the number of responses in the page.
+        Returns:
+            Dict: with fields
+                next, prev - pagination tokens
+                results - a list of dictionaries, each dict representing a tradebust.
+        """
+        return self._get_authorized(path="tradebusts", params=params)
+
+    def fetch_funding_payments(self, params: Optional[Dict] = None) -> Dict[Any, Any]:
         """Fetch history of funding payments for this account.
             Private call requires authorization.
 
@@ -203,13 +215,13 @@ class ParadexApiClient(HttpClient):
                 end_at (int):       End Time in unix time milliseconds.
                 page_size (int):    Limit the number of responses in the page.
         Returns:
-            None: if received invalid response from Paradex API.
-            List: list of dictionaries, each dict representing a funding payment.
+            Dict: with fields
+                next, prev - pagination tokens
+                results - a list of dictionaries, each dict representing a funding payment.
         """
-        response = self._get_authorized(path="funding/payments", params=params)
-        return response.get("results") if response else None
+        return self._get_authorized(path="funding/payments", params=params)
 
-    def fetch_transactions(self, params: Optional[Dict] = None) -> Optional[List]:
+    def fetch_transactions(self, params: Optional[Dict] = None) -> Dict[Any, Any]:
         """Fetch history of transactions initiated by this account.
             Private call requires authorization.
         Args:
@@ -219,11 +231,11 @@ class ParadexApiClient(HttpClient):
                 end_at (int):    End Time in unix time milliseconds.
                 page_size (int): Limit the number of responses in the page.
         Returns:
-            None: if received invalid response from Paradex API.
-            List: list of dictionaries, each dict representing a transaction.
+            Dict: with fields
+                next, prev - pagination tokens
+                results - a list of dictionaries, each dict representing a transaction.
         """
-        response = self._get_authorized(path="transactions", params=params)
-        return response.get("results") if response else None
+        return self._get_authorized(path="transactions", params=params)
 
     def fetch_account_summary(self) -> AccountSummary:
         """Fetch current summary for this account.
@@ -235,53 +247,51 @@ class ParadexApiClient(HttpClient):
         res = self._get_authorized(path="account")
         return AccountSummarySchema().load(res)
 
-    def fetch_account_profile(self) -> Optional[Dict]:
+    def fetch_account_profile(self) -> Dict[Any, Any]:
         """Fetch profile for this account.
             Private call requires authorization.
 
         Returns:
             dictionary with fields representing account profile.
         """
-        res = self._get_authorized(path="account/profile")
-        return res
+        return self._get_authorized(path="account/profile")
 
-    def fetch_balances(self) -> Optional[List]:
+    def fetch_balances(self) -> Dict[Any, Any]:
         """Fetch all coin balances for this account.
             Private call requires authorization.
 
         Returns:
-            None: if received invalid response from Paradex API.
-            List: list of dictionaries, each dict representing a balance in specific coin.
+            Dict: with fields
+                next, prev - pagination tokens
+                results - a list of dictionaries, each dict representing a balance in specific coin.
         """
-        response = self._get_authorized(path="balance")
-        return response.get("results") if response else None
+        return self._get_authorized(path="balance")
 
-    def fetch_positions(self) -> Optional[List]:
+    def fetch_positions(self) -> Dict[Any, Any]:
         """Fetch all derivatives positions for this account
             Private call requires authorization.
 
         Returns:
-            None: if received invalid response from Paradex API
-            List: list of dictionaries, each dict representing a position in specific instrument
+            Dict: with fields
+                next, prev - pagination tokens
+                results - a list of dictionaries, each dict representing a position.
         """
-        response = self._get_authorized(path="positions")
-        return response.get("results") if response else None
+        return self._get_authorized(path="positions")
 
     # PUBLIC GET METHODS
-    def fetch_markets(self, params: Optional[Dict] = None) -> Optional[List]:
+    def fetch_markets(self, params: Optional[Dict] = None) -> Dict[Any, Any]:
         """Fetch all markets information
             Public call, no authorization required.
         Args:
             params (dict): optional dictionary with additional parameters. Possible keys are:
                 market (str): instrument symbol.
         Returns:
-            None: if received invalid response from Paradex API
-            List: list of dictionaries, each dict representing a market
+            Dict: with fields
+                results - a list of dictionaries, each dict representing a market
         """
-        response = self._get(path="markets", params=params)
-        return response.get("results") if response else None
+        return self._get(path="markets", params=params)
 
-    def fetch_markets_summary(self, params: Optional[Dict] = None) -> Optional[List]:
+    def fetch_markets_summary(self, params: Optional[Dict] = None) -> Dict[Any, Any]:
         """Fetch ticker information for specific market
             Public call, no authorization required.
 
@@ -291,13 +301,12 @@ class ParadexApiClient(HttpClient):
                 start (int): when market <> 'ALL' - start time in milliseconds since epoch.
                 end (int): when market <> 'ALL' - end time in milliseconds since epoch.
         Returns:
-            None: if received invalid response from Paradex API.
-            List: list of dictionaries, each dict representing a ticker for specific market and timestamp.
+            Dict: with fields
+                results - a list of dictionaries, each dict representing a ticker for specific market and timestamp.
         """
-        response = self._get(path="markets/summary", params=params)
-        return response.get("results") if response else None
+        return self._get(path="markets/summary", params=params)
 
-    def fetch_orderbook(self, market: str, params: Optional[Dict] = None) -> dict:
+    def fetch_orderbook(self, market: str, params: Optional[Dict] = None) -> Dict[Any, Any]:
         """Fetch order-book for specific market
             Public call, no authorization required.
 
@@ -306,55 +315,72 @@ class ParadexApiClient(HttpClient):
             params (dict): optional dictionary with additional parameters. Possible keys are:
                 depth (int): Depth of the order book. Default is 20.
         Returns:
-            None: if received invalid response from Paradex API
             Dict: dictionary representing a full order book depth for specific market
         """
         return self._get(path=f"orderbook/{market}", params=params)
 
-    def fetch_insurance_fund(self) -> Optional[Dict[Any, Any]]:
+    def fetch_bbo(self, market: str) -> Dict[Any, Any]:
+        """Fetch best bid/offer for specific market
+            Public call, no authorization required.
+
+        Args:
+            market (str): MANDATORY. instrument symbol.
+        Returns:
+            Dict: dictionary representing best bid/offer for specific market
+        """
+        return self._get(path=f"bbo/{market}")
+
+    def fetch_insurance_fund(self) -> Dict[Any, Any]:
         """Fetch insurance fund information
             Public call, no authorization required.
 
         Returns:
-            None: if received invalid response from Paradex API
             Dict: dictionary representing a state of Paradex Insurance Fund
         """
         return self._get(path="insurance")
 
+    def fetch_liquidations(self, params: Optional[Dict]) -> Dict[Any, Any]:
+        """Fetch hisotry of liquidations for this account.
+            Private call requires authorization.
+
+        Args:
+            params (dict): optional dictionary with additional parameters. Possible keys are:
+                start (int): start time in milliseconds since epoch.
+                end (int): end time in milliseconds since epoch.
+        Returns:
+            Dict: with fields
+                results - a list of dictionaries, each dict representing a liquidation event.
+        """
+        return self._get(path="liquidations")
+
     @validate_market
-    def fetch_trades(self, params: Optional[Dict]) -> Optional[List]:
+    def fetch_trades(self, params: Dict) -> Dict[Any, Any]:
         """Fetch Paradex exchange trades for specific market
             Public call, no authorization required.
 
         Args:
-            params (dict): optional dictionary with additional parameters. Possible keys are:
-                market (str): instrument symbol.
+            params (dict): MANDATORY dictionary with additional parameters. Possible keys are:
+                market (str): MANDATORY, instrument's symbol.
         Returns:
-            None: if received invalid response from Paradex API
-            Dict: list of dictionaries, dictionary representing a state of Paradex Insurance Fund
+            Dict: with fields
+                next, prev - pagination tokens
+                results - a list of dictionaries, each dict representing a trade.
         """
-        response = self._get(path="trades", params=params)
-        return response.get("results") if response else None
+        return self._get(path="trades", params=params)
 
     # order helper functions
-    def submit_order(self, order: Order) -> Optional[Dict]:
+    def submit_order(self, order: Order) -> Dict[Any, Any]:
         """Send order to Paradex
             Private call requires authorization.
 
         Args:
             order (Order): Order object
         Returns:
-            None: if received invalid response from Paradex API
             Dict: dictionary representing a response from Paradex API
         """
-        response = None
         order.signature = self.account.sign_order(order)
         order_payload = order.dump_to_dict()
-        try:
-            response = self._post_authorized(path="orders", payload=order_payload)
-        except Exception:
-            self.logger.exception(f"submit_order payload:{order_payload}")
-        return response
+        return self._post_authorized(path="orders", payload=order_payload)
 
     def cancel_order(self, order_id: str) -> None:
         """Cancel open order previously sent to Paradex from this account.
