@@ -3,39 +3,14 @@ import json
 import logging
 import time
 import traceback
-from decimal import Decimal
 from enum import Enum
-from typing import Callable, Dict, Literal, Optional
+from typing import Callable, Dict, Optional
 
 import websockets
 
 from paradex_py.account.account import ParadexAccount
-from paradex_py.common.order import Order, OrderSide, OrderStatus, OrderType
+from paradex_py.constants import WS_READ_TIMEOUT
 from paradex_py.environment import Environment
-
-
-def order_from_ws_message(msg: dict) -> Order:
-    """
-    Creates an Order object from a Paradex websocket message.
-    """
-    client_id = msg["client_id"] if msg["client_id"] else msg["id"]
-    order = Order(
-        market=msg["market"],
-        order_type=OrderType(msg["type"]),
-        order_side=OrderSide(msg["side"]),
-        size=Decimal(msg["size"]),
-        limit_price=Decimal(msg["price"]),
-        client_id=client_id,
-        instruction=msg.get("instruction", "GTC"),
-        reduce_only=bool("REDUCE_ONLY" in msg.get("flags", [])),
-    )
-    order.id = msg["id"]
-    order.status = OrderStatus(msg["status"])
-    order.account = msg["account"]
-    order.remaining = Decimal(msg["remaining_size"])
-    order.created_at = int(msg["created_at"])
-    order.cancel_reason = msg["cancel_reason"]
-    return order
 
 
 class ParadexWebsocketChannel(Enum):
@@ -78,29 +53,15 @@ class ParadexWebsocketChannel(Enum):
     TRANSFERS = "transfers"
 
 
-def paradex_channel_prefix(value: str) -> str:
+def _paradex_channel_prefix(value: str) -> str:
     return value.split(".")[0]
 
 
-def paradex_channel_suffix(value: str) -> str:
-    return value.split(".")[-1]
-
-
-def paradex_channel_market(value: str) -> Optional[str]:
-    value_split = value.split(".")
-    if len(value_split) > 1:
-        return value_split[1]
-    return None
-
-
-def get_ws_channel_from_name(message_channel: str) -> Optional[ParadexWebsocketChannel]:
+def _get_ws_channel_from_name(message_channel: str) -> Optional[ParadexWebsocketChannel]:
     for channel in ParadexWebsocketChannel:
-        if message_channel.startswith(paradex_channel_prefix(channel.value)):
+        if message_channel.startswith(_paradex_channel_prefix(channel.value)):
             return channel
     return None
-
-
-PointsProgram = Literal["LiquidityProvider", "Trader"]
 
 
 class ParadexWebsocketClient:
@@ -139,7 +100,7 @@ class ParadexWebsocketClient:
     def init_account(self, account: ParadexAccount) -> None:
         self.account = account
 
-    async def connect(self) -> None:
+    async def connect(self) -> bool:
         try:
             self.subscribed_channels = {}
             extra_headers = {}
@@ -160,9 +121,9 @@ class ParadexWebsocketClient:
             self.logger.info(f"{self.classname} connection already closed:{e}")
             self.ws = None
         except Exception as e:
-            # Reduced from error to warning to avoid flood on Sentry
             self.logger.warning(f"error:{e} traceback:{traceback.format_exc()}")
             self.ws = None
+        return bool(self.ws is not None and self.ws.open)
 
     async def _close_connection(self):
         try:
@@ -180,16 +141,16 @@ class ParadexWebsocketClient:
             self.logger.info("{self.classname} to reconnect websocket...")
             await self._close_connection()
             await self.connect()
-            await self._re_subscribe()
+            await self._resubscribe()
         except Exception:
             self.logger.exception(f"{self.classname} _reconnect failed {traceback.format_exc()}")
 
-    async def _re_subscribe(self):
+    async def _resubscribe(self):
         if self.ws and self.ws.open:
             for channel_name in self.callbacks:
                 await self._subscribe_to_channel_by_name(channel_name)
         else:
-            self.logger.warning(f"{self.classname} _re_subscribe - No connection.")
+            self.logger.warning(f"{self.classname} _resubscribe - No connection.")
 
     async def _send_auth_id(
         self,
@@ -217,19 +178,19 @@ class ParadexWebsocketClient:
                 self.logger.info(f"{self.classname} subscribed to channel:{channel_subscribed}")
                 self.subscribed_channels[channel_subscribed] = True
 
-    async def _read_messages(self, read_timeout=5, backoff=0.1):
+    async def _read_messages(self):
         FN = f"{self.classname} _read_messages"
         while True:
             if self.ws and self.ws.open:
                 try:
-                    response = await asyncio.wait_for(self.ws.recv(), timeout=read_timeout)
+                    response = await asyncio.wait_for(self.ws.recv(), timeout=WS_READ_TIMEOUT)
                     message = json.loads(response)
                     self._check_susbcribed_channel(message)
                     if "params" not in message:
                         self.logger.debug(f"{FN} Non-actionable message:{message}")
                     else:
                         message_channel = message["params"].get("channel")
-                        ws_channel: Optional[ParadexWebsocketChannel] = get_ws_channel_from_name(message_channel)
+                        ws_channel: Optional[ParadexWebsocketChannel] = _get_ws_channel_from_name(message_channel)
                         if ws_channel is None:
                             self.logger.debug(
                                 f"{FN} Non-registered ParadexWebsocketChannel:{message_channel} {message}"
@@ -251,7 +212,7 @@ class ParadexWebsocketClient:
                     self.logger.exception(f"{FN} connection closed {traceback.format_exc()}")
                     await self._reconnect()
                 except asyncio.TimeoutError:
-                    await asyncio.sleep(backoff)
+                    pass
                 except Exception:
                     self.logger.exception(f"{FN} connection failed {traceback.format_exc()}")
                     await asyncio.sleep(1)
@@ -277,6 +238,11 @@ class ParadexWebsocketClient:
         callback: Callable,
         params: Optional[dict] = None,
     ) -> None:
+        """Subscribe to a ParadexWebsocketChannel with optional parameters.
+        Call the callback function when a message is received.
+        callback function should have the following signature:
+        (ParadexWebsocketChannel, dict) -> None
+        """
         FN = f"{self.classname} subscribe"
         if params is None:
             params = {}
