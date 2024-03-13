@@ -1,5 +1,4 @@
 import os
-import sys
 import time
 from datetime import datetime
 from decimal import Decimal
@@ -56,7 +55,6 @@ account_summary = paradex.api_client.fetch_account_summary()
 logger.info(f"Account Summary: {account_summary}")
 account_profile = paradex.api_client.fetch_account_profile()
 logger.info(f"Account Profile: {account_profile}")
-sys.exit(0)
 
 balances = paradex.api_client.fetch_balances()
 logger.info(f"Balances: {balances}")
@@ -66,19 +64,21 @@ transactions = paradex.api_client.fetch_transactions()
 logger.info(f"Transactions: {transactions}")
 fills = paradex.api_client.fetch_fills()
 logger.info(f"All Fills: {fills[:(min(5, len(fills)))]}")
-
+hist_orders = paradex.api_client.fetch_orders_history(params={"page_size": 5})
+logger.info(f"History Orders: {hist_orders}")
 for market in markets:
     if not int(market.get("position_limit")):
         continue
     symbol = market["symbol"]
-    orders = paradex.api_client.fetch_orders(market=symbol)
+    orders = paradex.api_client.fetch_orders(params={"market": symbol})
     logger.info(f"{symbol} Orders: {orders}")
-    # hist_orders = paradex.api_client.fetch_orders_history(market=symbol)
+    # hist_orders = paradex.api_client.fetch_orders_history(params={"market": symbol})
     # logger.info(f"{symbol} History Orders: {hist_orders}")
-    fills = paradex.api_client.fetch_fills(market=symbol)
+    fills = paradex.api_client.fetch_fills(params={"market": symbol})
     logger.info(f"{symbol} Fills:{fills[:(min(5, len(fills)))]}")
-    funding_payments = paradex.api_client.fetch_funding_payments()  # market=symbol)
+    funding_payments = paradex.api_client.fetch_funding_payments()
     logger.info(f"{symbol} Funding Payments: {funding_payments}")
+
 
 # Create Order object and submit order
 buy_client_id = f"test_buy_{datetime.now().strftime('%Y%m%d%H%M%S')}"
@@ -89,6 +89,8 @@ buy_order = Order(
     size=Decimal("0.1"),
     limit_price=Decimal(1_500),
     client_id=buy_client_id,
+    instruction="POST_ONLY",
+    reduce_only=False,
 )
 response = paradex.api_client.submit_order(order=buy_order)
 buy_id = response.get("id")
@@ -109,14 +111,15 @@ response = paradex.api_client.submit_order(order=sell_order)
 logger.info(f"Sell Order Response: {response}")
 sell_id = response.get("id")
 # Check all open orders
-orders = paradex.api_client.fetch_orders(market="")
+orders = paradex.api_client.fetch_orders()
 logger.info(f"ALL Orders: {orders}")
 logger.info("Sleeping for 10 seconds")
 time.sleep(10)
 # Cancel open orders
 paradex.api_client.cancel_order(order_id=buy_id)
-orders = paradex.api_client.fetch_orders(market="ETH-USD-PERP")
+orders = paradex.api_client.fetch_orders()
 logger.info(f"After BUY Cancel Orders: {orders}")
+time.sleep(3)
 paradex.api_client.cancel_order_by_client_id(client_id=sell_client_id)
-orders = paradex.api_client.fetch_orders(market="ETH-USD-PERP")
+orders = paradex.api_client.fetch_orders()
 logger.info(f"After BUY/SELL Cancel Orders: {orders}")
