@@ -128,7 +128,7 @@ class ParadexApiClient(HttpClient):
     def fetch_orders_history(self, params: Optional[Dict] = None) -> Optional[List]:
         """Fetch history of orders for the account.
             Private call requires authorization.
-
+            See https://docs.api.prod.paradex.trade/?shell#get-orders for details.
         Args:
             params (dict): optional dictionary with additional parameters. Possible keys are:
                 market (str): instrument symbol. If None or empty then fetch history of orders for all markets.
@@ -140,7 +140,6 @@ class ParadexApiClient(HttpClient):
                 side (str): 	    Order side
                 status (str):       Order status
                 type (str):         Order type
-            See https://docs.api.prod.paradex.trade/?shell#get-orders for details.
         Returns:
             None: if received invalid response from Paradex API.
             List: list of dictionaries, each dict representing an order.
@@ -328,7 +327,8 @@ class ParadexApiClient(HttpClient):
             Public call, no authorization required.
 
         Args:
-            market (str): instrument symbol.
+            params (dict): optional dictionary with additional parameters. Possible keys are:
+                market (str): instrument symbol.
         Returns:
             None: if received invalid response from Paradex API
             Dict: list of dictionaries, dictionary representing a state of Paradex Insurance Fund
