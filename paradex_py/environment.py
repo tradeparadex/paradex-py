@@ -3,4 +3,4 @@ from typing import Literal
 PROD = "prod"
 TESTNET = "testnet"
 
-Environment = Literal["prod", "testnet", "nightly"]
+Environment = Literal["prod", "testnet"]
