@@ -114,25 +114,26 @@ class ParadexApiClient(HttpClient):
     def fetch_orders(self, params: Optional[Dict] = None) -> Dict[Any, Any]:
         """Fetch open orders for the account.<br>
             Private call requires authorization.<br>
-            See [Get open orders](https://docs.api.prod.paradex.trade/?shell#get-open-orders) for details.
+            See [Get open orders](https://docs.api.prod.paradex.trade/?shell#get-open-orders)
+            for details.<br>
 
         Args:
-            params: dictionary with parameters. Possible keys are:<br>
-                `market` (str): instrument symbol. If empty then fetch orders for all markets.
+            params: dictionary with parameters. Valid keys:<br>
+                `market` (str): instrument symbol. If empty then fetch orders for all markets.<br>
 
         Returns:
-            Dict: dictionary with fields<br>
-                `results` - a list of dictionaries, each dict represent an order.
+            dictionary with fields:<br>
+                `results` - a list of dictionaries, each dict represent an order.<br>
         """
         return self._get_authorized(path="orders", params=params)
 
     def fetch_orders_history(self, params: Optional[Dict] = None) -> Dict[Any, Any]:
         """Fetch history of orders for the account.<br>
             Private call requires authorization.<br>
-            See [Get orders](https://docs.api.prod.paradex.trade/?shell#get-orders) for details.
+            See [Get orders](https://docs.api.prod.paradex.trade/?shell#get-orders) for details.<br>
 
         Args:
-            params: dictionary with parameters. Possible keys are:<br>
+            params: dictionary with parameters. Valid keys:<br>
                 `market` (str): instrument symbol. If None or empty then fetch history of orders for all markets.<br>
                 `cursor` (string):    Returns the `next` paginated page.<br>
                 `start_at` (int):     Start Time in unix time milliseconds.<br>
@@ -144,328 +145,393 @@ class ParadexApiClient(HttpClient):
                 `type` (str):         Order type.<br>
 
         Returns:
-            Dict: with field<br>
+            dictionary with fields:<br>
                 `next`, `prev` - pagination tokens.<br>
-                `results` - a list of dictionaries, each dict representing an order.
+                `results` - a list of dictionaries, each dict representing an order.<br>
         """
         return self._get_authorized(path="orders-history", params=params)
 
     def fetch_order(self, order_id: str) -> Dict[Any, Any]:
-        """Fetch a state of specific order sent from this account.
-            Private call requires authorization.
+        """Fetch a state of specific order sent from this account.<br>
+            Private call requires authorization.<br>
+            See [Get order](https://docs.api.prod.paradex.trade/?shell#get-order)
+            for details.<br>
 
         Args:
-            order_id (str): order's id as assigned by Paradex.
+            order_id: order's id as assigned by Paradex.<br>
+
         Returns:
-            Dict: dictionary representing an order.
+            dictionary representing an order.<br>
         """
         return self._get_authorized(path=f"orders/{order_id}")
 
     def fetch_order_by_client_id(self, client_id: str) -> Dict[Any, Any]:
-        """Fetch a state of specific order sent from this account.
-            Private call requires authorization.
+        """Fetch a state of specific order sent from this account.<br>
+            Private call requires authorization.<br>
+            See [Get order by client id](https://docs.api.prod.paradex.trade/?shell#get-order-by-client-id)
+            for details.<br>
 
         Args:
-            client_id (str): order's client_id as assigned by a trader.
+            client_id: order's client_id as assigned by a trader.<br>
+
         Returns:
-            Dict: dictionary representing an order.
+            dictionary representing an order.<br>
         """
         return self._get_authorized(path=f"orders/by_client_id/{client_id}")
 
     def fetch_fills(self, params: Optional[Dict] = None) -> Dict[Any, Any]:
-        """Fetch history of fills for this account.
-            Private call requires authorization.
+        """Fetch history of fills for this account.<br>
+            Private call requires authorization.<br>
+            See [List fills](https://docs.api.prod.paradex.trade/?shell#list-fills)
+            for details.<br>
 
         Args:
-            params (dict): optional dictionary with additional parameters. Possible keys are:
-                market (str): instrument symbol. If None or empty then fetch fills for all markets.
-                cursor (string):    Returns the `next` paginated page.
-                start_at (int):     Start Time in unix time milliseconds.
-                end_at (int):       End Time in unix time milliseconds.
-                page_size (int):    Limit the number of responses in the page.
+            params: dictionary with parameters. Valid keys:<br>
+                `market` (str): instrument symbol. If None or empty then fetch fills for all markets.<br>
+                `cursor` (string):    Returns the `next` paginated page.<br>
+                `start_at` (int):     Start Time in unix time milliseconds.<br>
+                `end_at` (int):       End Time in unix time milliseconds.<br>
+                `page_size` (int):    Limit the number of responses in the page.<br>
+
         Returns:
-            Dict: with fields
-                next, prev - pagination tokens
-                results - a list of dictionaries, each dict representing a fill.
+            dictionary with fields:<br>
+                `next`, `prev` - pagination tokens.<br>
+                `results` - a list of dictionaries, each dict representing a fill.<br>
         """
         return self._get_authorized(path="fills", params=params)
 
     def fetch_tradebusts(self, params: Optional[Dict] = None) -> Dict[Any, Any]:
-        """Fetch history of tradebusts for this account.
-            Private call requires authorization.
+        """Fetch history of tradebusts for this account.<br>
+            Private call requires authorization.<br>
+            See [List tradebusts](https://docs.api.prod.paradex.trade/?shell#list-tradebusts) for details.<br>
 
         Args:
-            params (dict): optional dictionary with additional parameters. Possible keys are:
-                cursor (string):    Returns the `next` paginated page.
-                start_at (int):     Start Time in unix time milliseconds.
-                end_at (int):       End Time in unix time milliseconds.
-                page_size (int):    Limit the number of responses in the page.
+            params: dictionary with parameters. Valid keys:<br>
+                `cursor` (string):    Returns the `next` paginated page.<br>
+                `start_at` (int):     Start Time in unix time milliseconds.<br>
+                `end_at` (int):       End Time in unix time milliseconds.<br>
+                `page_size` (int):    Limit the number of responses in the page.<br>
+
         Returns:
-            Dict: with fields
-                next, prev - pagination tokens
-                results - a list of dictionaries, each dict representing a tradebust.
+            dictionary with fields:<br>
+                `next`, `prev` - pagination tokens.<br>
+                `results` - a list of dictionaries, each dict representing a tradebust.<br>
         """
         return self._get_authorized(path="tradebusts", params=params)
 
     def fetch_funding_payments(self, params: Optional[Dict] = None) -> Dict[Any, Any]:
-        """Fetch history of funding payments for this account.
-            Private call requires authorization.
+        """Fetch history of funding payments for this account.<br>
+            Private call requires authorization.<br>
+            See [Funding Payments History](https://docs.api.prod.paradex.trade/?shell#funding-payments-history)
+            for details.<br>
 
         Args:
-            params (dict): optional dictionary with additional parameters. Possible keys are:
-                market (str): instrument symbol. If 'ALL' then fetch funding payments for all markets.
-                cursor (string):    Returns the `next` paginated page.
-                start_at (int):     Start Time in unix time milliseconds.
-                end_at (int):       End Time in unix time milliseconds.
-                page_size (int):    Limit the number of responses in the page.
+            params: dictionary with parameters. Valid keys:<br>
+                `market` (str): instrument symbol. If 'ALL' then fetch funding payments for all markets.<br>
+                `cursor` (string):    Returns the `next` paginated page.<br>
+                `start_at` (int):     Start Time in unix time milliseconds.<br>
+                `end_at` (int):       End Time in unix time milliseconds.<br>
+                `page_size` (int):    Limit the number of responses in the page.<br>
 
         Returns:
-            Dict: dictionary with fields
-                next, prev - pagination tokens
-                results - a list of dictionaries, each dict representing a funding payment.
+            dictionary with fields:<br>
+                `next`, `prev` - pagination tokens.<br>
+                `results` - a list of dictionaries, each dict representing a funding payment.<br>
         """
         return self._get_authorized(path="funding/payments", params=params)
 
     def fetch_transactions(self, params: Optional[Dict] = None) -> Dict[Any, Any]:
-        """Fetch history of transactions initiated by this account.
-            Private call requires authorization.
+        """Fetch history of transactions initiated by this account.<br>
+            Private call requires authorization.<br>
+            See [List Transactions](https://docs.api.prod.paradex.trade/?shell#list-transactions)
+            for details.<br>
+
         Args:
-            params (dict): optional dictionary with additional parameters. Possible keys are:
-                cursor (str):    Returns the `next` paginated page.
-                start_at (int):  Start Time in unix time milliseconds.
-                end_at (int):    End Time in unix time milliseconds.
-                page_size (int): Limit the number of responses in the page.
+            params: dictionary with parameters. Valid keys:<br>
+                `cursor` (string):    Returns the `next` paginated page.<br>
+                `start_at` (int):     Start Time in unix time milliseconds.<br>
+                `end_at` (int):       End Time in unix time milliseconds.<br>
+                `page_size` (int):    Limit the number of responses in the page.<br>
+
         Returns:
-            Dict: with fields
-                next, prev - pagination tokens
-                results - a list of dictionaries, each dict representing a transaction.
+            dictionary with fields:<br>
+                `next`, `prev` - pagination tokens.<br>
+                `results` - a list of dictionaries, each dict representing a transaction.<br>
         """
         return self._get_authorized(path="transactions", params=params)
 
     def fetch_transfers(self, params: Optional[Dict] = None) -> Dict[Any, Any]:
-        """Fetch history of transfers initiated by this account.
-            Private call requires authorization.
+        """Fetch history of transfers initiated by this account.<br>
+            Private call requires authorization.<br>
+            See [List Account's transfers](https://docs.api.prod.paradex.trade/?shell#list-account-39-s-transfers-i-e-deposits-and-withdrawals)
+            for details.<br>
+
         Args:
-            params (dict): optional dictionary with additional parameters. Possible keys are:
-                status (str):   get only transfers with specific status. Valid values are:
-                                'PENDING', 'AVAILABLE', 'COMPLETED', 'FAILED'
-                cursor (str):    Returns the `next` paginated page.
-                start_at (int):  Start Time in unix time milliseconds.
-                end_at (int):    End Time in unix time milliseconds.
-                page_size (int): Limit the number of responses in the page.
+            params: dictionary with parameters. Valid keys:<br>
+                `status` (str): get only transfers with specific status. Valid values are:<br>
+                                'PENDING', 'AVAILABLE', 'COMPLETED', 'FAILED'.<br>
+                `cursor` (string):    Returns the `next` paginated page.<br>
+                `start_at` (int):     Start Time in unix time milliseconds.<br>
+                `end_at` (int):       End Time in unix time milliseconds.<br>
+                `page_size` (int):    Limit the number of responses in the page.<br>
+
         Returns:
-            Dict: with fields
-                next, prev - pagination tokens
-                results - a list of dictionaries, each dict representing a transfer.
+            dictionary with fields:<br>
+                `next`, `prev` - pagination tokens.<br>
+                `results` - a list of dictionaries, each dict representing a transfer.<br>
         """
         return self._get_authorized(path="transfers", params=params)
 
     def fetch_account_summary(self) -> AccountSummary:
-        """Fetch current summary for this account.
-            Private call requires authorization.
+        """Fetch current summary for this account.<br>
+            Private call requires authorization.<br>
+            See [Get account information](https://docs.api.prod.paradex.trade/?shell#get-account-information)
+            for details.<br>
 
         Returns:
-            AccountSummary: object with fields representing account summary.
+            object with fields representing account summary.<br>
         """
         res = self._get_authorized(path="account")
         return AccountSummarySchema().load(res)
 
     def fetch_account_profile(self) -> Dict[Any, Any]:
-        """Fetch profile for this account.
-            Private call requires authorization.
+        """Fetch profile for this account.<br>
+            Private call requires authorization.<br>
+            See [Get account profile information](https://docs.api.prod.paradex.trade/?shell#get-account-profile-information)
+            for details.<br>
 
         Returns:
-            dictionary with fields representing account profile.
+            dictionary with fields representing account profile.<br>
         """
         return self._get_authorized(path="account/profile")
 
     def fetch_balances(self) -> Dict[Any, Any]:
-        """Fetch all coin balances for this account.
-            Private call requires authorization.
+        """Fetch all coin balances for this account.<br>
+            Private call requires authorization.<br>
+            See [List balances](https://docs.api.prod.paradex.trade/?shell#list-balances) for details.<br>
 
         Returns:
-            Dict: with fields
-                next, prev - pagination tokens
-                results - a list of dictionaries, each dict representing a balance in specific coin.
+            dictionary with fields:<br>
+                `next`, `prev` - pagination tokens.<br>
+                `results` - a list of dictionaries, each dict representing a balance in specific coin.<br>
         """
         return self._get_authorized(path="balance")
 
     def fetch_positions(self) -> Dict[Any, Any]:
-        """Fetch all derivatives positions for this account
-            Private call requires authorization.
+        """Fetch all derivatives positions for this account.<br>
+            Private call requires authorization.<br>
+            See [List open positions](https://docs.api.prod.paradex.trade/?shell#list-open-positions) for details.<br>
 
         Returns:
-            Dict: with fields
-                next, prev - pagination tokens
-                results - a list of dictionaries, each dict representing a position.
+            dictionary with fields:<br>
+                `next`, `prev` - pagination tokens.<br>
+                `results` - a list of dictionaries, each dict representing a position.<br>
         """
         return self._get_authorized(path="positions")
 
     def fetch_points_program(self, market: str, program: str) -> Dict[Any, Any]:
-        """Fetch points program for specific market
-            Private call requires authorization.
+        """Fetch points program for specific market.<br>
+            Private call requires authorization.<br>
+            See [List latest points data](https://docs.api.prod.paradex.trade/?shell#list-latest-points-data) for details.<br>
 
         Args:
-            market (str): MANDATORY. instrument symbol.
-            program (str): MANDATORY. program name 'LiquidityProvider' or 'Trader'.
+            market: instrument symbol.
+            program: program name, can be 'LiquidityProvider' or 'Trader'.
+
         Returns:
-            Dict: with fields
-                results - a list of dictionaries, each dict representing a points program for specific market.
+            dictionary with fields:<br>
+                `results` - a list of dictionaries, each dict representing a points program for specific market.<br>
         """
         return self._get_authorized(path=f"points_data/{market}/{program}")
 
     # PUBLIC GET METHODS
     def fetch_system_state(self) -> Dict[Any, Any]:
-        """Fetch Paradex system status
-            Public call, no authorization required.
+        """Fetch Paradex system status.<br>
+            Public call, no authorization required.<br>
+            See [Get system state](https://docs.api.prod.paradex.trade/?shell#get-system-state)
+            for details.<br>
 
         Returns:
-            Dict: dictionary with field 'status' representing a status of Paradex system
+            dictionary with fields:<br>
+                `status` representing a status of Paradex system.<br>
         """
         return self._get(path="system/state")
 
     def fetch_system_time(self) -> Dict[Any, Any]:
-        """Fetch Paradex system time
-            Public call, no authorization required.
+        """Fetch Paradex system time.<br>
+            Public call, no authorization required.<br>
+            See [Get system time (unix milliseconds)](https://docs.api.prod.paradex.trade/?shell#get-system-time-unix-milliseconds)
+            for details.<br>
 
         Returns:
-            Dict: dictionary with a field 'server_time' holding Paradex system time
-                    in milliseconds since epoch, GMT timezone.
+            dictionary with fields:<br>
+                `server_time` holding Paradex system time in milliseconds since epoch, GMT timezone.<br>
         """
         return self._get(path="system/time")
 
     def fetch_markets(self, params: Optional[Dict] = None) -> Dict[Any, Any]:
-        """Fetch all markets information
-            Public call, no authorization required.
+        """Fetch all markets information.<br>
+            Public call, no authorization required.<br>
+            See [List available markets](https://docs.api.prod.paradex.trade/?shell#list-available-markets)
+            for details.<br>
+
         Args:
-            params (dict): optional dictionary with additional parameters. Possible keys are:
-                market (str): instrument symbol.
+            params: dictionary with parameters. Valid keys:<br>
+                `market` (str): instrument symbol.
+
         Returns:
-            Dict: with fields
-                results - a list of dictionaries, each dict representing a market
+            dictionary with fields:<br>
+                `results` - a list of dictionaries, each dict representing a market.<br>
         """
         return self._get(path="markets", params=params)
 
     def fetch_markets_summary(self, params: Optional[Dict] = None) -> Dict[Any, Any]:
-        """Fetch ticker information for specific market
-            Public call, no authorization required.
+        """Fetch ticker information for specific market.<br>
+            Public call, no authorization required.<br>
+            See [List available markets summary](https://docs.api.prod.paradex.trade/?shell#list-available-markets-summary)
+            for details.<br>
 
         Args:
-            params (dict): optional dictionary with additional parameters. Possible keys are:
-                market (str): instrument symbol. If 'ALL' then fetch latest tickers for all markets.
-                start (int): when market <> 'ALL' - start time in milliseconds since epoch.
-                end (int): when market <> 'ALL' - end time in milliseconds since epoch.
+            params: dictionary with parameters. Valid keys:<br>
+                `market` (str): instrument symbol. If 'ALL' then fetch latest tickers for all markets.<br>
+                `start` (int): when market <> 'ALL' - start time in milliseconds since epoch.<br>
+                `end` (int): when market <> 'ALL' - end time in milliseconds since epoch.<br>
+
         Returns:
-            Dict: with fields
-                results - a list of dictionaries, each dict representing a ticker for specific market and timestamp.
+            dictionary with fields:<br>
+                `results` - a list of dictionaries, each dict representing a ticker for specific market and timestamp.<br>
         """
         return self._get(path="markets/summary", params=params)
 
     def fetch_orderbook(self, market: str, params: Optional[Dict] = None) -> Dict[Any, Any]:
-        """Fetch order-book for specific market
-            Public call, no authorization required.
+        """Fetch order book for specific market.<br>
+            Public call, no authorization required.<br>
+            See [Get market orderbook](https://docs.api.prod.paradex.trade/?shell#get-market-orderbook)
+            for details.<br>
 
         Args:
-            market (str): MANDATORY. instrument symbol.
-            params (dict): optional dictionary with additional parameters. Possible keys are:
-                depth (int): Depth of the order book. Default is 20.
+            market: instrument symbol.
+            params: dictionary with additional parameters. Valid keys:<br>
+                `depth` (int): Depth of the order book. Default is 20.<br>
+
         Returns:
-            Dict: dictionary representing a full order book depth for specific market
+            dictionary representing a full order book depth for specific market.<br>
         """
         return self._get(path=f"orderbook/{market}", params=params)
 
     def fetch_bbo(self, market: str) -> Dict[Any, Any]:
-        """Fetch best bid/offer for specific market
-            Public call, no authorization required.
+        """Fetch best bid/offer for specific market.<br>
+            Public call, no authorization required.<br>
+            See [Get market bbo](https://docs.api.prod.paradex.trade/?shell#get-market-bbo)
+            for details.<br>
 
         Args:
-            market (str): MANDATORY. instrument symbol.
+            market: instrument symbol.<br>
+
         Returns:
-            Dict: dictionary representing best bid/offer for specific market
+            dictionary representing best bid/offer for specific market.<br>
         """
         return self._get(path=f"bbo/{market}")
 
     def fetch_insurance_fund(self) -> Dict[Any, Any]:
-        """Fetch insurance fund information
-            Public call, no authorization required.
+        """Fetch insurance fund information.<br>
+            Public call, no authorization required.<br>
+            See [Get insurance fund account information](https://docs.api.prod.paradex.trade/?shell#get-insurance-fund-account-information)
+            for details.<br>
 
         Returns:
-            Dict: dictionary representing a state of Paradex Insurance Fund
+            dictionary representing a state of Paradex Insurance Fund.<br>
         """
         return self._get(path="insurance")
 
-    def fetch_liquidations(self, params: Optional[Dict]) -> Dict[Any, Any]:
-        """Fetch hisotry of liquidations for this account.
-            Private call requires authorization.
+    def fetch_liquidations(self, params: Optional[Dict] = None) -> Dict[Any, Any]:
+        """Fetch history of liquidations for this account.<br>
+            Private call requires authorization.<br>
+            See [List liquidations](https://docs.api.prod.paradex.trade/?shell#list-liquidations) for details.<br>
 
         Args:
-            params (dict): optional dictionary with additional parameters. Possible keys are:
-                start (int): start time in milliseconds since epoch.
-                end (int): end time in milliseconds since epoch.
+            params: dictionary with parameters. Valid keys:<br>
+                `start` (int): start time in milliseconds since epoch.<br>
+                `end` (int): end time in milliseconds since epoch.<br>
+
         Returns:
-            Dict: with fields
-                results - a list of dictionaries, each dict representing a liquidation event.
+            dictionary with fields:<br>
+                `results` - a list of dictionaries, each dict representing a liquidation event.<br>
         """
         return self._get(path="liquidations")
 
     @validate_market
     def fetch_trades(self, params: Dict) -> Dict[Any, Any]:
-        """Fetch Paradex exchange trades for specific market
-            Public call, no authorization required.
+        """Fetch Paradex exchange trades for specific market.<br>
+            Public call, no authorization required.<br>
+            See [Trade tape](https://docs.api.prod.paradex.trade/?shell#trade-tape)
+            for details.<br>
 
         Args:
-            params (dict): MANDATORY dictionary with additional parameters. Possible keys are:
-                market (str): MANDATORY, instrument's symbol.
+            params: dictionary with parameters. Valid keys:<br>
+                `market` (str): MANDATORY, instrument's symbol.<br>
+
         Returns:
-            Dict: with fields
-                next, prev - pagination tokens
-                results - a list of dictionaries, each dict representing a trade.
+            dictionary with fields:<br>
+                `next`, `prev` - pagination tokens.<br>
+                `results` - a list of dictionaries, each dict representing a trade.<br>
         """
         return self._get(path="trades", params=params)
 
     # order helper functions
     def submit_order(self, order: Order) -> Dict[Any, Any]:
-        """Send order to Paradex
-            Private call requires authorization.
+        """Send order to Paradex.<br>
+            Private call requires authorization.<br>
+            See [Create order](https://docs.api.prod.paradex.trade/?shell#create-order)
+            for details.<br>
 
         Args:
-            order (Order): Order object
+            order : Order object.<br>
+
         Returns:
-            Dict: dictionary representing a response from Paradex API
+            dictionary representing a response from Paradex API.<br>
         """
         order.signature = self.account.sign_order(order)
         order_payload = order.dump_to_dict()
         return self._post_authorized(path="orders", payload=order_payload)
 
     def cancel_order(self, order_id: str) -> None:
-        """Cancel open order previously sent to Paradex from this account.
-            Private call requires authorization.
+        """Cancel open order previously sent to Paradex from this account.<br>
+            Private call requires authorization.<br>
+            See [Cancel order](https://docs.api.prod.paradex.trade/?shell#cancel-order) for details.<br>
 
         Args:
-            order_id (str): Order id as assigned by Paradex.
+            order_id: Order id as assigned by Paradex.<br>
+
         Returns:
             None
         """
         self._delete_authorized(path=f"orders/{order_id}")
 
     def cancel_order_by_client_id(self, client_id: str) -> None:
-        """Cancel open order previously sent to Paradex from this account.
-            Private call requires authorization.
+        """Cancel open order previously sent to Paradex from this account.<br>
+            Private call requires authorization.<br>
+            See [Cancel open order by client order id](https://docs.api.prod.paradex.trade/?shell#cancel-open-order-by-client-order-id)
+            for details.<br>
 
         Args:
-            client_id (str): Order id as assigned by a trader.
+            client_id: Order id as assigned by a trader.<br>
+
         Returns:
             None
         """
         self._delete_authorized(path=f"orders/by_client_id/{client_id}")
 
     def cancel_all_orders(self, params: Optional[Dict] = None) -> None:
-        """Cancel all open orders for specific market or for all markets.
-            Private call requires authorization.
+        """Cancel all open orders for specific market or for all markets.<br>
+            Private call requires authorization.<br>
+            See [Cancel all open orders](https://docs.api.prod.paradex.trade/?shell#cancel-all-open-orders)
+            for details.<br>
 
         Args:
-            params (dict): dictionary with additional parameters. Possible keys are:
-                market (str): instrument's symbol.
+            params: dictionary with parameters. Valid keys:<br>
+                `market` (str): instrument's symbol.<br>
+
         Returns:
             None
         """
