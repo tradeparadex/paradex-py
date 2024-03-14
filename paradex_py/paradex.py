@@ -23,9 +23,6 @@ class Paradex:
         >>> paradex = Paradex(env=Environment.TESTNET)
     """
 
-    # Required for mypy to recognize the type of account
-    account: Optional[ParadexAccount] = None
-
     def __init__(
         self,
         env: Environment,
@@ -42,6 +39,7 @@ class Paradex:
         self.api_client = ParadexApiClient(env=env, logger=logger)
         self.ws_client = ParadexWebsocketClient(env=env, logger=logger)
         self.config = self.api_client.load_system_config()
+        self.account: Optional[ParadexAccount] = None
         self.logger.info(f"Paradex: SystemConfig:{self.config}")
 
         # Initialize account if private key is provided

@@ -5,7 +5,6 @@ from decimal import Decimal
 
 from starknet_py.common import int_from_hex
 
-from examples.shared import logger
 from paradex_py import Paradex
 from paradex_py.common.order import Order, OrderSide, OrderType
 from paradex_py.environment import TESTNET
@@ -13,7 +12,18 @@ from paradex_py.environment import TESTNET
 # Environment variables
 TEST_L1_ADDRESS = os.getenv("L1_ADDRESS", "")
 TEST_L1_PRIVATE_KEY = int_from_hex(os.getenv("L1_PRIVATE_KEY", ""))
+LOG_FILE = os.getenv("LOG_FILE", "FALSE").lower() == "true"
 
+if LOG_FILE:
+    from paradex_py.common.file_logging import file_logger
+
+    logger = file_logger
+    logger.info("Using file logger")
+else:
+    from paradex_py.common.console_logging import console_logger
+
+    logger = console_logger
+    logger.info("Using console logger")
 
 # Test Public API calls
 public_paradex = Paradex(env=TESTNET, logger=logger)
