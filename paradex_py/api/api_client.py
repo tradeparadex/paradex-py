@@ -237,6 +237,24 @@ class ParadexApiClient(HttpClient):
         """
         return self._get_authorized(path="transactions", params=params)
 
+    def fetch_transfers(self, params: Optional[Dict] = None) -> Dict[Any, Any]:
+        """Fetch history of transfers initiated by this account.
+            Private call requires authorization.
+        Args:
+            params (dict): optional dictionary with additional parameters. Possible keys are:
+                status (str):   get only transfers with specific status. Valid values are:
+                                'PENDING', 'AVAILABLE', 'COMPLETED', 'FAILED'
+                cursor (str):    Returns the `next` paginated page.
+                start_at (int):  Start Time in unix time milliseconds.
+                end_at (int):    End Time in unix time milliseconds.
+                page_size (int): Limit the number of responses in the page.
+        Returns:
+            Dict: with fields
+                next, prev - pagination tokens
+                results - a list of dictionaries, each dict representing a transfer.
+        """
+        return self._get_authorized(path="transfers", params=params)
+
     def fetch_account_summary(self) -> AccountSummary:
         """Fetch current summary for this account.
             Private call requires authorization.
@@ -278,7 +296,39 @@ class ParadexApiClient(HttpClient):
         """
         return self._get_authorized(path="positions")
 
+    def fetch_points_program(self, market: str, program: str) -> Dict[Any, Any]:
+        """Fetch points program for specific market
+            Private call requires authorization.
+
+        Args:
+            market (str): MANDATORY. instrument symbol.
+            program (str): MANDATORY. program name 'LiquidityProvider' or 'Trader'.
+        Returns:
+            Dict: with fields
+                results - a list of dictionaries, each dict representing a points program for specific market.
+        """
+        return self._get_authorized(path=f"points_data/{market}/{program}")
+
     # PUBLIC GET METHODS
+    def fetch_system_state(self) -> Dict[Any, Any]:
+        """Fetch Paradex system status
+            Public call, no authorization required.
+
+        Returns:
+            Dict: dictionary with field 'status' representing a status of Paradex system
+        """
+        return self._get(path="system/state")
+
+    def fetch_system_time(self) -> Dict[Any, Any]:
+        """Fetch Paradex system time
+            Public call, no authorization required.
+
+        Returns:
+            Dict: dictionary with a field 'server_time' holding Paradex system time
+                    in milliseconds since epoch, GMT timezone.
+        """
+        return self._get(path="system/time")
+
     def fetch_markets(self, params: Optional[Dict] = None) -> Dict[Any, Any]:
         """Fetch all markets information
             Public call, no authorization required.

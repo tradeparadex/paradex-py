@@ -26,7 +26,12 @@ else:
     logger.info("Using console logger")
 
 # Test Public API calls
+
 public_paradex = Paradex(env=TESTNET, logger=logger)
+system_state = public_paradex.api_client.fetch_system_state()
+logger.info(f"{system_state=}")
+system_time = public_paradex.api_client.fetch_system_time()
+logger.info(f"{system_time=}")
 insurance_fund = public_paradex.api_client.fetch_insurance_fund()
 logger.info(f"{insurance_fund=}")
 markets = public_paradex.api_client.fetch_markets()
@@ -70,6 +75,19 @@ tradebusts = paradex.api_client.fetch_tradebusts()
 logger.info(f"{tradebusts=}")
 hist_orders = paradex.api_client.fetch_orders_history(params={"page_size": 5})
 logger.info(f"{hist_orders=}")
+points_program = paradex.api_client.fetch_points_program(
+    market="ETH-USD-PERP",
+    program="Trader",
+)
+logger.info(f"Trader {points_program=}")
+points_program = paradex.api_client.fetch_points_program(
+    market="ETH-USD-PERP",
+    program="LiquidityProvider",
+)
+logger.info(f"LiquidityProvider {points_program=}")
+transfers = paradex.api_client.fetch_transfers(params={"page_size": 5})
+logger.info(f"{transfers=}")
+# Per market
 for market in markets["results"]:
     if not int(market.get("position_limit")):
         continue
