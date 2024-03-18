@@ -26,21 +26,28 @@ else:
     logger.info("Using console logger")
 
 # Test Public API calls
+
 public_paradex = Paradex(env=TESTNET, logger=logger)
+system_state = public_paradex.api_client.fetch_system_state()
+logger.info(f"{system_state=}")
+system_time = public_paradex.api_client.fetch_system_time()
+logger.info(f"{system_time=}")
 insurance_fund = public_paradex.api_client.fetch_insurance_fund()
-logger.info(f"Insurance Fund: {insurance_fund}")
+logger.info(f"{insurance_fund=}")
 markets = public_paradex.api_client.fetch_markets()
-logger.info(f"Markets: {markets}")
-for market in markets:
+logger.info(f"{markets=}")
+for market in markets["results"]:
     if not int(market.get("position_limit")):
         continue
     symbol = market["symbol"]
-    mkt_summary = public_paradex.api_client.fetch_markets_summary(market=symbol)
-    logger.info(f"Market Summary: {mkt_summary}")
-    ob = public_paradex.api_client.fetch_orderbook(market=symbol)
-    logger.info(f"OB: {ob}")
-    trades = public_paradex.api_client.fetch_trades(market=symbol)
-    logger.info(f"Trades: {trades[:(min(5, len(trades)))]}")
+    mkt_summary = public_paradex.api_client.fetch_markets_summary({"market": symbol})
+    logger.info(f"{mkt_summary=}")
+    ob = public_paradex.api_client.fetch_orderbook(market=symbol, params={"depth": 5})
+    logger.info(f"{ob}=")
+    bbo = public_paradex.api_client.fetch_bbo(market=symbol)
+    logger.info(f"{bbo=}")
+    trades = public_paradex.api_client.fetch_trades({"market": symbol, "page_size": 5})
+    logger.info(f"{trades=}")
 
 
 # Test Private API calls
@@ -52,41 +59,65 @@ paradex = Paradex(
 )
 
 account_summary = paradex.api_client.fetch_account_summary()
-logger.info(f"Account Summary: {account_summary}")
-balances = paradex.api_client.fetch_balances()
-logger.info(f"Balances: {balances}")
-positions = paradex.api_client.fetch_positions()
-logger.info(f"Positions: {positions}")
-transactions = paradex.api_client.fetch_transactions()
-logger.info(f"Transactions: {transactions}")
+logger.info(f"{account_summary=}")
+account_profile = paradex.api_client.fetch_account_profile()
+logger.info(f"{account_profile=}")
 
-for market in markets:
+balances = paradex.api_client.fetch_balances()
+logger.info(f"{balances=}")
+positions = paradex.api_client.fetch_positions()
+logger.info(f"{positions=}")
+transactions = paradex.api_client.fetch_transactions(params={"page_size": 5})
+logger.info(f"{transactions=}")
+fills = paradex.api_client.fetch_fills(params={"page_size": 5})
+logger.info(f"{fills=}")
+tradebusts = paradex.api_client.fetch_tradebusts()
+logger.info(f"{tradebusts=}")
+hist_orders = paradex.api_client.fetch_orders_history(params={"page_size": 5})
+logger.info(f"{hist_orders=}")
+points_program = paradex.api_client.fetch_points_data(
+    market="ETH-USD-PERP",
+    program="Trader",
+)
+logger.info(f"Trader {points_program=}")
+points_program = paradex.api_client.fetch_points_data(
+    market="ETH-USD-PERP",
+    program="LiquidityProvider",
+)
+logger.info(f"LiquidityProvider {points_program=}")
+transfers = paradex.api_client.fetch_transfers(params={"page_size": 5})
+logger.info(f"{transfers=}")
+# Per market
+for market in markets["results"]:
     if not int(market.get("position_limit")):
         continue
     symbol = market["symbol"]
-    orders = paradex.api_client.fetch_orders(market=symbol)
-    logger.info(f"{symbol} Orders: {orders}")
-    # hist_orders = paradex.api_client.fetch_orders_history(market=symbol)
-    # logger.info(f"{symbol} History Orders: {hist_orders}")
-    fills = paradex.api_client.fetch_fills(market=symbol)
-    logger.info(f"{symbol} Fills:{fills[:(min(5, len(fills)))]}")
-    funding_payments = paradex.api_client.fetch_funding_payments(market=symbol)
-    logger.info(f"{symbol} Funding Payments: {funding_payments}")
+    orders = paradex.api_client.fetch_orders(params={"market": symbol})
+    logger.info(f"{symbol=} {orders=}")
+    fills = paradex.api_client.fetch_fills(params={"market": symbol, "page_size": 5})
+    logger.info(f"{symbol=} {fills=}")
+    funding_payments = paradex.api_client.fetch_funding_payments()
+    logger.info(f"{symbol=} {funding_payments=}")
+
 
 # Create Order object and submit order
 buy_client_id = f"test_buy_{datetime.now().strftime('%Y%m%d%H%M%S')}"
 buy_order = Order(
-    market="ETH-USD-PERP",
+    market="BTC-USD-PERP",
     order_type=OrderType.Limit,
     order_side=OrderSide.Buy,
-    size=Decimal("0.1"),
-    limit_price=Decimal(1_500),
+    size=Decimal("0.01"),
+    limit_price=Decimal(11_500),
     client_id=buy_client_id,
+    instruction="POST_ONLY",
+    reduce_only=False,
 )
 response = paradex.api_client.submit_order(order=buy_order)
 buy_id = response.get("id")
-logger.info(f"Buy Order Response: {response}")
-
+logger.info(f"Buy Order {response=}")
+buy_order_status = paradex.api_client.fetch_order_by_client_id(client_id=buy_client_id)
+logger.info(f"{buy_order_status=}")
+# Sell order
 sell_client_id = f"test_sell_{datetime.now().strftime('%Y%m%d%H%M%S')}"
 sell_order = Order(
     market="ETH-USD-PERP",
@@ -99,17 +130,19 @@ sell_order = Order(
     reduce_only=False,
 )
 response = paradex.api_client.submit_order(order=sell_order)
-logger.info(f"Sell Order Response: {response}")
+logger.info(f"Sell Order {response=}")
 sell_id = response.get("id")
+sell_order_status = paradex.api_client.fetch_order(order_id=sell_id)
+logger.info(f"{sell_order_status=}")
 # Check all open orders
-orders = paradex.api_client.fetch_orders(market="")
-logger.info(f"ALL Orders: {orders}")
+orders = paradex.api_client.fetch_orders()
+logger.info(f"ALL {orders=}")
 logger.info("Sleeping for 10 seconds")
 time.sleep(10)
-# Cancel open orders
+# Cancel ETH open order
+paradex.api_client.cancel_all_orders({"market": "ETH-USD-PERP"})
+orders = paradex.api_client.fetch_orders()
+logger.info(f"After ETH-USD-PERP Cancel {orders=}")
 paradex.api_client.cancel_order(order_id=buy_id)
-orders = paradex.api_client.fetch_orders(market="ETH-USD-PERP")
-logger.info(f"After BUY Cancel Orders: {orders}")
-paradex.api_client.cancel_order_by_client_id(client_id=sell_client_id)
-orders = paradex.api_client.fetch_orders(market="ETH-USD-PERP")
-logger.info(f"After BUY/SELL Cancel Orders: {orders}")
+orders = paradex.api_client.fetch_orders()
+logger.info(f"After BUY Cancel {orders=}")
