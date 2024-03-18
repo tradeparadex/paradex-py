@@ -71,9 +71,11 @@ class HttpClient:
         self,
         api_url: str,
         path: str,
+        params: Optional[dict] = None,
     ) -> dict:
         return self.request(
             url=f"{api_url}/{path}",
             http_method=HttpMethod.DELETE,
+            params=params,
             headers=self.client.headers,
         )
