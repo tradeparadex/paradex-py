@@ -26,8 +26,8 @@ class CustomStarknetChainId(IntEnum):
 
 
 class ParadexAccount:
-    """ParadexAccount class to generate and manage Paradex account.
-    Initialized along with Paradex class.
+    """Class to generate and manage Paradex account.
+        Initialized along with `Paradex` class.
 
     Args:
         config (SystemConfig): SystemConfig

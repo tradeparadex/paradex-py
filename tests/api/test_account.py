@@ -12,7 +12,7 @@ TEST_L2_PUBLIC_KEY = int_from_hex("0x2c144d2f2d4fc61b6f8967f3ba0012a87d90140bcfe
 
 def test_account_l1_private_key():
     api_client = MockApiClient()
-    config = api_client.load_system_config()
+    config = api_client.fetch_system_config()
 
     account = ParadexAccount(
         config=config,
@@ -29,7 +29,7 @@ def test_account_l1_private_key():
 
 def test_account_l2_private_key():
     api_client = MockApiClient()
-    config = api_client.load_system_config()
+    config = api_client.fetch_system_config()
 
     account = ParadexAccount(
         config=config,
@@ -46,7 +46,7 @@ def test_account_l2_private_key():
 
 def test_account_onboarding_signature():
     api_client = MockApiClient()
-    config = api_client.load_system_config()
+    config = api_client.fetch_system_config()
 
     account = ParadexAccount(
         config=config,
@@ -63,7 +63,7 @@ def test_account_onboarding_signature():
 
 def test_account_auth_signature():
     api_client = MockApiClient()
-    config = api_client.load_system_config()
+    config = api_client.fetch_system_config()
 
     account = ParadexAccount(
         config=config,

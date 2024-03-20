@@ -6,7 +6,7 @@ hide:
 # Paradex Python SDK
 
 !!! warning
-    Experimental SDK, library API is subject to change
+    **Experimental SDK, library API is subject to change**
 
 ::: paradex_py.paradex.Paradex
     handler: python
@@ -14,7 +14,7 @@ hide:
       show_source: false
       show_root_heading: true
 
-## Documentation Links
+## API Documentation Links
 
 Full details for REST API & WebSocket JSON-RPC API can be found at the following links:
 

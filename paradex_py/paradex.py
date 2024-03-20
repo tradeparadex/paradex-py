@@ -38,9 +38,8 @@ class Paradex:
         # Load api client and system config
         self.api_client = ParadexApiClient(env=env, logger=logger)
         self.ws_client = ParadexWebsocketClient(env=env, logger=logger)
-        self.config = self.api_client.load_system_config()
+        self.config = self.api_client.fetch_system_config()
         self.account: Optional[ParadexAccount] = None
-        self.logger.info(f"Paradex: SystemConfig:{self.config}")
 
         # Initialize account if private key is provided
         if l1_address and (l2_private_key is not None or l1_private_key is not None):
@@ -57,7 +56,7 @@ class Paradex:
         l2_private_key: Optional[str] = None,
     ):
         """Initialize paradex account with l1 or l2 private keys.
-        Cannot be called if account is already initialized
+        Cannot be called if account is already initialized.
 
         Args:
             l1_address (str): L1 address
