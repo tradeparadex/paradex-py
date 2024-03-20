@@ -29,5 +29,5 @@ MOCK_CONFIG = {
 
 
 class MockApiClient:
-    def load_system_config(self) -> SystemConfig:
+    def fetch_system_config(self) -> SystemConfig:
         return SystemConfigSchema().load(MOCK_CONFIG)

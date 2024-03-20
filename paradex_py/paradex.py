@@ -38,7 +38,7 @@ class Paradex:
         # Load api client and system config
         self.api_client = ParadexApiClient(env=env, logger=logger)
         self.ws_client = ParadexWebsocketClient(env=env, logger=logger)
-        self.config = self.api_client.load_system_config()
+        self.config = self.api_client.fetch_system_config()
         self.account: Optional[ParadexAccount] = None
 
         # Initialize account if private key is provided

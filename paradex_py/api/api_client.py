@@ -38,16 +38,6 @@ class ParadexApiClient(HttpClient):
     async def __aexit__(self):
         await self.client.close()
 
-    def load_system_config(self) -> SystemConfig:
-        res = self.request(
-            url=f"{self.api_url}/system/config",
-            http_method=HttpMethod.GET,
-        )
-        self.logger.info(f"{self.classname}: /system/config:{res}")
-        config = SystemConfigSchema().load(res)
-        self.logger.info(f"{self.classname}: SystemConfig:{config}")
-        return config
-
     def init_account(self, account: ParadexAccount):
         self.account = account
         self.onboarding()
@@ -358,6 +348,22 @@ class ParadexApiClient(HttpClient):
         self._delete_authorized(path="orders", params=params)
 
     # PUBLIC GET METHODS
+    def fetch_system_config(self) -> SystemConfig:
+        """Fetch Paradex system config.
+
+        Examples:
+            >>> paradex.api_client.fetch_system_config()
+            >>> { ..., "paraclear_decimals": 8, ... }
+        """
+
+        res = self.request(
+            url=f"{self.api_url}/system/config",
+            http_method=HttpMethod.GET,
+        )
+        config = SystemConfigSchema().load(res)
+        self.logger.info(f"{self.classname}: SystemConfig:{config}")
+        return config
+
     def fetch_system_state(self) -> Dict:
         """Fetch Paradex system status.
 
