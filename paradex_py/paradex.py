@@ -40,7 +40,6 @@ class Paradex:
         self.ws_client = ParadexWebsocketClient(env=env, logger=logger)
         self.config = self.api_client.load_system_config()
         self.account: Optional[ParadexAccount] = None
-        self.logger.info(f"Paradex: SystemConfig:{self.config}")
 
         # Initialize account if private key is provided
         if l1_address and (l2_private_key is not None or l1_private_key is not None):

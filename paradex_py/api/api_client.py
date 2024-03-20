@@ -24,6 +24,8 @@ class ParadexApiClient(HttpClient):
         >>> paradex.api_client.fetch_system_state()
     """
 
+    classname: str = "ParadexApiClient"
+
     def __init__(
         self,
         env: Environment,
@@ -42,9 +44,9 @@ class ParadexApiClient(HttpClient):
             url=f"{self.api_url}/system/config",
             http_method=HttpMethod.GET,
         )
-        self.logger.info(f"ParadexApiClient: /system/config:{res}")
+        self.logger.info(f"{self.classname}: /system/config:{res}")
         config = SystemConfigSchema().load(res)
-        self.logger.info(f"ParadexApiClient: SystemConfig:{config}")
+        self.logger.info(f"{self.classname}: SystemConfig:{config}")
         return config
 
     def init_account(self, account: ParadexAccount):
@@ -64,11 +66,11 @@ class ParadexApiClient(HttpClient):
         self.auth_timestamp = time.time()
         self.account.set_jwt_token(data.jwt_token)
         self.client.headers.update({"Authorization": f"Bearer {data.jwt_token}"})
-        self.logger.info(f"ParadexApiClient: JWT:{data.jwt_token}")
+        self.logger.info(f"{self.classname}: JWT:{data.jwt_token}")
 
     def _validate_auth(self):
         if self.account is None:
-            raise ValueError("ParadexApiClient: Account not found")
+            raise ValueError("{self.classname}: Account not found")
         # Refresh JWT if it's older than 4 minutes
         if time.time() - self.auth_timestamp > 4 * 60:
             self.auth(headers=self.account.auth_headers())
@@ -316,7 +318,7 @@ class ParadexApiClient(HttpClient):
             results (list): List of Trades
         """
         if "market" not in params:
-            raise ValueError("ParadexApiClient: Market is required to fetch trades")
+            raise ValueError(f"{self.classname}: Market is required to fetch trades")
         return self._get(path="trades", params=params)
 
     def submit_order(self, order: Order) -> Dict:
