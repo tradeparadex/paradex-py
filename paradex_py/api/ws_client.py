@@ -101,6 +101,18 @@ class ParadexWebsocketClient:
         self.account = account
 
     async def connect(self) -> bool:
+        """Connect to Paradex WebSocket API.
+
+        Returns:
+            bool: True if connection is successful.
+
+        Examples:
+            >>> from paradex_py import Paradex
+            >>> from paradex_py.environment import Environment
+            >>> paradex = Paradex(env=Environment.TESTNET)
+            >>> await paradex.ws_client.connect()
+        """
+
         try:
             self.subscribed_channels = {}
             extra_headers = {}
@@ -237,10 +249,23 @@ class ParadexWebsocketClient:
         callback: Callable,
         params: Optional[dict] = None,
     ) -> None:
-        """Subscribe to a ParadexWebsocketChannel with optional parameters.
-        Call the callback function when a message is received.
-        callback function should have the following signature:
-        (ParadexWebsocketChannel, dict) -> None
+        """Subscribe to a websocket channel with optional parameters.
+            Callback function is invoked when a message is received.
+
+        Args:
+            channel (ParadexWebsocketChannel): Channel to subscribe
+            callback (Callable): Callback function
+            params (Optional[dict], optional): Parameters for the channel. Defaults to None.
+
+        Examples:
+            >>> from paradex_py import Paradex
+            >>> from paradex_py.environment import Environment
+            >>> from paradex_py.api.ws_client import ParadexWebsocketChannel, ParadexWebsocketClient
+            >>> async def on_message(ws_channel, message):
+            >>>     print(ws_channel, message)
+            >>> paradex = Paradex(env=Environment.TESTNET)
+            >>> await paradex.ws_client.connect()
+            >>> await paradex.ws_client.subscribe(ParadexWebsocketChannel.MARKETS_SUMMARY, callback=on_message)
         """
         if params is None:
             params = {}
