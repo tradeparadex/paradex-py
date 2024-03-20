@@ -14,7 +14,7 @@ from paradex_py.environment import Environment
 
 
 class ParadexWebsocketChannel(Enum):
-    """ParadexWebsocketChannel Enum class to define the channels for Paradex WS API.
+    """Enum class to define the channels for Paradex Websocket API.
 
     Attributes:
         ACCOUNT (str): Account channel
@@ -65,8 +65,8 @@ def _get_ws_channel_from_name(message_channel: str) -> Optional[ParadexWebsocket
 
 
 class ParadexWebsocketClient:
-    """ParadexWebsocketChannel class to interact with Paradex WS API.
-    Initialized along with Paradex class.
+    """Class to interact with Paradex WebSocket JSON-RPC API.
+        Initialized along with `Paradex` class.
 
     Args:
         env (Environment): Environment

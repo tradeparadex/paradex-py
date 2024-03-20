@@ -10,8 +10,8 @@ from paradex_py.environment import Environment
 
 
 class ParadexApiClient(HttpClient):
-    """ParadexApiClient class to interact with Paradex API.
-    Initialized along with Paradex class.
+    """Class to interact with Paradex REST API.
+        Initialized along with `Paradex` class.
 
     Args:
         env (Environment): Environment
@@ -21,7 +21,6 @@ class ParadexApiClient(HttpClient):
         >>> from paradex_py import Paradex
         >>> from paradex_py.environment import Environment
         >>> paradex = Paradex(env=Environment.TESTNET)
-        >>> paradex.api_client.fetch_system_state()
     """
 
     classname: str = "ParadexApiClient"
@@ -99,7 +98,7 @@ class ParadexApiClient(HttpClient):
     # PRIVATE GET METHODS
     def fetch_orders(self, params: Optional[Dict] = None) -> Dict:
         """Fetch open orders for the account.
-            Private call requires authorization.
+            Private endpoint requires authorization.
 
         Args:
             params:
@@ -112,7 +111,7 @@ class ParadexApiClient(HttpClient):
 
     def fetch_orders_history(self, params: Optional[Dict] = None) -> Dict:
         """Fetch history of orders for the account.
-            Private call requires authorization.
+            Private endpoint requires authorization.
 
         Args:
             params:
@@ -135,7 +134,7 @@ class ParadexApiClient(HttpClient):
 
     def fetch_order(self, order_id: str) -> Dict:
         """Fetch a state of specific order sent from this account.
-            Private call requires authorization.
+            Private endpoint requires authorization.
 
         Args:
             order_id: order's id as assigned by Paradex.
@@ -144,7 +143,7 @@ class ParadexApiClient(HttpClient):
 
     def fetch_order_by_client_id(self, client_id: str) -> Dict:
         """Fetch a state of specific order sent from this account.
-            Private call requires authorization.
+            Private endpoint requires authorization.
 
         Args:
             client_id: order's client_id as assigned by a trader.
@@ -153,7 +152,7 @@ class ParadexApiClient(HttpClient):
 
     def fetch_fills(self, params: Optional[Dict] = None) -> Dict:
         """Fetch history of fills for this account.
-            Private call requires authorization.
+            Private endpoint requires authorization.
 
         Args:
             params:
@@ -172,7 +171,6 @@ class ParadexApiClient(HttpClient):
 
     def fetch_tradebusts(self, params: Optional[Dict] = None) -> Dict:
         """Fetch history of tradebusts for this account.
-            Public call, no authorization required.
 
         Args:
             params:
@@ -190,7 +188,7 @@ class ParadexApiClient(HttpClient):
 
     def fetch_funding_payments(self, params: Optional[Dict] = None) -> Dict:
         """Fetch history of funding payments for this account.
-            Private call requires authorization.
+            Private endpoint requires authorization.
 
         Args:
             params:
@@ -209,7 +207,7 @@ class ParadexApiClient(HttpClient):
 
     def fetch_transactions(self, params: Optional[Dict] = None) -> Dict:
         """Fetch history of transactions initiated by this account.
-            Private call requires authorization.
+            Private endpoint requires authorization.
 
         Args:
             params:
@@ -227,7 +225,7 @@ class ParadexApiClient(HttpClient):
 
     def fetch_transfers(self, params: Optional[Dict] = None) -> Dict:
         """Fetch history of transfers initiated by this account.
-            Private call requires authorization.
+            Private endpoint requires authorization.
 
         Args:
             params:
@@ -246,20 +244,20 @@ class ParadexApiClient(HttpClient):
 
     def fetch_account_summary(self) -> AccountSummary:
         """Fetch current summary for this account.
-        Private call requires authorization.
+        Private endpoint requires authorization.
         """
         res = self._get_authorized(path="account")
         return AccountSummarySchema().load(res)
 
     def fetch_account_profile(self) -> Dict:
         """Fetch profile for this account.
-        Private call requires authorization.
+        Private endpoint requires authorization.
         """
         return self._get_authorized(path="account/profile")
 
     def fetch_balances(self) -> Dict:
         """Fetch all coin balances for this account.
-            Private call requires authorization.
+            Private endpoint requires authorization.
 
         Returns:
             results (list): List of Balances
@@ -268,7 +266,7 @@ class ParadexApiClient(HttpClient):
 
     def fetch_positions(self) -> Dict:
         """Fetch all derivatives positions for this account.
-            Private call requires authorization.
+            Private endpoint requires authorization.
 
         Returns:
             next (str): The pointer to fetch next set of records (null if there are no records left)
@@ -279,7 +277,7 @@ class ParadexApiClient(HttpClient):
 
     def fetch_points_data(self, market: str, program: str) -> Dict:
         """Fetch points program data for specific market.
-            Private call requires authorization.
+            Private endpoint requires authorization.
 
         Args:
             market: Market Name
@@ -292,7 +290,7 @@ class ParadexApiClient(HttpClient):
 
     def fetch_liquidations(self, params: Optional[Dict] = None) -> Dict:
         """Fetch history of liquidations for this account.
-            Private call requires authorization.
+            Private endpoint requires authorization.
 
         Args:
             params:
@@ -305,8 +303,7 @@ class ParadexApiClient(HttpClient):
         return self._get(path="liquidations", params=params)
 
     def fetch_trades(self, params: Dict) -> Dict:
-        """Fetch Paradex exchange trades for specific market
-            Public call, no authorization required.
+        """Fetch Paradex exchange trades for specific market.
 
         Args:
             params:
@@ -322,8 +319,8 @@ class ParadexApiClient(HttpClient):
         return self._get(path="trades", params=params)
 
     def submit_order(self, order: Order) -> Dict:
-        """Send order to Paradex
-            Private call requires authorization.
+        """Send order to Paradex.
+            Private endpoint requires authorization.
 
         Args:
             order: Order containing all required fields.
@@ -334,7 +331,7 @@ class ParadexApiClient(HttpClient):
 
     def cancel_order(self, order_id: str) -> None:
         """Cancel open order previously sent to Paradex from this account.
-            Private call requires authorization.
+            Private endpoint requires authorization.
 
         Args:
             order_id: Order Id
@@ -343,7 +340,7 @@ class ParadexApiClient(HttpClient):
 
     def cancel_order_by_client_id(self, client_id: str) -> None:
         """Cancel open order previously sent to Paradex from this account.
-            Private call requires authorization.
+            Private endpoint requires authorization.
 
         Args:
             client_id: Order id as assigned by a trader.
@@ -352,7 +349,7 @@ class ParadexApiClient(HttpClient):
 
     def cancel_all_orders(self, params: Optional[Dict] = None) -> None:
         """Cancel all open orders for specific market or for all markets.
-            Private call requires authorization.
+            Private endpoint requires authorization.
 
         Args:
             params:
@@ -363,12 +360,19 @@ class ParadexApiClient(HttpClient):
     # PUBLIC GET METHODS
     def fetch_system_state(self) -> Dict:
         """Fetch Paradex system status.
-        Public call, no authorization required.
+
+        Examples:
+            >>> paradex.api_client.fetch_system_state()
+            >>> { "status": "ok" }
         """
         return self._get(path="system/state")
 
     def fetch_system_time(self) -> Dict:
         """Fetch Paradex system time.
+
+        Examples:
+            >>> paradex.api_client.fetch_system_time()
+            >>> { "server_time": "1710956478221" }
 
         Returns:
             server_time: Paradex Server time
@@ -377,7 +381,6 @@ class ParadexApiClient(HttpClient):
 
     def fetch_markets(self, params: Optional[Dict] = None) -> Dict:
         """Fetch all markets information.
-            Public call, no authorization required.
 
         Args:
             params:
@@ -389,8 +392,7 @@ class ParadexApiClient(HttpClient):
         return self._get(path="markets", params=params)
 
     def fetch_markets_summary(self, params: Optional[Dict] = None) -> Dict:
-        """Fetch ticker information for specific market
-            Public call, no authorization required.
+        """Fetch ticker information for specific market.
 
         Args:
             params:
@@ -404,8 +406,7 @@ class ParadexApiClient(HttpClient):
         return self._get(path="markets/summary", params=params)
 
     def fetch_orderbook(self, market: str, params: Optional[Dict] = None) -> Dict:
-        """Fetch order-book for specific market
-            Public call, no authorization required.
+        """Fetch order-book for specific market.
 
         Args:
             market: Market Name
@@ -415,7 +416,7 @@ class ParadexApiClient(HttpClient):
         return self._get(path=f"orderbook/{market}", params=params)
 
     def fetch_bbo(self, market: str) -> Dict:
-        """Fetch best bid/offer for specific market
+        """Fetch best bid/offer for specific market.
 
         Args:
             market: Market Name

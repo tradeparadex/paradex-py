@@ -56,7 +56,7 @@ class Paradex:
         l2_private_key: Optional[str] = None,
     ):
         """Initialize paradex account with l1 or l2 private keys.
-        Cannot be called if account is already initialized
+        Cannot be called if account is already initialized.
 
         Args:
             l1_address (str): L1 address
