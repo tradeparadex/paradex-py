@@ -8,6 +8,33 @@
 
 Paradex Python SDK provides a simple interface to interact with the Paradex REST and WS API.
 
+## Examples
+
+```python
+from paradex_py import Paradex
+from paradex_py.environment import Environment
+
+paradex = Paradex(env=Environment.TESTNET, l1_address="0x...", l1_private_key="0x...")
+print(paradex.account.l2_address) # 0x...
+print(paradex.account.l2_public_key) # 0x...
+print(paradex.account.l2_private_key) # 0x...
+
+paradex.api_client.fetch_system_config() # { ..., "paraclear_decimals": 8, ... }
+
+async def on_message(ws_channel, message):
+    print(ws_channel, message)
+
+await paradex.ws_client.connect()
+await paradex.ws_client.subscribe(ParadexWebsocketChannel.MARKETS_SUMMARY, callback=on_message)
+```
+
+📖 For complete documentation refer to [tradeparadex.github.io/paradex-py](https://tradeparadex.github.io/paradex-py/)
+
+💻 For comprehensive examples refer to following files:
+
+- API: [examples/call_rest_api.py](examples/call_rest_api.py)
+- WS: [examples/call_rest_api.py](examples/connect_ws_api.py)
+
 ## Development
 
 ```bash
