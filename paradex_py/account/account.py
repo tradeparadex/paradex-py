@@ -9,7 +9,7 @@ from starknet_py.net.full_node_client import FullNodeClient
 from starknet_py.net.signer.stark_curve_signer import KeyPair
 
 from paradex_py.account.starknet import Account as StarknetAccount
-from paradex_py.account.utils import derive_stark_key, flatten_signature
+from paradex_py.account.utils import derive_stark_key, derive_stark_key_from_ledger, flatten_signature
 from paradex_py.api.models import SystemConfig
 from paradex_py.common.order import Order
 from paradex_py.message.auth import build_auth_message
@@ -48,6 +48,7 @@ class ParadexAccount:
         self,
         config: SystemConfig,
         l1_address: str,
+        l1_private_key_from_ledger: Optional[bool] = False,
         l1_private_key: Optional[str] = None,
         l2_private_key: Optional[str] = None,
     ):
@@ -61,6 +62,9 @@ class ParadexAccount:
             self.l1_private_key = int_from_hex(l1_private_key)
             stark_key_msg = build_stark_key_message(int(config.l1_chain_id))
             self.l2_private_key = derive_stark_key(self.l1_private_key, stark_key_msg)
+        elif l1_private_key_from_ledger:
+            stark_key_msg = build_stark_key_message(int(config.l1_chain_id))
+            self.l2_private_key = derive_stark_key_from_ledger(l1_address, stark_key_msg)
         elif l2_private_key is not None:
             self.l2_private_key = int_from_hex(l2_private_key)
         else:

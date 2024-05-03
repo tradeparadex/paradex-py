@@ -2,7 +2,10 @@ import functools
 import hashlib
 from typing import List, Sequence
 
-from eth_account.messages import encode_typed_data
+from eth_account.messages import SignableMessage, encode_typed_data
+from ledgereth.accounts import find_account
+from ledgereth.comms import init_dongle
+from ledgereth.messages import sign_typed_data_draft
 from starknet_crypto_py import get_public_key as rs_get_public_key
 from starknet_crypto_py import pedersen_hash as rs_pedersen_hash
 from starknet_crypto_py import sign as rs_sign
@@ -46,6 +49,23 @@ def _sign_stark_key_message(stark_key_message, l1_private_key: int) -> str:
     return signed.signature.hex()
 
 
+def _sign_stark_key_message_ledger(message: SignableMessage, eth_account_address: str) -> str:
+    dongle = init_dongle()
+    account = find_account(eth_account_address, dongle, count=10)
+    if account is None:
+        raise ValueError(f"Account {eth_account_address} not found on Ledger")
+    # header/body is eth_account naming, presumably to be generic
+    domain_hash = message.header
+    message_hash = message.body
+    signed = sign_typed_data_draft(
+        domain_hash=domain_hash,
+        message_hash=message_hash,
+        sender_path=account.path,
+        dongle=dongle,
+    )
+    return signed.signature
+
+
 def _get_private_key_from_eth_signature(eth_signature_hex: str) -> int:
     r = eth_signature_hex[2 : 64 + 2]
     return _grind_key(int_from_hex(r), EC_ORDER)
@@ -53,6 +73,13 @@ def _get_private_key_from_eth_signature(eth_signature_hex: str) -> int:
 
 def derive_stark_key(l1_private_key: int, stark_key_msg: TypedData) -> int:
     message_signature = _sign_stark_key_message(stark_key_msg, l1_private_key)
+    l2_private_key = _get_private_key_from_eth_signature(message_signature)
+    return l2_private_key
+
+
+def derive_stark_key_from_ledger(eth_account_address: str, stark_key_msg: TypedData) -> int:
+    signable_message = encode_typed_data(full_message=stark_key_msg)
+    message_signature = _sign_stark_key_message_ledger(signable_message, eth_account_address)
     l2_private_key = _get_private_key_from_eth_signature(message_signature)
     return l2_private_key
 
