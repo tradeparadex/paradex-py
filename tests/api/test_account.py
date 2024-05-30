@@ -1,6 +1,9 @@
 from starknet_py.common import int_from_hex
 
 from paradex_py.account.account import ParadexAccount
+from paradex_py.account.utils import typed_data_to_message_hash, unflatten_signature, verify_message_signature
+from paradex_py.message.auth import build_auth_message
+from paradex_py.message.onboarding import build_onboarding_message
 from tests.mocks.api_client import MockApiClient
 
 TEST_L1_ADDRESS = "0xd2c7314539dCe7752c8120af4eC2AA750Cf2035e"
@@ -55,10 +58,14 @@ def test_account_onboarding_signature():
     )
 
     sig = account.onboarding_signature()
-    assert (
-        sig
-        == '["1977703130303461992863803129734853218488251484396280000763960303272760326570","3348963307717496773562227645175864223012165976444899528454487585773913151"]'
+
+    message = build_onboarding_message(account.l2_chain_id)
+    is_signature_valid = verify_message_signature(
+        typed_data_to_message_hash(message, account.l2_address),
+        unflatten_signature(sig),
+        account.l2_public_key,
     )
+    assert is_signature_valid is True
 
 
 def test_account_auth_signature():
@@ -74,7 +81,11 @@ def test_account_auth_signature():
     timestamp = 1706868900
     expiry = 1706955300
     sig = account.auth_signature(timestamp, expiry)
-    assert (
-        sig
-        == '["1977703130303461992863803129734853218488251484396280000763960303272760326570","1751655746465244006452018629921152189693020752513749714656209614151193043281"]'
+
+    message = build_auth_message(account.l2_chain_id, timestamp, expiry)
+    is_signature_valid = verify_message_signature(
+        typed_data_to_message_hash(message, account.l2_address),
+        unflatten_signature(sig),
+        account.l2_public_key,
     )
+    assert is_signature_valid is True
