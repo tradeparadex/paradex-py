@@ -1,6 +1,6 @@
 import functools
 import hashlib
-from typing import List, Sequence
+from typing import List, Optional, Sequence
 
 from eth_account.messages import SignableMessage, encode_typed_data
 from ledgereth.accounts import find_account
@@ -13,10 +13,10 @@ from starknet_crypto_py import verify as rs_verify
 from starknet_py.common import int_from_hex
 from starknet_py.constants import EC_ORDER
 from starknet_py.net.models.typed_data import TypedData
+from starkware.crypto.signature.signature import generate_k_rfc6979
 from web3.auto import w3
 
 SHA256_EC_MAX_DIGEST = 2**256
-DEFAULT_K = 32
 
 
 def _padded_hex(x: int) -> str:
@@ -121,11 +121,14 @@ def compute_hash_on_elements(data: Sequence) -> int:
     return functools.reduce(pedersen_hash, [*data, len(data)], 0)
 
 
-def message_signature(msg_hash: int, priv_key: int) -> tuple[int, int]:
+def message_signature(msg_hash: int, priv_key: int, seed: Optional[int] = None) -> tuple[int, int]:
     """
     Signs the message with private key.
     """
-    return rs_sign(private_key=priv_key, msg_hash=msg_hash, k=DEFAULT_K)
+    # k should be a strong cryptographical random
+    # See: https://tools.ietf.org/html/rfc6979
+    k = generate_k_rfc6979(msg_hash, priv_key, seed)
+    return rs_sign(private_key=priv_key, msg_hash=msg_hash, k=k)
 
 
 def verify_message_signature(msg_hash: int, signature: List[int], public_key: int) -> bool:
