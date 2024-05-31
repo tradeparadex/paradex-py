@@ -13,6 +13,7 @@ from starknet_crypto_py import verify as rs_verify
 from starknet_py.common import int_from_hex
 from starknet_py.constants import EC_ORDER
 from starknet_py.net.models.typed_data import TypedData
+from starknet_py.utils.typed_data import TypedData as TypedDataDataclass
 from starkware.crypto.signature.signature import generate_k_rfc6979
 from web3.auto import w3
 
@@ -88,6 +89,15 @@ def flatten_signature(sig: List[int]) -> str:
     return f'["{sig[0]}","{sig[1]}"]'
 
 
+def unflatten_signature(sig: str) -> list:
+    return [int(x) for x in sig[2:-2].split('","')]
+
+
+def typed_data_to_message_hash(typed_data: TypedData, address: str) -> int:
+    typed_data_dataclass = TypedDataDataclass.from_dict(typed_data)
+    return typed_data_dataclass.message_hash(address)
+
+
 # ###
 # Override functions in starknet_py.hash.utils that use cpp
 # to use the starknet_crypto_py library
@@ -136,6 +146,5 @@ def verify_message_signature(msg_hash: int, signature: List[int], public_key: in
     Verifies ECDSA signature of a given message hash with a given public key.
     Returns true if public_key signs the message.
     """
-    sig_r, sig_s = signature
-    sig_w = pow(sig_s, -1, EC_ORDER)
-    return rs_verify(msg_hash=msg_hash, r=sig_r, s=sig_w, public_key=public_key)
+    r, s = signature
+    return rs_verify(msg_hash=msg_hash, r=r, s=s, public_key=public_key)

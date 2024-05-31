@@ -118,7 +118,7 @@ class ParadexAccount:
         }
 
     def auth_signature(self, timestamp: int, expiry: int) -> str:
-        message = build_auth_message(int(self.l2_chain_id), timestamp, expiry)
+        message = build_auth_message(self.l2_chain_id, timestamp, expiry)
         sig = self.starknet.sign_message(message)
         return flatten_signature(sig)
 
