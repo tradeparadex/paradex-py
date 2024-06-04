@@ -12,15 +12,14 @@ packages = [
 
 [tool.poetry.dependencies]
 python = ">=3.9,<3.12"
-starknet-py = "^0.20.0"
-marshmallow-dataclass = "^8.6.0"
+starknet-py = "^0.22.0"
+marshmallow-dataclass = "^8.6.1"
 eth-account = "^0.11.0"
-web3 = "^6.11.4"
-starknet-crypto-py = "^0.1.0"
+web3 = "^6.19.0"
+starknet-crypto-py = "^0.2.0"
 httpx = "^0.27.0"
 websockets = "^12.0"
 ledgereth = "^0.9.1"
-cairo-lang = "^0.13.1"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0.2"

@@ -1,6 +1,6 @@
 import functools
 import hashlib
-from typing import List, Optional, Sequence
+from typing import List, Sequence
 
 from eth_account.messages import SignableMessage, encode_typed_data
 from ledgereth.accounts import find_account
@@ -14,7 +14,6 @@ from starknet_py.common import int_from_hex
 from starknet_py.constants import EC_ORDER
 from starknet_py.net.models.typed_data import TypedData
 from starknet_py.utils.typed_data import TypedData as TypedDataDataclass
-from starkware.crypto.signature.signature import generate_k_rfc6979
 from web3.auto import w3
 
 SHA256_EC_MAX_DIGEST = 2**256
@@ -115,7 +114,6 @@ def pedersen_hash(left: int, right: int) -> int:
     """
     One of two hash functions (along with _starknet_keccak) used throughout Starknet.
     """
-    # return cpp_hash(left, right)
     return rs_pedersen_hash(left, right)
 
 
@@ -131,14 +129,14 @@ def compute_hash_on_elements(data: Sequence) -> int:
     return functools.reduce(pedersen_hash, [*data, len(data)], 0)
 
 
-def message_signature(msg_hash: int, priv_key: int, seed: Optional[int] = None) -> tuple[int, int]:
+def message_signature(msg_hash: int, priv_key: int, seed: int = 32) -> tuple[int, int]:
     """
     Signs the message with private key.
     """
-    # k should be a strong cryptographical random
-    # See: https://tools.ietf.org/html/rfc6979
-    k = generate_k_rfc6979(msg_hash, priv_key, seed)
-    return rs_sign(private_key=priv_key, msg_hash=msg_hash, k=k)
+    # `seed`: extra seed for additional entropy
+    # `k`: is generated from `seed` by `starknet-crypto-py`
+    # Ref: https://github.com/tradeparadex/starknet-crypto-py/blob/v0.2.0/src/lib.rs#L33
+    return rs_sign(private_key=priv_key, msg_hash=msg_hash, seed=seed)
 
 
 def verify_message_signature(msg_hash: int, signature: List[int], public_key: int) -> bool:
