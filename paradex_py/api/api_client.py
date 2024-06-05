@@ -62,7 +62,7 @@ class ParadexApiClient(HttpClient):
             raise ValueError("{self.classname}: Account not found")
         # Refresh JWT if it's older than 4 minutes
         if time.time() - self.auth_timestamp > 4 * 60:
-            self.auth(headers=self.account.auth_headers())
+            self.auth()
 
     def _get(self, path: str, params: Optional[dict] = None) -> dict:
         return self.get(api_url=self.api_url, path=path, params=params)
