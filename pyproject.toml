@@ -11,7 +11,7 @@ packages = [
 ]
 
 [tool.poetry.dependencies]
-python = ">=3.9,<3.12"
+python = ">=3.9,<3.13"
 starknet-py = "^0.22.0"
 marshmallow-dataclass = "^8.6.1"
 eth-account = "^0.11.0"
