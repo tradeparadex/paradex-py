@@ -48,6 +48,8 @@ for market in markets["results"]:
     logger.info(f"{bbo=}")
     trades = public_paradex.api_client.fetch_trades({"market": symbol, "page_size": 5})
     logger.info(f"{trades=}")
+    funding_data = public_paradex.api_client.fetch_funding_data(params={"market": symbol})
+    logger.info(f"Funding data {funding_data=}")
 
 
 # Test Private API calls
