@@ -7,6 +7,7 @@ from paradex_py.api.http_client import HttpClient, HttpMethod
 from paradex_py.api.models import AccountSummary, AccountSummarySchema, AuthSchema, SystemConfig, SystemConfigSchema
 from paradex_py.common.order import Order
 from paradex_py.environment import Environment
+from paradex_py.utils import raise_value_error
 
 
 class ParadexApiClient(HttpClient):
@@ -36,7 +37,7 @@ class ParadexApiClient(HttpClient):
         self.api_url = f"https://api.{self.env}.paradex.trade/v1"
 
     async def __aexit__(self):
-        await self.client.close()
+        self.client.close()
 
     def init_account(self, account: ParadexAccount):
         self.account = account
@@ -55,11 +56,10 @@ class ParadexApiClient(HttpClient):
         self.auth_timestamp = time.time()
         self.account.set_jwt_token(data.jwt_token)
         self.client.headers.update({"Authorization": f"Bearer {data.jwt_token}"})
-        self.logger.info(f"{self.classname}: JWT:{data.jwt_token}")
 
     def _validate_auth(self):
         if self.account is None:
-            raise ValueError("{self.classname}: Account not found")
+            return raise_value_error(f"{self.classname}: Account not found")
         # Refresh JWT if it's older than 4 minutes
         if time.time() - self.auth_timestamp > 4 * 60:
             self.auth()
@@ -271,7 +271,7 @@ class ParadexApiClient(HttpClient):
 
         Args:
             market: Market Name
-            program: Program Name - example: LiquidityProvider, Trader
+            program: Program Name - example: Maker, Fee
 
         Returns:
             results (list): List of points data
@@ -305,7 +305,7 @@ class ParadexApiClient(HttpClient):
             results (list): List of Trades
         """
         if "market" not in params:
-            raise ValueError(f"{self.classname}: Market is required to fetch trades")
+            return raise_value_error(f"{self.classname}: Market is required to fetch trades")
         return self._get(path="trades", params=params)
 
     def submit_order(self, order: Order) -> Dict:

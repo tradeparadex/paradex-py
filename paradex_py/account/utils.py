@@ -16,6 +16,8 @@ from starknet_py.net.models.typed_data import TypedData
 from starknet_py.utils.typed_data import TypedData as TypedDataDataclass
 from web3.auto import w3
 
+from paradex_py.utils import raise_value_error
+
 SHA256_EC_MAX_DIGEST = 2**256
 
 
@@ -53,7 +55,7 @@ def _sign_stark_key_message_ledger(message: SignableMessage, eth_account_address
     dongle = init_dongle()
     account = find_account(eth_account_address, dongle, count=10)
     if account is None:
-        raise ValueError(f"Account {eth_account_address} not found on Ledger")
+        return raise_value_error(f"Account {eth_account_address} not found on Ledger")
     # header/body is eth_account naming, presumably to be generic
     domain_hash = message.header
     message_hash = message.body

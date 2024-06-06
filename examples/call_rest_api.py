@@ -77,14 +77,14 @@ hist_orders = paradex.api_client.fetch_orders_history(params={"page_size": 5})
 logger.info(f"{hist_orders=}")
 points_program = paradex.api_client.fetch_points_data(
     market="ETH-USD-PERP",
-    program="Trader",
+    program="Fee",
 )
-logger.info(f"Trader {points_program=}")
+logger.info(f"Fee {points_program=}")
 points_program = paradex.api_client.fetch_points_data(
     market="ETH-USD-PERP",
-    program="LiquidityProvider",
+    program="Maker",
 )
-logger.info(f"LiquidityProvider {points_program=}")
+logger.info(f"Maker {points_program=}")
 transfers = paradex.api_client.fetch_transfers(params={"page_size": 5})
 logger.info(f"{transfers=}")
 # Per market

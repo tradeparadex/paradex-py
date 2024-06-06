@@ -129,11 +129,11 @@ class ParadexWebsocketClient:
         except (
             websockets.exceptions.ConnectionClosedOK,
             websockets.exceptions.ConnectionClosed,
-        ) as e:
-            self.logger.info(f"{self.classname}: Connection already closed. error:{e}")
+        ):
+            self.logger.exception(f"{self.classname}: Connection already closed")
             self.ws = None
-        except Exception as e:
-            self.logger.exception(f"{self.classname}: error:{e} traceback:{traceback.format_exc()}")
+        except Exception:
+            self.logger.exception(f"{self.classname}: traceback:{traceback.format_exc()}")
             self.ws = None
         return bool(self.ws is not None and self.ws.open)
 
@@ -150,7 +150,7 @@ class ParadexWebsocketClient:
 
     async def _reconnect(self):
         try:
-            self.logger.info("{self.classname}: Reconnect websocket...")
+            self.logger.info(f"{self.classname}: Reconnect websocket...")
             await self._close_connection()
             await self.connect()
             await self._resubscribe()

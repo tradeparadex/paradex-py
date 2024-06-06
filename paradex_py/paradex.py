@@ -5,6 +5,7 @@ from paradex_py.account.account import ParadexAccount
 from paradex_py.api.api_client import ParadexApiClient
 from paradex_py.api.ws_client import ParadexWebsocketClient
 from paradex_py.environment import Environment
+from paradex_py.utils import raise_value_error
 
 
 class Paradex:
@@ -32,7 +33,7 @@ class Paradex:
         logger: Optional[logging.Logger] = None,
     ):
         if env is None:
-            raise ValueError("Paradex: Invalid environment")
+            return raise_value_error("Paradex: Invalid environment")
         self.env = env
         self.logger: logging.Logger = logger or logging.getLogger(__name__)
         # Load api client and system config
@@ -64,7 +65,7 @@ class Paradex:
             l2_private_key (str): L2 private key
         """
         if self.account is not None:
-            raise ValueError("Paradex: Account already initialized")
+            return raise_value_error("Paradex: Account already initialized")
         self.account = ParadexAccount(
             config=self.config,
             l1_address=l1_address,
