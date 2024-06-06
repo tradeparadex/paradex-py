@@ -195,6 +195,24 @@ class ParadexApiClient(HttpClient):
         """
         return self._get_authorized(path="funding/payments", params=params)
 
+    def fetch_funding_data(self, params: Optional[Dict] = None) -> Dict:
+        """List historical funding data by market
+
+        Args:
+            params:
+                `cursor`: Returns the `next` paginated page\n
+                `end_at`: End Time (unix time millisecond)\n
+                `market`: Market for which funding payments are queried\n
+                `page_size`: Limit the number of responses in the page\n
+                `start_at`: Start Time (unix time millisecond)\n
+
+        Returns:
+            next (str): The pointer to fetch next set of records (null if there are no records left)
+            prev (str): The pointer to fetch previous set of records (null if there are no records left)
+            results (list): List of Funding Payments
+        """
+        return self._get(path="funding/data", params=params)
+
     def fetch_transactions(self, params: Optional[Dict] = None) -> Dict:
         """Fetch history of transactions initiated by this account.
             Private endpoint requires authorization.
