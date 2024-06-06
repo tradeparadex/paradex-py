@@ -16,6 +16,7 @@ from paradex_py.message.auth import build_auth_message
 from paradex_py.message.onboarding import build_onboarding_message
 from paradex_py.message.order import build_order_message
 from paradex_py.message.stark_key import build_stark_key_message
+from paradex_py.utils import raise_value_error
 
 
 # For matching existing chainId type
@@ -55,7 +56,7 @@ class ParadexAccount:
         self.config = config
 
         if l1_address is None:
-            raise ValueError("Paradex: Provide Ethereum address")
+            return raise_value_error("Paradex: Provide Ethereum address")
         self.l1_address = l1_address
 
         if l1_private_key is not None:
@@ -68,7 +69,7 @@ class ParadexAccount:
         elif l2_private_key is not None:
             self.l2_private_key = int_from_hex(l2_private_key)
         else:
-            raise ValueError("Paradex: Provide Ethereum or Paradex private key")
+            return raise_value_error("Paradex: Provide Ethereum or Paradex private key")
 
         key_pair = KeyPair.from_private_key(self.l2_private_key)
         self.l2_public_key = key_pair.public_key
@@ -105,7 +106,7 @@ class ParadexAccount:
 
     def onboarding_signature(self) -> str:
         if self.config is None:
-            raise ValueError("Paradex: System config not loaded")
+            return raise_value_error("Paradex: System config not loaded")
         message = build_onboarding_message(self.l2_chain_id)
         sig = self.starknet.sign_message(message)
         return flatten_signature(sig)
