@@ -12,8 +12,10 @@ from starknet_py.net.signer import BaseSigner
 from starknet_py.net.signer.stark_curve_signer import KeyPair
 from starknet_py.net.udc_deployer.deployer import Deployer
 
+from paradex_py.utils import random_max_fee
+
 from .typed_data import TypedData
-from .utils import message_signature, random_max_fee, typed_data_to_message_hash
+from .utils import message_signature, typed_data_to_message_hash
 
 
 class Account(StarknetAccount):
