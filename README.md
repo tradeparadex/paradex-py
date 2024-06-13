@@ -33,7 +33,7 @@ await paradex.ws_client.subscribe(ParadexWebsocketChannel.MARKETS_SUMMARY, callb
 💻 For comprehensive examples refer to following files:
 
 - API: [examples/call_rest_api.py](examples/call_rest_api.py)
-- WS: [examples/call_rest_api.py](examples/connect_ws_api.py)
+- WS: [examples/connect_ws_api.py](examples/connect_ws_api.py)
 
 ## Development
 
