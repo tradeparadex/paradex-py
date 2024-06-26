@@ -52,7 +52,7 @@ class ParadexApiClient(HttpClient):
     def auth(self):
         headers = self.account.auth_headers()
         res = self.post(api_url=self.api_url, path="auth", headers=headers)
-        data = AuthSchema().load(res, unknown="EXCLUDE", partial=True)
+        data = AuthSchema().load(res, unknown="exclude", partial=True)
         self.auth_timestamp = time.time()
         self.account.set_jwt_token(data.jwt_token)
         self.client.headers.update({"Authorization": f"Bearer {data.jwt_token}"})
@@ -255,7 +255,7 @@ class ParadexApiClient(HttpClient):
         Private endpoint requires authorization.
         """
         res = self._get_authorized(path="account")
-        return AccountSummarySchema().load(res, unknown="EXCLUDE", partial=True)
+        return AccountSummarySchema().load(res, unknown="exclude", partial=True)
 
     def fetch_account_profile(self) -> Dict:
         """Fetch profile for this account.
@@ -378,7 +378,7 @@ class ParadexApiClient(HttpClient):
             url=f"{self.api_url}/system/config",
             http_method=HttpMethod.GET,
         )
-        config = SystemConfigSchema().load(res, unknown="EXCLUDE", partial=True)
+        config = SystemConfigSchema().load(res, unknown="exclude", partial=True)
         self.logger.info(f"{self.classname}: SystemConfig:{config}")
         return config
 
