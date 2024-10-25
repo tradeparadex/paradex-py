@@ -1,4 +1,6 @@
+import logging
 import time
+from decimal import Decimal
 from enum import IntEnum
 from typing import Optional
 
@@ -136,3 +138,56 @@ class ParadexAccount:
     def sign_order(self, order: Order) -> str:
         sig = self.starknet.sign_message(build_order_message(self.l2_chain_id, order))
         return flatten_signature(sig)
+
+    async def transfer_on_l2(self, target_l2_address: str, amount_decimal: Decimal):
+        try:
+            # Load contracts
+            paraclear_address = int_from_hex(self.config.paraclear_address)
+            usdc_address = int_from_hex(self.config.bridged_tokens[0].l2_token_address)
+            paraclear_contract = await self.starknet.load_contract(paraclear_address)
+            usdc_contract = await self.starknet.load_contract(usdc_address)
+            account_contract = await self.starknet.load_contract(self.l2_address)
+
+            usdc_decimals = self.config.bridged_tokens[0].decimals
+            paraclear_decimals = self.config.paraclear_decimals
+
+            # Get token asset balance
+            token_asset_balance = await paraclear_contract.functions["getTokenAssetBalance"].call(
+                account=self.l2_address, token_address=usdc_address
+            )
+            logging.info(f"USDC balance on Paraclear: {token_asset_balance.balance / 10**paraclear_decimals}")
+
+            # Calculate amounts
+            amount_paraclear = int(amount_decimal * 10**paraclear_decimals)
+            amount_bridge = int(amount_decimal * 10**usdc_decimals)
+            logging.info(f"Amount to withdraw from Paraclear: {amount_paraclear}")
+            logging.info(f"Amount to transfer to {target_l2_address}: {amount_bridge}")
+
+            # Prepare calls
+            calls = [
+                paraclear_contract.functions["withdraw"].prepare_invoke_v1(
+                    token_address=usdc_address,
+                    amount=amount_paraclear,
+                ),
+                usdc_contract.functions["increase_allowance"].prepare_invoke_v1(
+                    spender=paraclear_address, added_value=amount_bridge
+                ),
+                paraclear_contract.functions["deposit_on_behalf_of"].prepare_invoke_v1(
+                    recipient=int_from_hex(target_l2_address),
+                    token_address=usdc_address,
+                    amount=amount_paraclear,
+                ),
+            ]
+
+            # Check if multisig is required
+            need_multisig = await self.starknet.check_multisig_required(account_contract)
+
+            # Prepare and send transaction
+            func_name = "transferOnL2"
+            prepared_invoke = await self.starknet.prepare_invoke(calls=calls)
+            await self.starknet.process_invoke(account_contract, need_multisig, prepared_invoke, func_name)
+
+        except Exception as e:
+            logging.error(f"Error during transfer_on_l2: {e}")
+            # Re-raise the exception to handle it upstream if necessary
+            raise
