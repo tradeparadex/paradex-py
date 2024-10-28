@@ -147,7 +147,6 @@ class ParadexAccount:
             paraclear_contract = await self.starknet.load_contract(paraclear_address)
             account_contract = await self.starknet.load_contract(self.l2_address)
 
-            usdc_decimals = self.config.bridged_tokens[0].decimals
             paraclear_decimals = self.config.paraclear_decimals
 
             # Get token asset balance
@@ -158,9 +157,7 @@ class ParadexAccount:
 
             # Calculate amounts
             amount_paraclear = int(amount_decimal * 10**paraclear_decimals)
-            amount_bridge = int(amount_decimal * 10**usdc_decimals)
-            logging.info(f"Amount to withdraw from Paraclear: {amount_paraclear}")
-            logging.info(f"Amount to transfer to {target_l2_address}: {amount_bridge}")
+            logging.info(f"Amount to transfer to {target_l2_address}: {amount_paraclear}")
 
             # Prepare calls
             calls = [
