@@ -145,7 +145,6 @@ class ParadexAccount:
             paraclear_address = int_from_hex(self.config.paraclear_address)
             usdc_address = int_from_hex(self.config.bridged_tokens[0].l2_token_address)
             paraclear_contract = await self.starknet.load_contract(paraclear_address)
-            usdc_contract = await self.starknet.load_contract(usdc_address)
             account_contract = await self.starknet.load_contract(self.l2_address)
 
             usdc_decimals = self.config.bridged_tokens[0].decimals
@@ -165,14 +164,7 @@ class ParadexAccount:
 
             # Prepare calls
             calls = [
-                paraclear_contract.functions["withdraw"].prepare_invoke_v1(
-                    token_address=usdc_address,
-                    amount=amount_paraclear,
-                ),
-                usdc_contract.functions["increase_allowance"].prepare_invoke_v1(
-                    spender=paraclear_address, added_value=amount_bridge
-                ),
-                paraclear_contract.functions["deposit_on_behalf_of"].prepare_invoke_v1(
+                paraclear_contract.functions["transfer"].prepare_invoke_v1(
                     recipient=int_from_hex(target_l2_address),
                     token_address=usdc_address,
                     amount=amount_paraclear,
