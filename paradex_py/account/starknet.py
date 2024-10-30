@@ -207,12 +207,6 @@ class Account(StarknetAccount):
             logging.error(f"Error processing invoke: {e}")
             raise
 
-    async def load_contract_from_account(self) -> Contract:
-        contract = await Contract.from_address(
-            address=self.address, provider=self.client, proxy_config=get_proxy_config()
-        )
-        return contract
-
     def print_invoke(self, invoke: InvokeV1):
         invoke_schema = marshmallow_dataclass.class_schema(InvokeV1)()
         print("\n---")
