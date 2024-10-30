@@ -34,6 +34,7 @@ await paradex.ws_client.subscribe(ParadexWebsocketChannel.MARKETS_SUMMARY, callb
 
 - API: [examples/call_rest_api.py](examples/call_rest_api.py)
 - WS: [examples/connect_ws_api.py](examples/connect_ws_api.py)
+- Transfer: [examples/transfer_l2_usdc.py](examples/transfer_l2_usdc.py)
 
 ## Development
 
