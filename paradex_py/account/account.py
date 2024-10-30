@@ -42,9 +42,9 @@ class ParadexAccount:
         >>> from paradex_py import Paradex
         >>> from paradex_py.environment import Environment
         >>> paradex = Paradex(env=Environment.TESTNET, l1_address="0x...", l1_private_key="0x...")
-        >>> paradex.account.l2_address # 0x...
-        >>> paradex.account.l2_public_key # 0x...
-        >>> paradex.account.l2_private_key # 0x...
+        >>> paradex.account.l2_address
+        >>> paradex.account.l2_public_key
+        >>> paradex.account.l2_private_key
     """
 
     def __init__(
