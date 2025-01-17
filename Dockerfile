@@ -7,6 +7,7 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get update \
         build-essential \
         cargo \
         curl \
+        git \
         python3-dev \
         python3-pip \
         python3-poetry \
@@ -15,11 +16,16 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy only requirements to cache them in docker layer
-WORKDIR /code
-COPY poetry.lock pyproject.toml /code/
+COPY --chown=paradex:paradex poetry.lock pyproject.toml /home/paradex/
+
+RUN useradd -m -s /bin/bash paradex
+RUN chown -R paradex:paradex /home/paradex
+USER paradex:paradex
+
+WORKDIR /home/paradex
+
+COPY --chown=paradex:paradex . /home/paradex/paradex-py
 
 # Project initialization:
-RUN poetry install --no-interaction --no-ansi --no-root --no-dev
-
-# Copy Python code to the Docker image
-COPY paradex_py /code/paradex_py/
+RUN poetry install --no-interaction --no-ansi --no-root \
+    && poetry run pip install 'file:///home/paradex/paradex-py#egg=paradex-py' \
