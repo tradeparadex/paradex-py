@@ -1,22 +1,18 @@
 # syntax=docker/dockerfile:1
 
-FROM python:3.9-slim-buster
+FROM ubuntu:24.04
 
-ENV POETRY_VERSION=1.4 \
-    POETRY_VIRTUALENVS_CREATE=false
-
-
-RUN DEBIAN_FRONTEND=noninteractive apt-get update && apt-get install -y \
-    curl \
-    build-essential \
+RUN DEBIAN_FRONTEND=noninteractive apt-get update \
+    && apt-get install -y --no-install-recommends \
+        build-essential \
+        cargo \
+        curl \
+        python3-dev \
+        python3-pip \
+        python3-poetry \
+        rustc \
     && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* \
-    && curl https://sh.rustup.rs -sSf | bash -s -- -y
-
-ENV PATH="/root/.cargo/bin:${PATH}"
-
-# Install poetry
-RUN pip install "poetry==$POETRY_VERSION"
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy only requirements to cache them in docker layer
 WORKDIR /code
@@ -27,5 +23,3 @@ RUN poetry install --no-interaction --no-ansi --no-root --no-dev
 
 # Copy Python code to the Docker image
 COPY paradex_py /code/paradex_py/
-
-CMD [ "python", "paradex_py/foo.py"]
