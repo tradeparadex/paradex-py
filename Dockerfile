@@ -16,16 +16,14 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy only requirements to cache them in docker layer
-COPY --chown=paradex:paradex poetry.lock pyproject.toml /home/paradex/
+COPY --chown=ubuntu:ubuntu poetry.lock pyproject.toml /home/ubuntu/
 
-RUN useradd -m -s /bin/bash paradex
-RUN chown -R paradex:paradex /home/paradex
-USER paradex:paradex
+USER ubuntu:ubuntu
 
-WORKDIR /home/paradex
+WORKDIR /home/ubuntu
 
-COPY --chown=paradex:paradex . /home/paradex/paradex-py
+COPY --chown=paradex:paradex . /home/ubuntu/paradex-py
 
 # Project initialization:
 RUN poetry install --no-interaction --no-ansi --no-root \
-    && poetry run pip install 'file:///home/paradex/paradex-py#egg=paradex-py' \
+    && poetry run pip install 'file:///home/ubuntu/paradex-py#egg=paradex-py' \
