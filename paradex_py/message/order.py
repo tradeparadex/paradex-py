@@ -57,7 +57,7 @@ def build_order_message_for_modify(chain_id: int, o: Order) -> TypedData:
                 },  # Time of signature request in ms since epoch; Acts as a nonce;
                 {"name": "market", "type": "felt"},  # E.g.: "ETH-USD-PERP"
                 {"name": "side", "type": "felt"},  # Buy or Sell
-                {"name": "orderType", "type": "felt"},  # Limit or Market
+                {"name": "orderType", "type": "felt"},  # Limit
                 {"name": "size", "type": "felt"},  # Quantum value with 8 decimals;
                 {
                     "name": "price",
