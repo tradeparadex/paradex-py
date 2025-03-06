@@ -40,7 +40,7 @@ def build_order_message(chain_id: int, o: Order) -> TypedData:
     return message
 
 
-def build_order_message_for_modify(chain_id: int, o: Order) -> TypedData:
+def build_modify_order_message(chain_id: int, o: Order) -> TypedData:
     message = {
         "domain": {"name": "Paradex", "chainId": hex(chain_id), "version": "1"},
         "primaryType": "ModifyOrder",
