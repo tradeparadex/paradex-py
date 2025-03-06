@@ -81,6 +81,16 @@ class ParadexApiClient(HttpClient):
         self._validate_auth()
         return self.post(api_url=self.api_url, path=path, payload=payload, params=params, headers=headers)
 
+    def _put_authorized(
+        self,
+        path: str,
+        payload: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]] = None,
+        params: Optional[dict] = None,
+        headers: Optional[dict] = None,
+    ) -> dict:
+        self._validate_auth()
+        return self.put(api_url=self.api_url, path=path, payload=payload, params=params, headers=headers)
+
     def _delete_authorized(self, path: str, params: Optional[dict] = None) -> dict:
         self._validate_auth()
         return self.delete(api_url=self.api_url, path=path, params=params)
@@ -336,6 +346,18 @@ class ParadexApiClient(HttpClient):
         order.signature = self.account.sign_order(order)
         order_payload = order.dump_to_dict()
         return self._post_authorized(path="orders", payload=order_payload)
+
+    def modify_order(self, order_id: str, order: Order) -> None:
+        """Modify an open order previously sent to Paradex from this account.
+            Private endpoint requires authorization.
+
+        Args:
+            order_id: Order Id
+            order: Order update
+        """
+        order.signature = self.account.sign_order(order)
+        order_payload = order.dump_to_dict()
+        return self._put_authorized(path=f"orders/{order_id}", payload=order_payload)
 
     def cancel_order(self, order_id: str) -> None:
         """Cancel open order previously sent to Paradex from this account.

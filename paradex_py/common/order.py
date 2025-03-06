@@ -58,9 +58,10 @@ class Order:
             str
         ] = None,  # Self Trade Prevention, EXPIRE_MAKER, EXPIRE_TAKER or EXPIRE_BOTH, default: EXPIRE_TAKER
         trigger_price: Optional[Decimal] = None,
+        order_id: Optional[str] = "",
     ) -> None:
         ts = time_now_milli_secs()
-        self.id: str = ""
+        self.id: str = order_id
         self.account: str = ""
         self.status = OrderStatus.NEW
         self.limit_price = limit_price
@@ -123,6 +124,10 @@ class Order:
             order_dict["trigger_price"] = str(self.trigger_price)
         if self.reduce_only:
             order_dict["flags"] = ["REDUCE_ONLY"]
+
+        # For modify order
+        if self.id:
+            order_dict["id"] = self.id
         return order_dict
 
     def chain_price(self) -> str:
