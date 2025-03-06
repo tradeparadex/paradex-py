@@ -61,7 +61,7 @@ class Order:
         order_id: Optional[str] = None,
     ) -> None:
         ts = time_now_milli_secs()
-        self.id: str = order_id
+        self.id = order_id
         self.account: str = ""
         self.status = OrderStatus.NEW
         self.limit_price = limit_price

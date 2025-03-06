@@ -347,7 +347,7 @@ class ParadexApiClient(HttpClient):
         order_payload = order.dump_to_dict()
         return self._post_authorized(path="orders", payload=order_payload)
 
-    def modify_order(self, order_id: str, order: Order) -> None:
+    def modify_order(self, order_id: str, order: Order) -> Dict:
         """Modify an open order previously sent to Paradex from this account.
             Private endpoint requires authorization.
 
