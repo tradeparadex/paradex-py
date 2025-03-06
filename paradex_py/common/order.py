@@ -58,7 +58,7 @@ class Order:
             str
         ] = None,  # Self Trade Prevention, EXPIRE_MAKER, EXPIRE_TAKER or EXPIRE_BOTH, default: EXPIRE_TAKER
         trigger_price: Optional[Decimal] = None,
-        order_id: Optional[str] = "",
+        order_id: Optional[str] = None,
     ) -> None:
         ts = time_now_milli_secs()
         self.id: str = order_id
