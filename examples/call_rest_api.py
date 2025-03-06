@@ -36,9 +36,7 @@ insurance_fund = public_paradex.api_client.fetch_insurance_fund()
 logger.info(f"{insurance_fund=}")
 markets = public_paradex.api_client.fetch_markets()
 logger.info(f"{markets=}")
-for i, market in enumerate(markets["results"]):
-    if i > 3:
-        break
+for market in markets["results"]:
     if not int(market.get("position_limit")):
         continue
     symbol = market["symbol"]
@@ -99,11 +97,9 @@ logger.info(f"{hist_orders=}")
 transfers = paradex.api_client.fetch_transfers(params={"page_size": 5})
 logger.info(f"{transfers=}")
 # Per market
-for i, market in enumerate(markets["results"]):
+for market in markets["results"]:
     if not int(market.get("position_limit")):
         continue
-    if i > 3:
-        break
     symbol = market["symbol"]
     orders = paradex.api_client.fetch_orders(params={"market": symbol})
     logger.info(f"{symbol=} {orders=}")
