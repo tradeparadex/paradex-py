@@ -79,7 +79,7 @@ async def paradex_ws_subscribe(paradex: Paradex) -> None:
     await paradex.ws_client.subscribe(
         ParadexWebsocketChannel.ORDER_BOOK,
         callback=callback_general,
-        params={"market": "ETH-USD-PERP"},
+        params={"market": "ETH-USD-PERP", "refresh_rate": "50ms"},
     )
     await paradex.ws_client.subscribe(
         ParadexWebsocketChannel.ORDER_BOOK_DELTAS,
