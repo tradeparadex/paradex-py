@@ -9,6 +9,7 @@ from paradex_py.api.models import ApiErrorSchema
 class HttpMethod(Enum):
     GET = "GET"
     POST = "POST"
+    PUT = "PUT"
     DELETE = "DELETE"
 
 
@@ -62,6 +63,23 @@ class HttpClient:
         return self.request(
             url=f"{api_url}/{path}",
             http_method=HttpMethod.POST,
+            payload=payload,
+            params=params,
+            headers=use_headers,
+        )
+
+    def put(
+        self,
+        api_url: str,
+        path: str,
+        payload: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]] = None,
+        params: Optional[dict] = None,
+        headers: Optional[dict] = None,
+    ) -> dict:
+        use_headers = headers if headers else self.client.headers
+        return self.request(
+            url=f"{api_url}/{path}",
+            http_method=HttpMethod.PUT,
             payload=payload,
             params=params,
             headers=use_headers,

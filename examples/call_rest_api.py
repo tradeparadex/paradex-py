@@ -46,8 +46,10 @@ for market in markets["results"]:
     logger.info(f"{ob}=")
     bbo = public_paradex.api_client.fetch_bbo(market=symbol)
     logger.info(f"{bbo=}")
+
     trades = public_paradex.api_client.fetch_trades({"market": symbol, "page_size": 5})
     logger.info(f"{trades=}")
+
     funding_data = public_paradex.api_client.fetch_funding_data(params={"market": symbol})
     logger.info(f"Funding data {funding_data=}")
 
@@ -77,6 +79,8 @@ tradebusts = paradex.api_client.fetch_tradebusts()
 logger.info(f"{tradebusts=}")
 hist_orders = paradex.api_client.fetch_orders_history(params={"page_size": 5})
 logger.info(f"{hist_orders=}")
+
+
 points_program = paradex.api_client.fetch_points_data(
     market="ETH-USD-PERP",
     program="Fee",
@@ -87,6 +91,7 @@ points_program = paradex.api_client.fetch_points_data(
     program="Maker",
 )
 logger.info(f"Maker {points_program=}")
+
 transfers = paradex.api_client.fetch_transfers(params={"page_size": 5})
 logger.info(f"{transfers=}")
 # Per market
@@ -139,8 +144,25 @@ logger.info(f"{sell_order_status=}")
 # Check all open orders
 orders = paradex.api_client.fetch_orders()
 logger.info(f"ALL {orders=}")
-logger.info("Sleeping for 10 seconds")
-time.sleep(10)
+logger.info("Sleeping for 3 seconds")
+time.sleep(3)
+
+# Test modify
+modify_order = Order(
+    order_id=buy_id,
+    market="BTC-USD-PERP",
+    order_type=OrderType.Limit,
+    order_side=OrderSide.Buy,
+    size=Decimal("0.01"),
+    limit_price=Decimal(9500),
+    client_id=buy_client_id,
+    instruction="POST_ONLY",
+    reduce_only=False,
+)
+response = paradex.api_client.modify_order(buy_id, modify_order)
+logger.info(f"Modify order response {response}")
+
+
 # Cancel ETH open order
 paradex.api_client.cancel_all_orders({"market": "ETH-USD-PERP"})
 orders = paradex.api_client.fetch_orders()
