@@ -16,7 +16,7 @@ from paradex_py.api.models import SystemConfig
 from paradex_py.common.order import Order
 from paradex_py.message.auth import build_auth_message
 from paradex_py.message.onboarding import build_onboarding_message
-from paradex_py.message.order import build_order_message
+from paradex_py.message.order import build_modify_order_message, build_order_message
 from paradex_py.message.stark_key import build_stark_key_message
 from paradex_py.utils import raise_value_error
 
@@ -136,7 +136,10 @@ class ParadexAccount:
         }
 
     def sign_order(self, order: Order) -> str:
-        sig = self.starknet.sign_message(build_order_message(self.l2_chain_id, order))
+        if order.id:
+            sig = self.starknet.sign_message(build_modify_order_message(self.l2_chain_id, order))
+        else:
+            sig = self.starknet.sign_message(build_order_message(self.l2_chain_id, order))
         return flatten_signature(sig)
 
     async def transfer_on_l2(self, target_l2_address: str, amount_decimal: Decimal):
