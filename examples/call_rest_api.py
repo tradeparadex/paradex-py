@@ -83,11 +83,6 @@ logger.info(f"{hist_orders=}")
 
 points_program = paradex.api_client.fetch_points_data(
     market="ETH-USD-PERP",
-    program="Fee",
-)
-logger.info(f"Fee {points_program=}")
-points_program = paradex.api_client.fetch_points_data(
-    market="ETH-USD-PERP",
     program="Maker",
 )
 logger.info(f"Maker {points_program=}")
