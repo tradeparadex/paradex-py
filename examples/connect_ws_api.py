@@ -86,16 +86,6 @@ async def paradex_ws_subscribe(paradex: Paradex) -> None:
         callback=callback_general,
         params={"market": "ETH-USD-PERP"},
     )
-    await paradex.ws_client.subscribe(
-        ParadexWebsocketChannel.POINTS_DATA,
-        callback=callback_general,
-        params={"market": "ETH-USD-PERP", "program": "Maker"},
-    )
-    await paradex.ws_client.subscribe(
-        ParadexWebsocketChannel.POINTS_DATA,
-        callback=callback_general,
-        params={"market": "ETH-USD-PERP", "program": "Fee"},
-    )
     await paradex.ws_client.subscribe(ParadexWebsocketChannel.POSITIONS, callback_general)
     await paradex.ws_client.subscribe(
         ParadexWebsocketChannel.TRADES,

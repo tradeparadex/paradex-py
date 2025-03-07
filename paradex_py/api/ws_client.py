@@ -27,7 +27,6 @@ class ParadexWebsocketChannel(Enum):
         ORDERS (str): Orders channel
         ORDER_BOOK (str): Order book snapshots channel
         ORDER_BOOK_DELTAS (str): Order book deltas channel
-        POINTS_DATA (str): Points data channel
         POSITIONS (str): Positions channel
         TRADES (str): Trades channel
         TRADEBUSTS (str): Tradebusts channel
@@ -45,7 +44,6 @@ class ParadexWebsocketChannel(Enum):
     ORDERS = "orders.{market}"
     ORDER_BOOK = "order_book.{market}.snapshot@15@100ms"
     ORDER_BOOK_DELTAS = "order_book.{market}.deltas"
-    POINTS_DATA = "points_data.{market}.{program}"
     POSITIONS = "positions"
     TRADES = "trades.{market}"
     TRADEBUSTS = "tradebusts"
