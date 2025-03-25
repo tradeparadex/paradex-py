@@ -336,6 +336,18 @@ class ParadexApiClient(HttpClient):
             return raise_value_error(f"{self.classname}: Market is required to fetch trades")
         return self._get(path="trades", params=params)
 
+    def fetch_subaccounts(self) -> Dict:
+        """Fetch list of sub-accounts for this account.
+        Private endpoint requires authorization.
+        """
+        return self._get_authorized(path="account/subaccounts")
+
+    def fetch_account_info(self) -> Dict:
+        """Fetch profile for this account.
+        Private endpoint requires authorization.
+        """
+        return self._get_authorized(path="account/info")
+
     def submit_order(self, order: Order) -> Dict:
         """Send order to Paradex.
             Private endpoint requires authorization.
