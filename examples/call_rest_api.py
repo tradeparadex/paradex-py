@@ -79,6 +79,10 @@ tradebusts = paradex.api_client.fetch_tradebusts()
 logger.info(f"{tradebusts=}")
 hist_orders = paradex.api_client.fetch_orders_history(params={"page_size": 5})
 logger.info(f"{hist_orders=}")
+subaccounts = paradex.api_client.fetch_subaccounts()
+logger.info(f"{subaccounts=}")
+account_info = paradex.api_client.fetch_account_info()
+logger.info(f"{account_info=}")
 
 
 points_program = paradex.api_client.fetch_points_data(
