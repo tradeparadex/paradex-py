@@ -18,6 +18,10 @@ class OrderType(Enum):
     Limit = "LIMIT"
     StopLimit = "STOP_LIMIT"
     StopMarket = "STOP_MARKET"
+    TakeProfitLimit = "TAKE_PROFIT_LIMIT"
+    TakeProfitMarket = "TAKE_PROFIT_MARKET"
+    StopLossMarket = "STOP_LOSS_MARKET"
+    StopLossLimit = "STOP_LOSS_LIMIT"
 
 
 class OrderStatus(Enum):
@@ -139,4 +143,9 @@ class Order:
         return str(int(self.size.scaleb(8)))
 
     def is_limit_type(self) -> bool:
-        return self.order_type == OrderType.Limit or self.order_type == OrderType.StopLimit
+        return self.order_type in [
+            OrderType.Limit,
+            OrderType.StopLimit,
+            OrderType.TakeProfitLimit,
+            OrderType.StopLossLimit,
+        ]
