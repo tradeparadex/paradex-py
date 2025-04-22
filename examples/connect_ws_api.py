@@ -12,6 +12,7 @@ TEST_L1_ADDRESS = os.getenv("L1_ADDRESS", "")
 TEST_L1_PRIVATE_KEY = int_from_hex(os.getenv("L1_PRIVATE_KEY", ""))
 LOG_FILE = os.getenv("LOG_FILE", "FALSE").lower() == "true"
 
+
 if LOG_FILE:
     from paradex_py.common.file_logging import file_logger
 
@@ -68,6 +69,11 @@ async def paradex_ws_subscribe(paradex: Paradex) -> None:
         params={"market": "ETH-USD-PERP"},
     )
     await paradex.ws_client.subscribe(
+        ParadexWebsocketChannel.FUNDING_RATE_COMPARISON,
+        callback=callback_general,
+        params={"market": "ETH-USD-PERP"},
+    )
+    await paradex.ws_client.subscribe(
         ParadexWebsocketChannel.MARKETS_SUMMARY,
         callback=callback_general,
     )
@@ -79,22 +85,29 @@ async def paradex_ws_subscribe(paradex: Paradex) -> None:
     await paradex.ws_client.subscribe(
         ParadexWebsocketChannel.ORDER_BOOK,
         callback=callback_general,
-        params={"market": "ETH-USD-PERP", "refresh_rate": "50ms"},
+        params={"market": "ETH-USD-PERP", "price_tick": "0_0001", "refresh_rate": "50ms"},
     )
     await paradex.ws_client.subscribe(
-        ParadexWebsocketChannel.ORDER_BOOK_DELTAS,
-        callback=callback_general,
-        params={"market": "ETH-USD-PERP"},
+        ParadexWebsocketChannel.POSITIONS,
+        callback_general,
     )
-    await paradex.ws_client.subscribe(ParadexWebsocketChannel.POSITIONS, callback_general)
     await paradex.ws_client.subscribe(
         ParadexWebsocketChannel.TRADES,
         callback=callback_general,
         params={"market": "ETH-USD-PERP"},
     )
-    await paradex.ws_client.subscribe(ParadexWebsocketChannel.TRADEBUSTS, callback_general)
-    await paradex.ws_client.subscribe(ParadexWebsocketChannel.TRANSACTIONS, callback_general)
-    await paradex.ws_client.subscribe(ParadexWebsocketChannel.TRANSFERS, callback_general)
+    await paradex.ws_client.subscribe(
+        ParadexWebsocketChannel.TRADEBUSTS,
+        callback_general,
+    )
+    await paradex.ws_client.subscribe(
+        ParadexWebsocketChannel.TRANSACTIONS,
+        callback_general,
+    )
+    await paradex.ws_client.subscribe(
+        ParadexWebsocketChannel.TRANSFERS,
+        callback_general,
+    )
 
 
 paradex = Paradex(
