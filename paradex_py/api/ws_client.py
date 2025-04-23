@@ -17,21 +17,21 @@ class ParadexWebsocketChannel(Enum):
     """Enum class to define the channels for Paradex Websocket API.
 
     Attributes:
-        ACCOUNT (str): Account channel
-        BALANCE_EVENTS (str): Balance events channel
-        BBO (str): Best Bid Offer channel
-        FILLS (str): Fills channel
-        FUNDING_DATA (str): Funding data channel
-        FUNDING_PAYMENTS (str): Funding payments channel
-        MARKETS_SUMMARY (str): Markets summary channel
-        ORDERS (str): Orders channel
-        ORDER_BOOK (str): Order book snapshots channel
-        ORDER_BOOK_DELTAS (str): Order book deltas channel
-        POSITIONS (str): Positions channel
-        TRADES (str): Trades channel
-        TRADEBUSTS (str): Tradebusts channel
-        TRANSACTIONS (str): Transactions channel
-        TRANSFERS (str): Transfers channel
+        ACCOUNT (str): Private websocket channel for receiving updates of account status
+        BALANCE_EVENTS (str): Private websocket channel to receive PnL calculation data
+        BBO (str): Public websocket channel for tick updates of orderbook best bid/ask prices and amounts
+        FILLS (str): Private websocket channel to receive details of fills for specific account
+        FUNDING_DATA (str): Public websocket channel to receive funding data updates
+        FUNDING_PAYMENTS (str): Private websocket channel to receive funding payments of an account
+        FUNDING_RATE_COMPARISON (str): Public websocket channel for funding rate comparisons across exchanges
+        MARKETS_SUMMARY (str): Public websocket channel for updates of available markets
+        ORDERS (str): Private websocket channel to receive order updates
+        ORDER_BOOK (str): Public websocket channel for orderbook snapshot updates of depth 15 at most every 50ms or 100ms, optionally grouped by price tick
+        POSITIONS (str): Private websocket channel to receive updates when position is changed
+        TRADES (str): Public websocket channel to receive updates on trades in particular market
+        TRADEBUSTS (str): Private websocket channel to receive fills that are busted by a blockchain
+        TRANSACTIONS (str): Private websocket channel for receiving transaction details of fills
+        TRANSFERS (str): Websocket channel for receiving transfer updates
     """
 
     ACCOUNT = "account"
@@ -40,10 +40,10 @@ class ParadexWebsocketChannel(Enum):
     FILLS = "fills.{market}"
     FUNDING_DATA = "funding_data.{market}"
     FUNDING_PAYMENTS = "funding_payments.{market}"
+    FUNDING_RATE_COMPARISON = "funding_rate_comparison.{market}"
     MARKETS_SUMMARY = "markets_summary"
     ORDERS = "orders.{market}"
-    ORDER_BOOK = "order_book.{market}.snapshot@15@{refresh_rate}"
-    ORDER_BOOK_DELTAS = "order_book.{market}.deltas"
+    ORDER_BOOK = "order_book.{market}.{price_tick}.{refresh_rate}"
     POSITIONS = "positions"
     TRADES = "trades.{market}"
     TRADEBUSTS = "tradebusts"

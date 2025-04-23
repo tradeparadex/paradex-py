@@ -36,7 +36,7 @@ insurance_fund = public_paradex.api_client.fetch_insurance_fund()
 logger.info(f"{insurance_fund=}")
 markets = public_paradex.api_client.fetch_markets()
 logger.info(f"{markets=}")
-for market in markets["results"]:
+for market in markets["results"][:5]:  # Limit to 5 markets for testing
     if not int(market.get("position_limit")):
         continue
     symbol = market["symbol"]
@@ -47,12 +47,19 @@ for market in markets["results"]:
     bbo = public_paradex.api_client.fetch_bbo(market=symbol)
     logger.info(f"{bbo=}")
 
-    trades = public_paradex.api_client.fetch_trades({"market": symbol, "page_size": 5})
+    trades = public_paradex.api_client.fetch_trades({"market": symbol, "page_size": 20})
     logger.info(f"{trades=}")
 
     funding_data = public_paradex.api_client.fetch_funding_data(params={"market": symbol})
     logger.info(f"Funding data {funding_data=}")
 
+# Test Insurance endpoints
+insurance_fund = public_paradex.api_client.fetch_insurance_fund()
+logger.info(f"{insurance_fund=}")
+
+# Test System endpoints
+system_config = public_paradex.api_client.fetch_system_config()
+logger.info(f"{system_config=}")
 
 # Test Private API calls
 paradex = Paradex(
@@ -94,7 +101,7 @@ logger.info(f"Maker {points_program=}")
 transfers = paradex.api_client.fetch_transfers(params={"page_size": 5})
 logger.info(f"{transfers=}")
 # Per market
-for market in markets["results"]:
+for market in markets["results"][:5]:  # Limit to 5 markets for testing
     if not int(market.get("position_limit")):
         continue
     symbol = market["symbol"]
@@ -102,7 +109,7 @@ for market in markets["results"]:
     logger.info(f"{symbol=} {orders=}")
     fills = paradex.api_client.fetch_fills(params={"market": symbol, "page_size": 5})
     logger.info(f"{symbol=} {fills=}")
-    funding_payments = paradex.api_client.fetch_funding_payments()
+    funding_payments = paradex.api_client.fetch_funding_payments(params={"market": symbol})
     logger.info(f"{symbol=} {funding_payments=}")
 
 
@@ -121,8 +128,12 @@ buy_order = Order(
 response = paradex.api_client.submit_order(order=buy_order)
 buy_id = response.get("id")
 logger.info(f"Buy Order {response=}")
+if buy_id is None:
+    logger.error("Failed to get buy order ID")
+    exit(1)
 buy_order_status = paradex.api_client.fetch_order_by_client_id(client_id=buy_client_id)
 logger.info(f"{buy_order_status=}")
+
 # Sell order
 sell_client_id = f"test_sell_{datetime.now().strftime('%Y%m%d%H%M%S')}"
 sell_order = Order(
@@ -138,8 +149,12 @@ sell_order = Order(
 response = paradex.api_client.submit_order(order=sell_order)
 logger.info(f"Sell Order {response=}")
 sell_id = response.get("id")
+if sell_id is None:
+    logger.error("Failed to get sell order ID")
+    exit(1)
 sell_order_status = paradex.api_client.fetch_order(order_id=sell_id)
 logger.info(f"{sell_order_status=}")
+
 # Check all open orders
 orders = paradex.api_client.fetch_orders()
 logger.info(f"ALL {orders=}")
