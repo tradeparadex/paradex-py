@@ -359,6 +359,20 @@ class ParadexApiClient(HttpClient):
         order_payload = order.dump_to_dict()
         return self._post_authorized(path="orders", payload=order_payload)
 
+    def submit_batch_of_orders(self, orders: list[Order]) -> dict:
+        """Send batch of orders to Paradex.
+            Private endpoint requires authorization.
+
+        Args:
+            orders: List of orders containing all required fields.
+        """
+        order_payloads = []
+        for order in orders:
+            order.signature = self.account.sign_order(order)
+            order_payload = order.dump_to_dict()
+            order_payloads.append(order_payload)
+        return self._post_authorized(path="orders/batch", payload=order_payloads)
+
     def modify_order(self, order_id: str, order: Order) -> Dict:
         """Modify an open order previously sent to Paradex from this account.
             Private endpoint requires authorization.

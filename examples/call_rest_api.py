@@ -184,3 +184,17 @@ logger.info(f"After ETH-USD-PERP Cancel {orders=}")
 paradex.api_client.cancel_order(order_id=buy_id)
 orders = paradex.api_client.fetch_orders()
 logger.info(f"After BUY Cancel {orders=}")
+
+
+# Create and submit batch of orders
+order = Order(
+    market="BTC-USD-PERP",
+    order_type=OrderType.Limit,
+    order_side=OrderSide.Buy,
+    size=Decimal("0.01"),
+    limit_price=Decimal(11_500),
+    instruction="POST_ONLY",
+)
+orders = [order] * 3
+response = paradex.api_client.submit_batch_of_orders(orders=orders)
+logger.info(f"Batch of orders {response=}")
