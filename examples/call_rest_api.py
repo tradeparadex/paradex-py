@@ -186,15 +186,35 @@ orders = paradex.api_client.fetch_orders()
 logger.info(f"After BUY Cancel {orders=}")
 
 
-# Create and submit batch of orders
+# Place Parent Order with Attached Take Profit and Stop Loss Orders
+# using Batch Orders API
 order = Order(
     market="BTC-USD-PERP",
     order_type=OrderType.Limit,
     order_side=OrderSide.Buy,
     size=Decimal("0.01"),
-    limit_price=Decimal(11_500),
-    instruction="POST_ONLY",
+    limit_price=Decimal(95_000),
 )
-orders = [order] * 3
-response = paradex.api_client.submit_batch_of_orders(orders=orders)
+taker_profit_order = Order(
+    market="BTC-USD-PERP",
+    order_type=OrderType.TakeProfitMarket,
+    order_side=OrderSide.Sell,
+    size=Decimal("0.01"),
+    trigger_price=Decimal(100_0000),
+    reduce_only=True,
+)
+stop_loss_order = Order(
+    market="BTC-USD-PERP",
+    order_type=OrderType.StopLossMarket,
+    order_side=OrderSide.Sell,
+    size=Decimal("0.01"),
+    trigger_price=Decimal(90_000),
+    reduce_only=True,
+)
+orders = [
+    order,
+    taker_profit_order,
+    stop_loss_order,
+]
+response = paradex.api_client.submit_orders_batch(orders=orders)
 logger.info(f"Batch of orders {response=}")

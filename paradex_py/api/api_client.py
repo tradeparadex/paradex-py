@@ -359,12 +359,16 @@ class ParadexApiClient(HttpClient):
         order_payload = order.dump_to_dict()
         return self._post_authorized(path="orders", payload=order_payload)
 
-    def submit_batch_of_orders(self, orders: list[Order]) -> dict:
+    def submit_orders_batch(self, orders: list[Order]) -> Dict:
         """Send batch of orders to Paradex.
             Private endpoint requires authorization.
 
         Args:
             orders: List of orders containing all required fields.
+
+        Returns:
+            orders (list): List of Orders
+            errors (list): List of Errors
         """
         order_payloads = []
         for order in orders:
