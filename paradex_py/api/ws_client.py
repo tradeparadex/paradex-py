@@ -41,7 +41,7 @@ class ParadexWebsocketChannel(Enum):
     FUNDING_DATA = "funding_data.{market}"
     FUNDING_PAYMENTS = "funding_payments.{market}"
     FUNDING_RATE_COMPARISON = "funding_rate_comparison.{market}"
-    MARKETS_SUMMARY = "markets_summary"
+    MARKETS_SUMMARY = "markets_summary.{market}"
     ORDERS = "orders.{market}"
     ORDER_BOOK = "order_book.{market}.{price_tick}.{refresh_rate}"
     POSITIONS = "positions"

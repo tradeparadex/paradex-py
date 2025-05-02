@@ -76,6 +76,7 @@ async def paradex_ws_subscribe(paradex: Paradex) -> None:
     await paradex.ws_client.subscribe(
         ParadexWebsocketChannel.MARKETS_SUMMARY,
         callback=callback_general,
+        params={"market": "ALL"},
     )
     await paradex.ws_client.subscribe(
         ParadexWebsocketChannel.ORDERS,
