@@ -267,6 +267,11 @@ class ParadexWebsocketClient:
         """
         if params is None:
             params = {}
+        # Note: Set default to all markets if no params are provided which
+        # allows backward compatibility with old market_summary where
+        # no params were required.
+        if channel == ParadexWebsocketChannel.MARKETS_SUMMARY and not params:
+            params = {"market": "ALL"}
         channel_name = channel.value.format(**params)
         self.callbacks[channel_name] = callback
         self.logger.info(f"{self.classname}: Subscribe channel:{channel_name} params:{params} callback:{callback}")
