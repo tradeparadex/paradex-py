@@ -7,6 +7,7 @@ from enum import Enum
 from typing import Callable, Dict, Optional
 
 import websockets
+from websockets import ClientConnection, State
 
 from paradex_py.account.account import ParadexAccount
 from paradex_py.constants import WS_READ_TIMEOUT
@@ -87,7 +88,8 @@ class ParadexWebsocketClient:
         self.env = env
         self.api_url = f"wss://ws.api.{self.env}.paradex.trade/v1"
         self.logger = logger or logging.getLogger(__name__)
-        self.ws: Optional[websockets.WebSocketClientProtocol] = None
+        self.ws: Optional[ClientConnection] = None
+        self.account: Optional[ParadexAccount] = None
         self.callbacks: Dict[str, Callable] = {}
         self.subscribed_channels: Dict[str, bool] = {}
         asyncio.get_event_loop().create_task(self._read_messages())
@@ -106,9 +108,12 @@ class ParadexWebsocketClient:
 
         Examples:
             >>> from paradex_py import Paradex
-            >>> from paradex_py.environment import Environment
-            >>> paradex = Paradex(env=Environment.TESTNET)
-            >>> await paradex.ws_client.connect()
+            >>> from paradex_py.environment import TESTNET
+            >>> async def main():
+            ...     paradex = Paradex(env=TESTNET)
+            ...     await paradex.ws_client.connect()
+            >>> import asyncio
+            >>> asyncio.run(main())
         """
 
         try:
@@ -118,7 +123,7 @@ class ParadexWebsocketClient:
                 extra_headers.update({"Authorization": f"Bearer {self.account.jwt_token}"})
             self.ws = await websockets.connect(
                 self.api_url,
-                extra_headers=extra_headers,
+                additional_headers=extra_headers,
             )
             self.logger.info(f"{self.classname}: Connected to {self.api_url}")
             if self.account:
@@ -133,7 +138,7 @@ class ParadexWebsocketClient:
         except Exception:
             self.logger.exception(f"{self.classname}: traceback:{traceback.format_exc()}")
             self.ws = None
-        return bool(self.ws is not None and self.ws.open)
+        return bool(self.ws is not None and self.ws.state == State.OPEN)
 
     async def _close_connection(self):
         try:
@@ -156,7 +161,7 @@ class ParadexWebsocketClient:
             self.logger.exception(f"{self.classname}: Reconnect failed {traceback.format_exc()}")
 
     async def _resubscribe(self):
-        if self.ws and self.ws.open:
+        if self.ws and self.ws.state == State.OPEN:
             for channel_name in self.callbacks:
                 await self._subscribe_to_channel_by_name(channel_name)
         else:
@@ -164,7 +169,7 @@ class ParadexWebsocketClient:
 
     async def _send_auth_id(
         self,
-        websocket: websockets.WebSocketClientProtocol,
+        websocket: ClientConnection,
         paradex_jwt: str,
     ) -> None:
         """
@@ -190,7 +195,7 @@ class ParadexWebsocketClient:
 
     async def _read_messages(self):
         while True:
-            if self.ws and self.ws.open:
+            if self.ws and self.ws.state == State.OPEN:
                 try:
                     response = await asyncio.wait_for(self.ws.recv(), timeout=WS_READ_TIMEOUT)
                     message = json.loads(response)
@@ -256,14 +261,17 @@ class ParadexWebsocketClient:
             params (Optional[dict], optional): Parameters for the channel. Defaults to None.
 
         Examples:
-            >>> from paradex_py import Paradex
-            >>> from paradex_py.environment import Environment
-            >>> from paradex_py.api.ws_client import ParadexWebsocketChannel, ParadexWebsocketClient
-            >>> async def on_message(ws_channel, message):
-            >>>     print(ws_channel, message)
-            >>> paradex = Paradex(env=Environment.TESTNET)
-            >>> await paradex.ws_client.connect()
-            >>> await paradex.ws_client.subscribe(ParadexWebsocketChannel.MARKETS_SUMMARY, callback=on_message)
+        >>> from paradex_py import Paradex
+        >>> from paradex_py.environment import TESTNET
+        >>> from paradex_py.api.ws_client import ParadexWebsocketChannel, ParadexWebsocketClient
+        >>> async def main():
+        ...     async def on_message(ws_channel, message):
+        ...         print(ws_channel, message)
+        ...     paradex = Paradex(env=TESTNET)
+        ...     await paradex.ws_client.connect()
+        ...     await paradex.ws_client.subscribe(ParadexWebsocketChannel.MARKETS_SUMMARY, callback=on_message)
+        >>> import asyncio
+        >>> asyncio.run(main())
         """
         if params is None:
             params = {}
