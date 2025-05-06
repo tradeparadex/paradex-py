@@ -1,0 +1,61 @@
+name: "Setup UV Environment"
+description: "Installs UV, sets up Python, creates venv, compiles requirements, and syncs dependencies"
+inputs:
+  python-version:
+    description: "Python version to use"
+    required: true
+    default: "3.9"
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Python ${{ inputs.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    # Mount uv binary temporarily using a Docker bind mount from the official image
+    # This avoids needing curl or modifying the base runner image permanently
+    - name: Mount uv binary
+      # Place uv in a location accessible via PATH (e.g., /usr/local/bin)
+      run: docker run --rm --mount=type=bind,from=ghcr.io/astral-sh/uv:latest,source=/uv,target=/usr/local/bin/uv,ro ubuntu echo "UV mounted"
+      shell: bash
+    - name: Cache UV cache directory
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/uv
+        key: uv-cache-${{ runner.os }}-${{ inputs.python-version }}
+
+    # Cache Python dependencies based on pyproject.toml and uv.lock
+    - name: Cache Python dependencies
+      uses: actions/cache@v3
+      id: cache-pip # Give an id to check cache hit
+      with:
+        path: .venv # Cache the virtual environment directory
+        key: ${{ runner.os }}-venv-${{ inputs.python-version }}-${{ hashFiles('pyproject.toml', 'uv.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-venv-${{ inputs.python-version }}-
+
+    # Create venv, lock (if cache miss/needed), sync deps
+    - name: Setup Environment (Lock & Sync)
+      run: |
+        # Ensure uv is available (adjust path if needed based on installation method)
+        if ! command -v uv &> /dev/null; then
+            echo "uv command could not be found. Check installation/mount step." && exit 1
+        fi
+        # Check if venv exists from cache restore
+        if [ ! -d ".venv" ]; then
+          echo "Cache miss or invalid venv, creating new one..."
+          uv venv .venv --python ${{ inputs.python-version }}
+          echo "Locking dependencies..."
+          # Generate lock file if not cached or restored
+          uv lock
+          echo "Syncing dependencies from lockfile..."
+          uv sync
+        else
+          echo "Venv cache hit. Verifying lockfile and syncing..."
+          # Verify lock file is up-to-date, re-lock if needed (optional)
+          # uv lock --check || uv lock
+          uv sync # Ensure environment matches lock file
+        fi
+        echo "$PWD/.venv/bin" >> $GITHUB_PATH # Add venv bin to PATH
+      shell: bash

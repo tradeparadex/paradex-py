@@ -2,6 +2,7 @@
 
 FROM ubuntu:24.04
 
+# Install dependencies
 RUN DEBIAN_FRONTEND=noninteractive apt-get update \
     && apt-get install -y --no-install-recommends \
         build-essential \
@@ -15,15 +16,22 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get update \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy only requirements to cache them in docker layer
-COPY --chown=ubuntu:ubuntu poetry.lock pyproject.toml /home/ubuntu/
+# Copy uv binary from the official distroless image
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
-USER ubuntu:ubuntu
-
+# Set working directory
 WORKDIR /home/ubuntu
 
-COPY --chown=paradex:paradex . /home/ubuntu/paradex-py
+# Copy project files with ubuntu ownership
+COPY --chown=ubuntu:ubuntu pyproject.toml uv.lock* ./
+COPY --chown=ubuntu:ubuntu . ./paradex-py/
 
-# Project initialization:
-RUN poetry install --no-interaction --no-ansi --no-root \
-    && poetry run pip install 'file:///home/ubuntu/paradex-py#egg=paradex-py' \
+# Switch to ubuntu user
+USER ubuntu:ubuntu
+
+# Set virtual environment path
+ENV VIRTUAL_ENV=/home/ubuntu/.venv
+
+# Project initialization
+RUN uv sync --no-install-project --quiet && \
+    uv pip install 'file:///home/ubuntu/paradex-py#egg=paradex-py'
