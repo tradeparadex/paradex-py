@@ -12,15 +12,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      - name: Set up the UV environment
-        uses: ./.github/actions/setup-uv-env
+      - name: Set up Python and uv
+        uses: astral-sh/setup-uv@v1
         with:
-          python-version: "3.9"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
 
-      - name: Run checks (using Make)
-        run: make check
+      - name: Sync dependencies
+        run: uv sync --locked
+
+      - name: Run checks (using uv run)
+        run: uv run make check
 
   tox:
     runs-on: ubuntu-latest
@@ -30,35 +34,19 @@ jobs:
       fail-fast: false
     steps:
       - name: Check out
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      - name: Set up Python ${{ matrix.python-version }}
+      - name: Set up python
         uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python-version }}
 
-      # Mount uv binary for tox runs
-      - name: Mount uv binary
-        run: docker run --rm --mount=type=bind,from=ghcr.io/astral-sh/uv:latest,source=/uv,target=/usr/local/bin/uv,ro ubuntu echo "UV mounted for tox"
-        shell: bash
-      # Ensure /usr/local/bin is in PATH if not already
-      - name: Add /usr/local/bin to PATH
-        run: echo "/usr/local/bin" >> $GITHUB_PATH
-        shell: bash
-
-      # Cache UV itself and its cache - skip caching mounted binary
-      # - name: Cache UV global installation
-      #   uses: actions/cache@v3
-      #   with:
-      #     path: /usr/local/bin/uv # Path where uv is mounted
-      #     key: uv-global-${{ runner.os }}
-      - name: Cache UV cache directory
-        uses: actions/cache@v3
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v1
         with:
-          path: ~/.cache/uv
-          key: uv-cache-${{ runner.os }}-${{ matrix.python-version }}
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
 
-      # Cache .tox directory based on python version and lockfile
       - name: Load cached .tox
         uses: actions/cache@v3
         id: cache-tox
@@ -84,12 +72,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      - name: Set up the UV environment
-        uses: ./.github/actions/setup-uv-env
+      - name: Set up python
+        uses: actions/setup-python@v4
         with:
-          python-version: "3.9"
+          python-version: ${{ matrix.python-version }}
 
-      - name: Check if documentation can be built (using Make)
-        run: make docs-test
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v1
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Sync dependencies
+        run: uv sync --locked
+
+      - name: Check if documentation can be built (using uv run)
+        run: uv run make docs-test

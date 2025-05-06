@@ -10,21 +10,32 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      - name: Set up the UV environment
-        uses: ./.github/actions/setup-uv-env
+      - name: Set up python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v1
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Sync dependencies
+        run: uv sync --locked
 
       - name: Export tag
         id: vars
         run: echo tag=${GITHUB_REF#refs/*/} >> $GITHUB_OUTPUT
 
       - name: Build distribution files
-        run: make build
+        run: uv run make build
         shell: bash
 
-      - name: Publish package to PyPI (using uv via Make)
-        run: make publish
+      - name: Publish package to PyPI (using uv run)
+        run: uv run make publish
         shell: bash
 
   deploy-docs:
@@ -32,10 +43,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      - name: Set up the UV environment
-        uses: ./.github/actions/setup-uv-env
+      - name: Set up python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v1
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Sync dependencies
+        run: uv sync --locked
 
       - name: Deploy documentation
         run: uv run mkdocs gh-deploy --force
