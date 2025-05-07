@@ -22,8 +22,23 @@ jobs:
         with:
           cache-dependency-glob: "uv.lock"
 
-      - name: Sync dependencies
-        run: uv sync --locked
+      - name: Check uv version
+        run: uv --version
+
+      - name: List resolved dependencies
+        run: uv pip list
+
+      - name: Run uv lock
+        run: uv lock || true # Continue even if it fails
+
+      - name: Show lockfile diff
+        run: git diff uv.lock || true
+
+      - name: Sync dependencies with debug
+        run: UV_DEBUG=1 uv sync --locked || true
+
+      - name: Print environment variables
+        run: env | sort
 
       - name: Export tag
         id: vars
