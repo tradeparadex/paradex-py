@@ -73,7 +73,7 @@ jobs:
             tox-${{ runner.os }}-${{ matrix.python-version }}-
 
       - name: Install tox and tox-gh-actions
-        run: pip install tox tox-gh-actions
+        run: uv pip install tox tox-gh-actions
         shell: bash
 
       - name: Test with tox
