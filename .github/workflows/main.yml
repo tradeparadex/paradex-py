@@ -49,6 +49,10 @@ jobs:
 
       - name: Sync dependencies
         run: uv sync --locked
+        shell: bash
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
 
       - name: Load cached .tox
         uses: actions/cache@v3
