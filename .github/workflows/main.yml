@@ -17,25 +17,8 @@ jobs:
       - name: Set up Python and uv
         uses: astral-sh/setup-uv@v6
         with:
+          enable-cache: true
           cache-dependency-glob: "uv.lock"
-
-      - name: Check uv version
-        run: uv --version
-
-      - name: List resolved dependencies
-        run: uv pip list
-
-      - name: Run uv lock
-        run: uv lock || true # Continue even if it fails
-
-      - name: Show lockfile diff
-        run: git diff uv.lock || true
-
-      - name: Sync dependencies with debug
-        run: UV_DEBUG=1 uv sync --locked || true
-
-      - name: Print environment variables
-        run: env | sort
 
       - name: Sync dependencies
         run: uv sync --locked
@@ -61,6 +44,7 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v6
         with:
+          enable-cache: true
           cache-dependency-glob: "uv.lock"
 
       - name: Load cached .tox
@@ -74,11 +58,9 @@ jobs:
 
       - name: Install tox and tox-gh-actions
         run: uv pip install tox tox-gh-actions
-        shell: bash
 
       - name: Test with tox
         run: tox
-        shell: bash
 
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v3
@@ -98,6 +80,7 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v6
         with:
+          enable-cache: true
           cache-dependency-glob: "uv.lock"
 
       - name: Sync dependencies

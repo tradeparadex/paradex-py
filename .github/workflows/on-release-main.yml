@@ -20,25 +20,8 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v1
         with:
+          enable-cache: true
           cache-dependency-glob: "uv.lock"
-
-      - name: Check uv version
-        run: uv --version
-
-      - name: List resolved dependencies
-        run: uv pip list
-
-      - name: Run uv lock
-        run: uv lock || true # Continue even if it fails
-
-      - name: Show lockfile diff
-        run: git diff uv.lock || true
-
-      - name: Sync dependencies with debug
-        run: UV_DEBUG=1 uv sync --locked || true
-
-      - name: Print environment variables
-        run: env | sort
 
       - name: Export tag
         id: vars
@@ -46,11 +29,9 @@ jobs:
 
       - name: Build distribution files
         run: uv run make build
-        shell: bash
 
       - name: Publish package to PyPI (using uv run)
         run: uv run make publish
-        shell: bash
 
   deploy-docs:
     needs: publish
@@ -67,6 +48,7 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v1
         with:
+          enable-cache: true
           cache-dependency-glob: "uv.lock"
 
       - name: Sync dependencies
