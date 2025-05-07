@@ -17,7 +17,6 @@ jobs:
       - name: Set up Python and uv
         uses: astral-sh/setup-uv@v1
         with:
-          enable-cache: true
           cache-dependency-glob: "uv.lock"
 
       - name: Sync dependencies
@@ -44,7 +43,6 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v1
         with:
-          enable-cache: true
           cache-dependency-glob: "uv.lock"
 
       - name: Load cached .tox
@@ -82,7 +80,6 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v1
         with:
-          enable-cache: true
           cache-dependency-glob: "uv.lock"
 
       - name: Sync dependencies
