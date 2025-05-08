@@ -1,56 +1,80 @@
-.PHONY: install
-install: ## Install the poetry env and pre-commit hooks
-	@echo "🚀 Creating virtual environment using pyenv and poetry"
-	@poetry install
-	@poetry run pre-commit install
-	@poetry shell
+.PHONY: help
+help:
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\\033[36m%-20s\\033[0m %s\\n", $$1, $$2}'
+
+UV := uv
+
+.PHONY: setup
+setup: ## Create venv, lock dependencies, install dependencies and pre-commit hooks
+	@echo "🚀 Checking for UV..."
+	@command -v $(UV) >/dev/null 2>&1 || { echo >&2 "UV is not installed. Please install it (e.g., 'pip install uv' or see https://github.com/astral-sh/uv#installation). Aborting."; exit 1; }
+	@echo "🚀 Creating virtual environment using UV..."
+	@$(UV) venv .venv
+	@echo "🚀 Checking uv lock file consistency with 'pyproject.toml': Running uv lock --check"
+	@$(UV) lock --check
+	@echo "🚀 Syncing dependencies from lockfile..."
+	@$(UV) sync # Reads uv.lock
+	@echo "🚀 Installing pre-commit hooks..."
+	@$(UV) run pre-commit install
+
+.PHONY: install # Alias for setup
+install: setup
+
+.PHONY: lock
+lock: ## Lock dependencies from pyproject.toml into uv.lock using UV
+	@echo "🚀 Locking dependencies..."
+	@$(UV) lock
+
+.PHONY: sync
+sync: ## Sync dependencies from uv.lock
+	@echo "🚀 Syncing dependencies from lockfile..."
+	@$(UV) sync
 
 .PHONY: check
 check: ## Run code quality tools
-	@echo "🚀 Checking Poetry lock file consistency with 'pyproject.toml': Running poetry lock --check"
-	@poetry check --lock
+	@echo "🚀 Checking lockfile consistency (running uv lock and checking for changes)..."
+	@$(UV) lock # Re-generate lockfile based on pyproject.toml
+	# Check if uv.lock was modified. Fails if there are unstaged changes to uv.lock.
+	@git diff --quiet --exit-code uv.lock || (echo "❌ uv.lock is out of sync with pyproject.toml. Run 'make lock' and commit changes." && exit 1)
+	@echo "✅ uv.lock is consistent with pyproject.toml."
 	@echo "🚀 Linting code: Running pre-commit"
-	@poetry run pre-commit run -a
+	@$(UV) run pre-commit run -a
 	@echo "🚀 Static type checking: Running mypy"
-	@poetry run mypy --check-untyped-defs
-	@echo "🚀 Checking for obsolete dependencies: Running deptry"
-	@poetry run deptry .
+	@$(UV) run mypy --check-untyped-defs paradex_py # Specify target explicitly
+	@echo "🚀 Checking for unused dependencies: Running deptry"
+	@$(UV) run deptry .
 
 .PHONY: test
 test: ## Test the code with pytest
 	@echo "🚀 Testing code: Running pytest"
-	@poetry run pytest --cov --cov-config=pyproject.toml --cov-report=xml -vv
+	@$(UV) run pytest --cov=paradex_py --cov-config=pyproject.toml --cov-report=xml -vv
 
 .PHONY: build
-build: clean-build ## Build wheel file using poetry
-	@echo "🚀 Creating wheel file"
-	@poetry build
+build: clean-build ## Build wheel and sdist using uv build
+	@echo "🚀 Building wheel and sdist with uv"
+	@$(UV) build --out-dir dist/
 
 .PHONY: clean-build
 clean-build: ## Clean build artifacts
-	@rm -rf dist
+	@rm -rf dist build *.egg-info
 
 .PHONY: publish
-publish: ## Publish a release to pypi
-	@echo "🚀 Publishing: Dry run."
-	@poetry config pypi-token.pypi $(PYPI_API_TOKEN)
-	@poetry publish --dry-run
-	@echo "🚀 Publishing."
-	@poetry publish
+publish: ## Publish a release to PyPI using uv publish
+	@echo "🚀 Publishing to PyPI with uv (using trusted publisher or env vars UV_PUBLISH_TOKEN/USERNAME/PASSWORD)"
+	@$(UV) publish dist/*
+	# Add --repository <url> or --index <name> for alternative indices
+	# uv handles TestPyPI automatically if configured via trusted publishing
+	# No explicit dry run needed, PyPI/uv usually handle existing files gracefully.
 
 .PHONY: build-and-publish
 build-and-publish: build publish ## Build and publish
 
 .PHONY: docs-test
 docs-test: ## Test if docs can be built without warnings or errors
-	@poetry run mkdocs build -s
+	@$(UV) run mkdocs build -s
 
 .PHONY: docs
 docs: ## Build and serve the documentation
-	@poetry run mkdocs serve
-
-.PHONY: help
-help:
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
+	@$(UV) run mkdocs serve
 
 .DEFAULT_GOAL := help
