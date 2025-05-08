@@ -9,6 +9,7 @@ repo_name: tradeparadex/paradex-py
 plugins:
   - search
   - privacy
+  - autorefs
   - mkdocstrings:
       handlers:
         python:

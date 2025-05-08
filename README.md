@@ -51,6 +51,39 @@ make docs
 make help
 ```
 
+### Using uv
+
+This project uses `uv` for managing dependencies and building. Below are instructions for installing `uv` and the basic workflow for development outside of using `make` commands.
+
+### Installing uv
+
+`uv` is a fast and modern Python package manager. You can install it using the standalone installer for macOS and Linux:
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+For other installation methods, refer to the [uv installation documentation](https://docs.astral.sh/uv/getting-started/installation/).
+
+### Basic Workflow with uv
+
+If you prefer not to use `make` commands, you can directly use `uv` for development tasks:
+
+- **Install dependencies**: Sync your environment with the project's dependencies.
+  ```bash
+  uv sync
+  ```
+- **Run tests**: Execute the test suite using `pytest` within the `uv` environment.
+  ```bash
+  uv run pytest
+  ```
+- **Build the project**: Create a distribution package for the SDK.
+  ```bash
+  uv build
+  ```
+
+For more detailed information on using `uv`, refer to the [uv documentation](https://docs.astral.sh/uv/).
+
 The CI/CD pipeline will be triggered when a new pull request is opened, code is merged to main, or when new release is created.
 
 ## Notes
