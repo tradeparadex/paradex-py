@@ -28,10 +28,16 @@ jobs:
         run: echo tag=${GITHUB_REF#refs/*/} >> $GITHUB_OUTPUT
 
       - name: Build distribution files
-        run: uv run make build
+        env:
+          UV_PUBLISH_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+          RELEASE_VERSION: ${{ steps.vars.outputs.tag }}
+        run: make build
 
       - name: Publish package to PyPI (using uv run)
-        run: uv run make publish
+        env:
+          UV_PUBLISH_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+          RELEASE_VERSION: ${{ steps.vars.outputs.tag }}
+        run: make publish
 
   deploy-docs:
     needs: publish
