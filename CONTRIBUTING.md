@@ -112,6 +112,21 @@ tox
 This requires you to have multiple versions of python installed.
 This step is also triggered in the CI/CD pipeline, so you could also choose to skip this step locally.
 
+## Generating API Models
+
+If you need to regenerate the API models from the Paradex OpenAPI specification:
+
+```bash
+uv run python scripts/generate_models_simple.py
+```
+
+This will:
+
+- Fetch the latest API spec from `https://api.prod.paradex.trade/swagger/doc.json`
+- Convert it to OpenAPI 3.0 format
+- Generate Pydantic v2 models in `paradex_py/api/generated/`
+- Clean up temporary files
+
 10. Commit your changes and push your branch to GitHub:
 
 ```bash
