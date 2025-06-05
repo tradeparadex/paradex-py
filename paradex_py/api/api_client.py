@@ -91,9 +91,9 @@ class ParadexApiClient(HttpClient):
         self._validate_auth()
         return self.put(api_url=self.api_url, path=path, payload=payload, params=params, headers=headers)
 
-    def _delete_authorized(self, path: str, params: Optional[dict] = None) -> dict:
+    def _delete_authorized(self, path: str, params: Optional[dict] = None, payload: Optional[dict] = None) -> dict:
         self._validate_auth()
-        return self.delete(api_url=self.api_url, path=path, params=params)
+        return self.delete(api_url=self.api_url, path=path, params=params, payload=payload)
 
     # PRIVATE GET METHODS
     def fetch_orders(self, params: Optional[Dict] = None) -> Dict:
@@ -417,6 +417,30 @@ class ParadexApiClient(HttpClient):
         """
         self._delete_authorized(path="orders", params=params)
 
+    def cancel_orders_batch(
+        self, order_ids: Optional[List[str]] = None, client_order_ids: Optional[List[str]] = None
+    ) -> Dict:
+        """Cancel batch of orders by order IDs or client order IDs.
+            Private endpoint requires authorization.
+
+        Args:
+            order_ids: List of order IDs assigned by Paradex
+            client_order_ids: List of client-assigned order IDs
+
+        Returns:
+            results (list): List of cancellation results for each order
+        """
+        if not order_ids and not client_order_ids:
+            return raise_value_error(f"{self.classname}: Must provide either order_ids or client_order_ids")
+
+        payload = {}
+        if order_ids:
+            payload["order_ids"] = order_ids
+        if client_order_ids:
+            payload["client_order_ids"] = client_order_ids
+
+        return self._delete_authorized(path="orders/batch", payload=payload)
+
     # PUBLIC GET METHODS
     def fetch_system_config(self) -> SystemConfig:
         """Fetch Paradex system config.
@@ -480,6 +504,31 @@ class ParadexApiClient(HttpClient):
             results (list): List of Market Summaries
         """
         return self._get(path="markets/summary", params=params)
+
+    def fetch_klines(
+        self, symbol: str, resolution: str, start_at: int, end_at: int, price_kind: Optional[str] = None
+    ) -> Dict:
+        """Fetch OHLCV candlestick data for a symbol.
+
+        Args:
+            symbol: Symbol of the market pair
+            resolution: Resolution in minutes: 1, 3, 5, 15, 30, 60
+            start_at: Start time for klines in milliseconds
+            end_at: End time for klines in milliseconds
+            price_kind: Which price to use for the klines (optional)
+
+        Returns:
+            List of OHLCV candlestick data
+        """
+        params = {
+            "symbol": symbol,
+            "resolution": resolution,
+            "start_at": start_at,
+            "end_at": end_at,
+        }
+        if price_kind:
+            params["price_kind"] = price_kind
+        return self._get(path="markets/klines", params=params)
 
     def fetch_orderbook(self, market: str, params: Optional[Dict] = None) -> Dict:
         """Fetch order-book for specific market.

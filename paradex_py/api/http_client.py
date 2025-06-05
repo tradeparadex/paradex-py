@@ -90,10 +90,12 @@ class HttpClient:
         api_url: str,
         path: str,
         params: Optional[dict] = None,
+        payload: Optional[dict] = None,
     ) -> dict:
         return self.request(
             url=f"{api_url}/{path}",
             http_method=HttpMethod.DELETE,
             params=params,
+            payload=payload,
             headers=self.client.headers,
         )
