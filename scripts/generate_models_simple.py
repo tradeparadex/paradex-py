@@ -29,6 +29,7 @@ def main():
         response = client.get(api_url)
         response.raise_for_status()
         swagger_spec = response.json()
+        api_version = swagger_spec.get("info", {}).get("version", "unknown")
 
     # Save swagger spec to temp file
     with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
@@ -82,6 +83,9 @@ def main():
             "--allow-extra-fields",
             "--use-double-quotes",
             "--use-standard-collections",
+            "--disable-timestamp",
+            "--custom-file-header",
+            f"# Generated from Paradex API spec version {api_version}",
         ]
 
         print(f"Running: {' '.join(gen_cmd)}")
@@ -99,13 +103,14 @@ def main():
 
         if "from .model import *" not in init_content:
             init_file.write_text(
-                f'{init_content}\n"""Generated API models from Paradex OpenAPI spec."""\n\n'
+                f"# Generated from Paradex API spec version {api_version}\n\n"
+                f'"""Generated API models from Paradex OpenAPI spec v{api_version}."""\n\n'
                 "# ruff: noqa: F403, A003\n"
                 "# Import all generated models\n"
                 "from .model import *\n"
                 "from .requests import *\n"
                 "from .responses import *\n\n"
-                "__all__ = [\n"
+                "__all__: list[str] = [\n"
                 "    # Re-export everything from sub-modules\n"
                 "]\n"
             )
