@@ -1,0 +1,72 @@
+name: Bump Version and Tag
+
+on:
+  workflow_dispatch:
+    inputs:
+      part:
+        description: "Part of the version to bump (major, minor, patch)"
+        required: true
+        default: "patch"
+
+jobs:
+  bump-version:
+    runs-on: ubuntu-latest
+    steps:
+      # Checkout the repository with a token to allow pushing
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Set up Python
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12" # Matches your requires-python range
+
+      # Install bumpversion
+      - name: Install bumpversion
+        run: pip install bumpversion
+
+      # Bump the version in pyproject.toml
+      - name: Bump version
+        run: bumpversion --allow-dirty ${{ github.event.inputs.part }}
+
+      # Configure git user
+      - name: Configure git
+        run: |
+          git config user.name "GitHub Action"
+          git config user.email "action@github.com"
+
+      # Commit the version bump
+      - name: Commit version bump
+        run: |
+          git add pyproject.toml
+          git commit -m "Bump version to $(python -c "import toml; print(toml.load('pyproject.toml')['project']['version'])")"
+
+      # Create a git tag
+      - name: Create git tag
+        run: |
+          git tag v$(python -c "import toml; print(toml.load('pyproject.toml')['project']['version'])")
+
+      # Push the commit and tag
+      - name: Push changes
+        run: |
+          git push origin main
+          git push origin --tags
+
+      # Create a draft release
+      - name: Create Draft Release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ steps.get_version.outputs.version }}
+          release_name: Release v${{ steps.get_version.outputs.version }}
+          draft: true
+          prerelease: false
+      # Extract the new version for use in the release
+      - name: Get version
+        id: get_version
+        run: |
+          echo "version=$(python -c "import toml; print(toml.load('pyproject.toml')['project']['version'])")" >> $GITHUB_OUTPUT
