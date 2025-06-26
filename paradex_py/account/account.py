@@ -2,12 +2,10 @@ import json
 import logging
 import time
 import types
-from datetime import datetime
 from decimal import Decimal
 from enum import IntEnum
 from typing import Optional
 
-import pytz
 from aiohttp import ClientSession
 from starknet_py.common import int_from_bytes, int_from_hex
 from starknet_py.hash.address import compute_address
@@ -173,7 +171,7 @@ class ParadexAccount:
         }
 
     def fullnode_request_headers(self, account: StarknetAccount, chain_id: int, json_payload: str):
-        signature_timestamp = int(datetime.now(pytz.utc).timestamp())
+        signature_timestamp = int(time.time())
         account_address = hex(account.address)
         message = build_fullnode_message(
             chain_id,
