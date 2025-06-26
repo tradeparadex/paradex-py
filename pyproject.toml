@@ -75,6 +75,7 @@ warn_unused_ignores = true
 module = [
     "starknet_py.*",
     "starkware.*",
+    "poseidon_py.*",
 ]
 ignore_missing_imports = true
 
