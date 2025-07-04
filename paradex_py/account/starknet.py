@@ -147,9 +147,10 @@ class Account(StarknetAccount):
 
         return deploy_result
 
-    async def load_contract(self, address: AddressRepresentation) -> Contract:
+    async def load_contract(self, address: AddressRepresentation, is_cairo0_contract: bool = False) -> Contract:
         try:
-            contract = await Contract.from_address(address=address, provider=self, proxy_config=get_proxy_config())
+            proxy_config = get_proxy_config() if is_cairo0_contract else False
+            contract = await Contract.from_address(address=address, provider=self, proxy_config=proxy_config)
         except Exception as e:
             logging.error(f"Error loading contract at address {hex(address)}: {e}")
             raise
