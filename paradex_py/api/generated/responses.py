@@ -7,7 +7,36 @@ from typing import Annotated, Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from paradex_py.api.generated.requests import BlockTradeOrder, BlockTradeSignature
+
+class SignatureType(Enum):
+    """
+    Type of cryptographic signature used
+    """
+
+    starknet = "STARKNET"
+
+
+class BlockTradeSignature(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        populate_by_name=True,
+    )
+    nonce: Annotated[str, Field(description="Unique nonce to prevent replay attacks", examples=["12345"])]
+    signature_data: Annotated[
+        str, Field(description="The actual signature bytes in hex format", examples=["0xabc123..."])
+    ]
+    signature_expiration: Annotated[
+        int, Field(description="Unix timestamp in milliseconds when signature expires", examples=[1640995800000])
+    ]
+    signature_timestamp: Annotated[
+        int, Field(description="Unix timestamp in milliseconds when signature was created", examples=[1640995200000])
+    ]
+    signature_type: Annotated[
+        SignatureType, Field(description="Type of cryptographic signature used", examples=["STARKNET"])
+    ]
+    signer_account: Annotated[
+        str, Field(description="Starknet account address of the signer", examples=["0x1234567890abcdef"])
+    ]
 
 
 class APIResults(BaseModel):
@@ -249,6 +278,53 @@ class BlockTradeStatus(Enum):
     block_trade_status_executing = "EXECUTING"
     block_trade_status_completed = "COMPLETED"
     block_trade_status_cancelled = "CANCELLED"
+
+
+class BlockTradeOrder(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        populate_by_name=True,
+    )
+    client_id: Annotated[
+        str | None, Field(description="Unique client assigned ID for the order", examples=["123454321"], max_length=64)
+    ] = None
+    flags: Annotated[list[OrderFlag] | None, Field(description="Order flags, allow flag: REDUCE_ONLY")] = None
+    instruction: Annotated[
+        OrderInstruction, Field(description="Order Instruction, GTC, IOC, RPI or POST_ONLY if empty GTC")
+    ]
+    market: Annotated[str, Field(description="Market for which order is created", examples=["BTC-USD-PERP"])]
+    on_behalf_of_account: Annotated[
+        str | None,
+        Field(
+            description="ID corresponding to the configured isolated margin account.  Only for isolated margin orders",
+            examples=["0x1234567890abcdef"],
+        ),
+    ] = None
+    price: Annotated[str, Field(description="Order price", examples=["29500.12"])]
+    recv_window: Annotated[
+        int | None,
+        Field(
+            description=(
+                "Order will be created if it is received by API within RecvWindow milliseconds from signature"
+                " timestamp, minimum is 10 milliseconds"
+            )
+        ),
+    ] = None
+    side: Annotated[OrderSide, Field(description="Order side")]
+    signature: Annotated[str, Field(description="Order Payload signed with STARK Private Key")]
+    signature_timestamp: Annotated[
+        int, Field(description="Timestamp of order creation, used for signature verification")
+    ]
+    signed_impact_price: Annotated[
+        str | None, Field(description="Optional signed impact price for market orders (base64 encoded)")
+    ] = None
+    size: Annotated[str, Field(description="Size of the order", examples=["1.213"])]
+    stp: Annotated[
+        str | None,
+        Field(description="Self Trade Prevention, EXPIRE_MAKER, EXPIRE_TAKER or EXPIRE_BOTH, if empty EXPIRE_TAKER"),
+    ] = None
+    trigger_price: Annotated[str | None, Field(description="Trigger price for stop order")] = None
+    type: Annotated[OrderType, Field(description="Order type")]
 
 
 class BridgedToken(BaseModel):

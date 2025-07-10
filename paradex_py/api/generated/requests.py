@@ -37,37 +37,6 @@ class BlockTradeConstraints(BaseModel):
     min_size: Annotated[str | None, Field(description="Minimum trade size allowed", examples=["0.1"])] = None
 
 
-class SignatureType(Enum):
-    """
-    Type of cryptographic signature used
-    """
-
-    starknet = "STARKNET"
-
-
-class BlockTradeSignature(BaseModel):
-    model_config = ConfigDict(
-        extra="allow",
-        populate_by_name=True,
-    )
-    nonce: Annotated[str, Field(description="Unique nonce to prevent replay attacks", examples=["12345"])]
-    signature_data: Annotated[
-        str, Field(description="The actual signature bytes in hex format", examples=["0xabc123..."])
-    ]
-    signature_expiration: Annotated[
-        int, Field(description="Unix timestamp in milliseconds when signature expires", examples=[1640995800000])
-    ]
-    signature_timestamp: Annotated[
-        int, Field(description="Unix timestamp in milliseconds when signature was created", examples=[1640995200000])
-    ]
-    signature_type: Annotated[
-        SignatureType, Field(description="Type of cryptographic signature used", examples=["STARKNET"])
-    ]
-    signer_account: Annotated[
-        str, Field(description="Starknet account address of the signer", examples=["0x1234567890abcdef"])
-    ]
-
-
 class CancelOrderBatchRequest(BaseModel):
     model_config = ConfigDict(
         extra="allow",
@@ -228,56 +197,9 @@ class BlockExecuteRequest(BaseModel):
         Field(description="Array of offer IDs selected for execution (offers are atomic, not partial)"),
     ] = None
     signatures: Annotated[
-        dict[str, BlockTradeSignature],
+        dict[str, responses.BlockTradeSignature],
         Field(description="Map of offer IDs to initiator signatures accepting each offer"),
     ]
-
-
-class BlockTradeOrder(BaseModel):
-    model_config = ConfigDict(
-        extra="allow",
-        populate_by_name=True,
-    )
-    client_id: Annotated[
-        str | None, Field(description="Unique client assigned ID for the order", examples=["123454321"], max_length=64)
-    ] = None
-    flags: Annotated[list[responses.OrderFlag] | None, Field(description="Order flags, allow flag: REDUCE_ONLY")] = None
-    instruction: Annotated[
-        responses.OrderInstruction, Field(description="Order Instruction, GTC, IOC, RPI or POST_ONLY if empty GTC")
-    ]
-    market: Annotated[str, Field(description="Market for which order is created", examples=["BTC-USD-PERP"])]
-    on_behalf_of_account: Annotated[
-        str | None,
-        Field(
-            description="ID corresponding to the configured isolated margin account.  Only for isolated margin orders",
-            examples=["0x1234567890abcdef"],
-        ),
-    ] = None
-    price: Annotated[str, Field(description="Order price", examples=["29500.12"])]
-    recv_window: Annotated[
-        int | None,
-        Field(
-            description=(
-                "Order will be created if it is received by API within RecvWindow milliseconds from signature"
-                " timestamp, minimum is 10 milliseconds"
-            )
-        ),
-    ] = None
-    side: Annotated[responses.OrderSide, Field(description="Order side")]
-    signature: Annotated[str, Field(description="Order Payload signed with STARK Private Key")]
-    signature_timestamp: Annotated[
-        int, Field(description="Timestamp of order creation, used for signature verification")
-    ]
-    signed_impact_price: Annotated[
-        str | None, Field(description="Optional signed impact price for market orders (base64 encoded)")
-    ] = None
-    size: Annotated[str, Field(description="Size of the order", examples=["1.213"])]
-    stp: Annotated[
-        str | None,
-        Field(description="Self Trade Prevention, EXPIRE_MAKER, EXPIRE_TAKER or EXPIRE_BOTH, if empty EXPIRE_TAKER"),
-    ] = None
-    trigger_price: Annotated[str | None, Field(description="Trigger price for stop order")] = None
-    type: Annotated[responses.OrderType, Field(description="Order type")]
 
 
 class OrderRequest(BaseModel):
@@ -332,7 +254,7 @@ class BlockOfferInfo(BaseModel):
         extra="allow",
         populate_by_name=True,
     )
-    offerer_order: Annotated[BlockTradeOrder, Field(description="Order details from the offering account")]
+    offerer_order: Annotated[responses.BlockTradeOrder, Field(description="Order details from the offering account")]
     price: Annotated[str, Field(description="Offered price for this market", examples=["30050.00"])]
     size: Annotated[str, Field(description="Offered size for this market", examples=["5.0"])]
 
@@ -346,7 +268,9 @@ class BlockOfferRequest(BaseModel):
     offering_account: Annotated[
         str, Field(description="Starknet address of the account making this offer", examples=["0xabcdef1234567890"])
     ]
-    signature: Annotated[BlockTradeSignature, Field(description="Cryptographic signature authorizing this offer")]
+    signature: Annotated[
+        responses.BlockTradeSignature, Field(description="Cryptographic signature authorizing this offer")
+    ]
     trades: Annotated[dict[str, BlockOfferInfo], Field(description="Map of market symbol to offer details")]
 
 
@@ -356,7 +280,7 @@ class BlockTradeInfo(BaseModel):
         populate_by_name=True,
     )
     maker_order: Annotated[
-        BlockTradeOrder | None, Field(description="Maker order details (empty if requiring offers)")
+        responses.BlockTradeOrder | None, Field(description="Maker order details (empty if requiring offers)")
     ] = None
     price: Annotated[
         str | None, Field(description="Agreed price for this trade (empty if requiring offers)", examples=["30000.00"])
@@ -365,7 +289,7 @@ class BlockTradeInfo(BaseModel):
         str | None, Field(description="Agreed size for this trade (empty if requiring offers)", examples=["10.5"])
     ] = None
     taker_order: Annotated[
-        BlockTradeOrder | None, Field(description="Taker order details (empty if requiring offers)")
+        responses.BlockTradeOrder | None, Field(description="Taker order details (empty if requiring offers)")
     ] = None
     trade_constraints: Annotated[
         BlockTradeConstraints | None, Field(description="Constraints for this trade when requiring offers")
@@ -380,7 +304,7 @@ class BlockTradeRequest(BaseModel):
     nonce: Annotated[str, Field(description="Unique nonce for this block trade request", examples=["67890"])]
     required_signers: Annotated[list[str], Field(description="Array of account addresses that must sign this block")]
     signatures: Annotated[
-        dict[str, BlockTradeSignature], Field(description="Map of account addresses to their signatures")
+        dict[str, responses.BlockTradeSignature], Field(description="Map of account addresses to their signatures")
     ]
     trades: Annotated[
         dict[str, BlockTradeInfo], Field(description="Map of market symbol to trade info (one per market)")
