@@ -227,9 +227,6 @@ class BlockTradeConstraintsResponse(BaseModel):
     max_size: Annotated[str | None, Field(description="Maximum trade size allowed", examples=["100.0"])] = None
     min_price: Annotated[str | None, Field(description="Minimum price allowed", examples=["29000.00"])] = None
     min_size: Annotated[str | None, Field(description="Minimum trade size allowed", examples=["0.1"])] = None
-    oracle_tolerance: Annotated[
-        str | None, Field(description="Maximum allowed deviation from oracle price", examples=["0.5"])
-    ] = None
 
 
 class BlockTradeFillResponse(BaseModel):
