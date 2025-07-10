@@ -7,6 +7,8 @@ from typing import Annotated, Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from paradex_py.api.generated.requests import BlockTradeOrder, BlockTradeSignature
+
 
 class APIResults(BaseModel):
     model_config = ConfigDict(
@@ -238,49 +240,6 @@ class BlockTradeFillResponse(BaseModel):
     fill_id: Annotated[str | None, Field(description="Unique identifier for the fill", examples=["fill_789"])] = None
     price: Annotated[str | None, Field(description="Actual execution price", examples=["30000.00"])] = None
     size: Annotated[str | None, Field(description="Actual size that was filled", examples=["10.5"])] = None
-
-
-class BlockTradeOrder(BaseModel):
-    model_config = ConfigDict(
-        extra="allow",
-        populate_by_name=True,
-    )
-    client_id: Annotated[str | None, Field(description="Client-provided identifier", examples=["order_123"])] = None
-    market: Annotated[str | None, Field(description="Trading pair for this order", examples=["BTC-USD-PERP"])] = None
-    price: Annotated[
-        str | None, Field(description="Order price (omitted for market orders)", examples=["30000.00"])
-    ] = None
-    side: Annotated[str | None, Field(description="BUY or SELL", examples=["BUY"])] = None
-    signature: Annotated[str | None, Field(description="Order signature", examples=["0xabc123..."])] = None
-    signature_timestamp: Annotated[
-        int | None, Field(description="When order was signed", examples=[1640995200000])
-    ] = None
-    size: Annotated[str | None, Field(description="Order size", examples=["10.5"])] = None
-    type: Annotated[str | None, Field(description="Order type (LIMIT, MARKET, etc.)", examples=["LIMIT"])] = None
-
-
-class BlockTradeSignature(BaseModel):
-    model_config = ConfigDict(
-        extra="allow",
-        populate_by_name=True,
-    )
-    nonce: Annotated[str | None, Field(description="Unique nonce to prevent replay attacks", examples=["12345"])] = None
-    signature_data: Annotated[
-        str | None, Field(description="The actual signature bytes in hex format", examples=["0xabc123..."])
-    ] = None
-    signature_expiration: Annotated[
-        int | None, Field(description="Unix timestamp in milliseconds when signature expires", examples=[1640995800000])
-    ] = None
-    signature_timestamp: Annotated[
-        int | None,
-        Field(description="Unix timestamp in milliseconds when signature was created", examples=[1640995200000]),
-    ] = None
-    signature_type: Annotated[
-        str | None, Field(description="Type of cryptographic signature used", examples=["STARKNET"])
-    ] = None
-    signer_account: Annotated[
-        str | None, Field(description="Starknet account address of the signer", examples=["0x1234567890abcdef"])
-    ] = None
 
 
 class BlockTradeStatus(Enum):

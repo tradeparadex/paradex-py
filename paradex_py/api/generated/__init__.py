@@ -4,7 +4,6 @@
 
 # ruff: noqa: F403, A003
 # Import all generated models
-from .model import *
 from .requests import *
 from .responses import *
 
