@@ -1,0 +1,206 @@
+from typing import Any, Dict, List, Optional, Protocol, Union
+
+from paradex_py.api.generated.requests import (
+    BlockExecuteRequest,
+    BlockOfferRequest,
+    BlockTradeRequest,
+)
+
+
+class ApiClientProtocol(Protocol):
+    """Protocol defining the interface expected by BlockTradesMixin."""
+
+    def _get_authorized(self, path: str, params: Optional[dict] = None) -> dict:
+        """Make authorized GET request."""
+        ...
+
+    def _post_authorized(
+        self,
+        path: str,
+        payload: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]] = None,
+        params: Optional[dict] = None,
+        headers: Optional[dict] = None,
+    ) -> dict:
+        """Make authorized POST request."""
+        ...
+
+    def _delete_authorized(self, path: str, params: Optional[dict] = None, payload: Optional[dict] = None) -> dict:
+        """Make authorized DELETE request."""
+        ...
+
+
+class BlockTradesMixin:
+    """Mixin class for Block Trades API endpoints.
+
+    This mixin provides all block trades functionality to be mixed into ParadexApiClient.
+    """
+
+    # Type hint for the mixin to indicate it expects these methods
+    _get_authorized: Any
+    _post_authorized: Any
+    _delete_authorized: Any
+
+    def list_block_trades(
+        self,
+        status: Optional[str] = None,
+        market: Optional[str] = None,
+    ) -> Dict:
+        """Get a paginated list of block trades with filtering.
+
+        Returns block trades where user is initiator, required signer,
+        or has submitted an offer.
+
+        Args:
+            status: Block trade status filter (CREATED, OFFER_COLLECTION, READY_TO_EXECUTE, EXECUTING, COMPLETED, CANCELLED)
+            market: Market symbol filter (e.g., BTC-USD-PERP)
+
+        Returns:
+            Paginated list with block trade details and navigation metadata.
+        """
+        params = {}
+        if status:
+            params["status"] = status
+        if market:
+            params["market"] = market
+
+        return self._get_authorized(path="block-trades", params=params)
+
+    def create_block_trade(self, block_trade: BlockTradeRequest) -> Dict:
+        """Create a parent block trade for multi-party execution.
+
+        Block trades coordinate execution across multiple parties.
+        The initiator creates a parent block trade specifying trade details and
+        required signers, who must submit offers before execution.
+
+        Args:
+            block_trade: Block trade request with trade details and signatures
+
+        Returns:
+            Created block trade details
+        """
+        payload = block_trade.model_dump() if hasattr(block_trade, "model_dump") else block_trade.dict()
+        return self._post_authorized(path="block-trades", payload=payload)
+
+    def get_block_trade(self, block_trade_id: str) -> Dict:
+        """Retrieve a specific block trade by ID with full details.
+
+        Returns complete block trade information including status, trade details,
+        signatures, and offers.
+
+        Args:
+            block_trade_id: Block Trade ID
+
+        Returns:
+            Block trade details with status, signatures, and offers
+        """
+        return self._get_authorized(path=f"block-trades/{block_trade_id}")
+
+    def cancel_block_trade(self, block_trade_id: str) -> Dict:
+        """Cancel a pending block trade.
+
+        Only the initiator can cancel a block trade in cancellable state
+        (CREATED, OFFER_COLLECTION, READY_TO_EXECUTE).
+        Once cancelled, all associated offers become invalid.
+
+        Args:
+            block_trade_id: Block Trade ID
+
+        Returns:
+            Success message confirming cancellation
+        """
+        return self._delete_authorized(path=f"block-trades/{block_trade_id}")
+
+    def execute_block_trade(self, block_trade_id: str, execution_request: BlockExecuteRequest) -> Dict:
+        """Execute a block trade with selected offers.
+
+        Executes a parent block trade by selecting specific offers from required signers.
+
+        Args:
+            block_trade_id: Block Trade ID
+            execution_request: Block execution parameters with selected offers
+
+        Returns:
+            Executed block trade with status and fill details
+        """
+        payload = (
+            execution_request.model_dump() if hasattr(execution_request, "model_dump") else execution_request.dict()
+        )
+        return self._post_authorized(path=f"block-trades/{block_trade_id}/execute", payload=payload)
+
+    def get_block_trade_offers(self, block_trade_id: str) -> Dict:
+        """Get all offers for a specific block trade.
+
+        Returns all offers submitted for a parent block trade by required signers.
+
+        Args:
+            block_trade_id: Parent Block Trade ID
+
+        Returns:
+            Array of offers with offer details and signatures
+        """
+        return self._get_authorized(path=f"block-trades/{block_trade_id}/offers")
+
+    def create_block_trade_offer(self, block_trade_id: str, offer: BlockOfferRequest) -> Dict:
+        """Create a sub-block offer for an existing block trade.
+
+        Required signers submit their order details and pricing for
+        markets defined in the parent block trade.
+
+        Args:
+            block_trade_id: Parent Block Trade ID
+            offer: Block offer content with order details and signatures
+
+        Returns:
+            Created offer with unique ID and parent reference
+        """
+        payload = offer.model_dump() if hasattr(offer, "model_dump") else offer.dict()
+        return self._post_authorized(path=f"block-trades/{block_trade_id}/offers", payload=payload)
+
+    def get_block_trade_offer(self, block_trade_id: str, offer_id: str) -> Dict:
+        """Get a specific offer by ID for a block trade.
+
+        Retrieves detailed information about an offer submitted for a parent block trade.
+
+        Args:
+            block_trade_id: Parent Block Trade ID
+            offer_id: Offer ID
+
+        Returns:
+            Offer details with market-specific order information
+        """
+        return self._get_authorized(path=f"block-trades/{block_trade_id}/offers/{offer_id}")
+
+    def cancel_block_trade_offer(self, block_trade_id: str, offer_id: str) -> Dict:
+        """Cancel a pending offer for a block trade.
+
+        Only the offering account can cancel their own offer if it's in
+        a cancellable state and the parent block trade is still active.
+
+        Args:
+            block_trade_id: Parent Block Trade ID
+            offer_id: Offer ID
+
+        Returns:
+            Success message confirming offer cancellation
+        """
+        return self._delete_authorized(path=f"block-trades/{block_trade_id}/offers/{offer_id}")
+
+    def execute_block_trade_offer(
+        self, block_trade_id: str, offer_id: str, execution_request: BlockExecuteRequest
+    ) -> Dict:
+        """Execute a specific offer independently of the parent block trade.
+
+        Executes an individual offer without waiting for full block trade execution.
+
+        Args:
+            block_trade_id: Parent Block Trade ID
+            offer_id: Offer ID
+            execution_request: Offer execution parameters
+
+        Returns:
+            Executed offer with status, fill details, and timestamps
+        """
+        payload = (
+            execution_request.model_dump() if hasattr(execution_request, "model_dump") else execution_request.dict()
+        )
+        return self._post_authorized(path=f"block-trades/{block_trade_id}/offers/{offer_id}/execute", payload=payload)
