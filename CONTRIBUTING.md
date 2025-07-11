@@ -117,14 +117,21 @@ This step is also triggered in the CI/CD pipeline, so you could also choose to s
 If you need to regenerate the API models from the Paradex OpenAPI specification:
 
 ```bash
+# Fetch from API (default)
 uv run python scripts/generate_models_simple.py
+
+# Use local spec file
+uv run python scripts/generate_models_simple.py --spec-file path/to/spec.json
+
+# Use local spec file with custom output directory
+uv run python scripts/generate_models_simple.py --spec-file path/to/spec.json --output-dir custom/output
 ```
 
 This will:
 
-- Fetch the latest API spec from `https://api.prod.paradex.trade/swagger/doc.json`
+- Fetch the latest API spec from `https://api.prod.paradex.trade/swagger/doc.json` OR use a provided JSON file
 - Convert it to OpenAPI 3.0 format
-- Generate Pydantic v2 models in `paradex_py/api/generated/`
+- Generate Pydantic v2 models in `paradex_py/api/generated/` (or custom directory)
 - Clean up temporary files
 
 10. Commit your changes and push your branch to GitHub:
