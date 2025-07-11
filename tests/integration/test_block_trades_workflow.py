@@ -51,6 +51,9 @@ import json
 import logging
 import time
 from decimal import Decimal
+from typing import List
+
+from pydantic import TypeAdapter
 
 from paradex_py import Paradex
 from paradex_py.api.generated.requests import (
@@ -62,9 +65,11 @@ from paradex_py.api.generated.requests import (
     BlockTradeRequest,
 )
 from paradex_py.api.generated.responses import (
+    ApiError,
     BlockTradeOrder,
     BlockTradeSignature,
     MarketResp,
+    MarketSummaryResp,
     OrderInstruction,
     OrderSide,
     OrderType,
@@ -376,22 +381,37 @@ def fetch_multiple_markets_data(client, num_markets=3):
 
     try:
         # Fetch available markets
-        markets = client.api_client.fetch_markets()
-        logger.info(f"Available markets: {len(markets.get('results', []))} markets")
+        markets_response = client.api_client.fetch_markets()
+
+        # Check for API error
+        if "error" in markets_response:
+            error = ApiError.model_validate(markets_response)
+            logger.error(f"API Error {error.error}: {error.message}")
+            return []
+
+        logger.info(f"Available markets: {len(markets_response.get('results', []))} markets")
+
+        # Parse all markets using TypeAdapter
+        if markets_response.get("results"):
+            adapter = TypeAdapter(List[MarketResp])
+            all_markets = adapter.validate_python(markets_response["results"])
+        else:
+            logger.error("No markets found in response")
+            return []
 
         # Find perpetual markets
-        perp_markets = [m for m in markets.get("results", []) if "-PERP" in m.get("symbol", "")]
+        perp_markets = [m for m in all_markets if m.symbol and "-PERP" in m.symbol]
         if not perp_markets:
             logger.error("No perpetual markets found")
             return []
 
         # Prioritize common markets: ETH, BTC, SOL
         preferred_symbols = ["ETH-USD-PERP", "BTC-USD-PERP", "SOL-USD-PERP"]
-        selected_markets: list = []
+        selected_markets: List[MarketResp] = []
 
         # First, try to get preferred markets
         for symbol in preferred_symbols:
-            market = next((m for m in perp_markets if m["symbol"] == symbol), None)
+            market = next((m for m in perp_markets if m.symbol == symbol), None)
             if market and len(selected_markets) < num_markets:
                 selected_markets.append(market)
 
@@ -402,29 +422,40 @@ def fetch_multiple_markets_data(client, num_markets=3):
             if market not in selected_markets:
                 selected_markets.append(market)
 
-        # Fetch market summaries for current prices and parse markets as MarketResp
+        # Fetch market summaries for current prices
         markets_with_prices = []
-        for market_data in selected_markets[:num_markets]:
-            # Parse market data using MarketResp model
+        for market in selected_markets[:num_markets]:
             try:
-                market = MarketResp.model_validate(market_data)
                 market_symbol = market.symbol
                 if not market_symbol:
                     continue
 
-                summary = client.api_client.fetch_markets_summary({"market": market_symbol})
-                if summary and summary.get("results"):
-                    summary_data = summary["results"][0]
-                    current_price = float(summary_data.get("mark_price", summary_data.get("last_price", "0")))
-                    if current_price > 0:
-                        markets_with_prices.append((market, current_price))
-                        logger.info(f"Using market {market_symbol}, current price: {current_price}")
-                    else:
-                        logger.warning(f"No valid price for {market_symbol}")
+                summary_response = client.api_client.fetch_markets_summary({"market": market_symbol})
+
+                # Check for API error
+                if "error" in summary_response:
+                    error = ApiError.model_validate(summary_response)
+                    logger.warning(f"API Error for {market_symbol}: {error.error} - {error.message}")
+                    continue
+
+                if summary_response and summary_response.get("results"):
+                    # Parse market summaries using TypeAdapter
+                    adapter = TypeAdapter(List[MarketSummaryResp])
+                    summaries = adapter.validate_python(summary_response["results"])
+
+                    if summaries:
+                        summary = summaries[0]
+                        # Get price from MarketSummaryResp model fields
+                        current_price = float(summary.mark_price or summary.underlying_price or "0")
+                        if current_price > 0:
+                            markets_with_prices.append((market, current_price))
+                            logger.info(f"Using market {market_symbol}, current price: {current_price}")
+                        else:
+                            logger.warning(f"No valid price for {market_symbol}")
                 else:
-                    logger.warning(f"Failed to fetch market summary for {market_symbol}")
+                    logger.warning(f"No results in market summary for {market_symbol}")
             except Exception as e:
-                logger.warning(f"Failed to parse market data: {e}")
+                logger.warning(f"Failed to fetch/parse summary for {market.symbol}: {e}")
                 continue
 
         logger.info(f"Successfully fetched data for {len(markets_with_prices)} markets")
@@ -887,16 +918,13 @@ def test_list_offers(client, block_trade_id):
         return None
 
 
-def poll_status_for_entities(
-    client, block_ids, entity_type="block_trade", max_checks=30, interval=3, timeout_seconds=None
-):
+def poll_status_for_entities(client, block_ids, max_checks=30, interval=3, timeout_seconds=None):
     """
     Poll status for multiple block trades or offers using get_block_trade.
 
     Args:
         client: API client instance
         block_ids: List of block trade/offer IDs to monitor
-        entity_type: "block_trade" or "offer" for logging purposes
         max_checks: Maximum number of polling iterations
         interval: Seconds between checks
         timeout_seconds: Optional absolute timeout (overrides max_checks)
@@ -910,7 +938,7 @@ def poll_status_for_entities(
         log_info("No block IDs provided for polling")
         return {}, []
 
-    log_info(f"🔍 Starting polling for {len(block_ids)} {entity_type}(s): {block_ids}")
+    log_info(f"🔍 Starting polling for {len(block_ids)} block trades: {block_ids}")
 
     # Calculate actual max_checks if timeout is specified
     if timeout_seconds:
@@ -949,12 +977,12 @@ def poll_status_for_entities(
 
                 # Check if this entity has reached a final state
                 if current_status in ["COMPLETED", "FAILED", "CANCELLED", "EXECUTED"]:
-                    log_info(f"🎯 {entity_type.title()} {block_id} reached final status: {current_status}")
+                    log_info(f"🎯 block trade {block_id} reached final status: {current_status}")
                     entities_to_remove.append(block_id)
                     completed_entities.append((block_id, current_status))
 
             except Exception as e:
-                log_info(f"⚠️  Error checking {entity_type} {block_id}: {e}")
+                log_info(f"⚠️  Error checking block trade {block_id}: {e}")
                 # Keep monitoring on errors
                 current_iteration.append(f"{block_id}:ERROR")
 
@@ -979,26 +1007,9 @@ def poll_status_for_entities(
     log_info(f"   Final statuses: {final_statuses}")
 
     if monitoring_list:
-        log_info(f"   ⚠️  {len(monitoring_list)} {entity_type}(s) did not reach final state: {monitoring_list}")
+        log_info(f"   ⚠️  {len(monitoring_list)} block trades did not reach final state: {monitoring_list}")
 
     return final_statuses, completed_entities
-
-
-def monitor_execution_status(client, block_trade_id, initial_status=None, max_checks=30, interval=3):
-    """Monitor block trade status changes after execution using the new polling approach."""
-    log_info(f"🔍 Monitoring execution status for block trade {block_trade_id}")
-    if initial_status:
-        log_info(f"Initial status: {initial_status}")
-
-    # Use the new polling function for single block trade
-    final_statuses, completed_entities = poll_status_for_entities(
-        client, [block_trade_id], "block_trade", max_checks, interval
-    )
-
-    final_status = final_statuses.get(block_trade_id, initial_status)
-    log_info(f"✅ Final monitoring status: {final_status}")
-
-    return final_status
 
 
 def test_execute_block_trade(client, block_trade_id, account_summaries, selected_offers=None):
@@ -1356,7 +1367,7 @@ def main():
 
         except Exception as e:
             log_error(f"FATAL: Failed to fetch market data: {e}")
-            raise RuntimeError(f"Cannot proceed without valid market data for {market_symbol}: {e}")
+            raise RuntimeError(f"Cannot proceed without valid market data for {market_symbol}: {e}") from e
 
         # Test submitting offers
         test_submit_offers(
@@ -1397,10 +1408,8 @@ def main():
             # Example: Polling both the block trade and offers using the new polling function
             log_info("🔄 Example: Polling multiple entities (block trade + offers)")
             all_entities = [block_trade_id, *offer_ids]  # Block trade + first 2 offers
-            final_statuses, completed = poll_status_for_entities(
-                clients[0], all_entities, "mixed_entities", max_checks=10, interval=2
-            )
-            log_info(f"📋 Polling results: {len(completed)} entities completed")
+            final_statuses, completed = poll_status_for_entities(clients[0], all_entities, max_checks=10, interval=2)
+            log_info(f"📋 Polling results: {len(completed)} entities completed. Final statuses: {final_statuses}")
         else:
             log_warning("No offers found, skipping execution")
 

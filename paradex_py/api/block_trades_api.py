@@ -1,11 +1,14 @@
 from typing import Any, Dict, List, Optional, Protocol, Union
 
+from pydantic import TypeAdapter
+
 from paradex_py.api.generated.requests import (
     BlockExecuteRequest,
     BlockOfferRequest,
     BlockTradeRequest,
 )
 from paradex_py.api.generated.responses import (
+    ApiError,
     APIResults,
     BlockTradeDetailFullResponse,
     PaginatedAPIResults,
@@ -47,24 +50,42 @@ class BlockTradesMixin:
 
     def _parse_block_trade_list_response(self, response: dict) -> PaginatedAPIResults:
         """Parse block trade list response to typed model."""
-        try:
-            # Transform the results to typed BlockTradeDetailFullResponse objects
-            typed_results = []
-            if response.get("results"):
-                for item in response["results"]:
-                    typed_results.append(BlockTradeDetailFullResponse.model_validate(item))
+        # Check if response contains an error
+        if "error" in response:
+            error = ApiError.model_validate(response)
+            raise ValueError(f"API Error {error.error}: {error.message}")
 
-            return PaginatedAPIResults(
-                next=response.get("next"),
-                prev=response.get("prev"),
-                results=[result.model_dump() for result in typed_results],
-            )
+        try:
+            # Use TypeAdapter to validate list of BlockTradeDetailFullResponse objects
+            if response.get("results"):
+                adapter = TypeAdapter(List[BlockTradeDetailFullResponse])
+                typed_results = adapter.validate_python(response["results"])
+
+                return PaginatedAPIResults(
+                    next=response.get("next"),
+                    prev=response.get("prev"),
+                    results=[result.model_dump() for result in typed_results],
+                )
+            else:
+                return PaginatedAPIResults(
+                    next=response.get("next"),
+                    prev=response.get("prev"),
+                    results=[],
+                )
+        except ValueError:
+            # Re-raise ValueError from error handling
+            raise
         except Exception:
             # Fallback to original response if parsing fails
             return PaginatedAPIResults.model_validate(response)
 
     def _parse_block_trade_response(self, response: dict) -> BlockTradeDetailFullResponse:
         """Parse single block trade response to typed model."""
+        # Check if response contains an error
+        if "error" in response:
+            error = ApiError.model_validate(response)
+            raise ValueError(f"API Error {error.error}: {error.message}")
+
         try:
             return BlockTradeDetailFullResponse.model_validate(response)
         except Exception:
@@ -74,6 +95,11 @@ class BlockTradesMixin:
 
     def _parse_offers_response(self, response: dict) -> APIResults:
         """Parse offers list response to typed model."""
+        # Check if response contains an error
+        if "error" in response:
+            error = ApiError.model_validate(response)
+            raise ValueError(f"API Error {error.error}: {error.message}")
+
         try:
             return APIResults.model_validate(response)
         except Exception:
@@ -121,10 +147,10 @@ class BlockTradesMixin:
         """
         if not block_trade:
             raise ValueError("BlockTradeRequest is required")
-        else:
-            payload = block_trade.model_dump() if hasattr(block_trade, "model_dump") else block_trade.model_dump()
-            response = self._post_authorized(path="block-trades", payload=payload)
-            return self._parse_block_trade_response(response)
+
+        payload = block_trade.model_dump() if hasattr(block_trade, "model_dump") else block_trade.model_dump()
+        response = self._post_authorized(path="block-trades", payload=payload)
+        return self._parse_block_trade_response(response)
 
     def get_block_trade(self, block_trade_id: str) -> BlockTradeDetailFullResponse:
         """Retrieve a specific block trade by ID with full details.
@@ -140,9 +166,9 @@ class BlockTradesMixin:
         """
         if not block_trade_id:
             raise ValueError("block_id is required")
-        else:
-            response = self._get_authorized(path=f"block-trades/{block_trade_id}")
-            return self._parse_block_trade_response(response)
+
+        response = self._get_authorized(path=f"block-trades/{block_trade_id}")
+        return self._parse_block_trade_response(response)
 
     def cancel_block_trade(self, block_trade_id: str) -> Dict:
         """Cancel a pending block trade.
