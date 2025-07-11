@@ -1,4 +1,5 @@
 #!/usr/bin/env -S uv run
+# ruff: noqa: C901, TRY300
 """
 Block Trades Workflow Integration Test - Standalone Script
 
