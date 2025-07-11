@@ -1,5 +1,7 @@
 from decimal import Decimal
-from typing import Any, Dict, List
+from typing import List
+
+from starknet_py.net.models.typed_data import TypedData
 
 from paradex_py.common.order import Order
 
@@ -34,7 +36,7 @@ class BlockTrade:
         self.trades = trades
 
 
-def build_block_trade_message(chain_id: int, block_trade: BlockTrade) -> Dict[str, Any]:
+def build_block_trade_message(chain_id: int, block_trade: BlockTrade) -> TypedData:
     # Build trades array for the message
     trades_message = []
     for trade in block_trade.trades:

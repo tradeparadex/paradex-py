@@ -8,7 +8,7 @@ from typing import Annotated, Any
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class SignatureType(Enum):
+class SignatureType(str, Enum):
     """
     Type of cryptographic signature used
     """
@@ -56,7 +56,7 @@ class AccountHistoricalDataResp(BaseModel):
     timestamps: Annotated[list[int] | None, Field(description="Ordered list of timestamps")] = None
 
 
-class AccountKind(Enum):
+class AccountKind(str, Enum):
     account_kind_unspecified = ""
     account_kind_main = "main"
     account_kind_subaccount = "subaccount"
@@ -137,12 +137,12 @@ class AccountSummaryResponse(BaseModel):
     updated_at: Annotated[int | None, Field(description="Account last updated time", examples=[1681471234972])] = None
 
 
-class AlgoType(Enum):
+class AlgoType(str, Enum):
     algo_type_unspecified = ""
     algo_type_twap = "TWAP"
 
 
-class AnnouncementKind(Enum):
+class AnnouncementKind(str, Enum):
     announcement_kind_update = "UPDATE"
     announcement_kind_listing = "LISTING"
     announcement_kind_delisting = "DELISTING"
@@ -271,7 +271,7 @@ class BlockTradeFillResponse(BaseModel):
     size: Annotated[str | None, Field(description="Actual size that was filled", examples=["10.5"])] = None
 
 
-class BlockTradeStatus(Enum):
+class BlockTradeStatus(str, Enum):
     block_trade_status_created = "CREATED"
     block_trade_status_offer_collection = "OFFER_COLLECTION"
     block_trade_status_ready_to_execute = "READY_TO_EXECUTE"
@@ -378,7 +378,7 @@ class DiscordProfile(BaseModel):
     username: str | None = None
 
 
-class ErrorCode(Enum):
+class ErrorCode(str, Enum):
     error_code_validation = "VALIDATION_ERROR"
     error_code_binding = "BINDING_ERROR"
     error_code_internal_error = "INTERNAL_ERROR"
@@ -481,12 +481,12 @@ class Fees(BaseModel):
     taker_rate: Annotated[str | None, Field(examples=["0.0001"])] = None
 
 
-class FillFlag(Enum):
+class FillFlag(str, Enum):
     fill_flag_interactive = "interactive"
     fill_flag_rpi = "rpi"
 
 
-class FillType(Enum):
+class FillType(str, Enum):
     fill_type_liquidation = "LIQUIDATION"
     fill_type_transfer = "TRANSFER"
     fill_type_fill = "FILL"
@@ -624,26 +624,18 @@ class MarketChainDetails(BaseModel):
     symbol: Annotated[str | None, Field(description="Market symbol", examples=["ETH-USD-PERP"])] = None
 
 
-class MarketKind(Enum):
+class MarketKind(str, Enum):
     market_kind_unknown = ""
     market_kind_cross = "cross"
     market_kind_isolated = "isolated"
 
 
-class AssetKind(Enum):
-    """
-    Type of asset
-    """
-
+class AssetKind(str, Enum):
     perp = "PERP"
     perp_option = "PERP_OPTION"
 
 
-class OptionType(Enum):
-    """
-    Type of option
-    """
-
+class OptionType(str, Enum):
     put = "PUT"
     call = "CALL"
 
@@ -716,33 +708,33 @@ class Nft(BaseModel):
     name: str | None = None
 
 
-class OrderFlag(Enum):
+class OrderFlag(str, Enum):
     flags_reduce_only = "REDUCE_ONLY"
     flags_stop_condition_below_trigger = "STOP_CONDITION_BELOW_TRIGGER"
     flags_stop_condition_above_trigger = "STOP_CONDITION_ABOVE_TRIGGER"
     flags_interactive = "INTERACTIVE"
 
 
-class OrderInstruction(Enum):
+class OrderInstruction(str, Enum):
     order_instruction_gtc = "GTC"
     order_instruction_post_only = "POST_ONLY"
     order_instruction_ioc = "IOC"
     order_instruction_rpi = "RPI"
 
 
-class OrderSide(Enum):
+class OrderSide(str, Enum):
     order_side_buy = "BUY"
     order_side_sell = "SELL"
 
 
-class OrderStatus(Enum):
+class OrderStatus(str, Enum):
     order_status_new = "NEW"
     order_status_untriggered = "UNTRIGGERED"
     order_status_open = "OPEN"
     order_status_closed = "CLOSED"
 
 
-class OrderType(Enum):
+class OrderType(str, Enum):
     order_type_market = "MARKET"
     order_type_limit = "LIMIT"
     order_type_stop_limit = "STOP_LIMIT"
@@ -795,20 +787,12 @@ class PerpetualOptionMarginParams(BaseModel):
     ] = None
 
 
-class Side(Enum):
-    """
-    Position Side : Long or Short
-    """
-
+class Side(str, Enum):
     short = "SHORT"
     long = "LONG"
 
 
-class Status(Enum):
-    """
-    Status of Position : Open or Closed
-    """
-
+class Status(str, Enum):
     open = "OPEN"
     closed = "CLOSED"
 
@@ -947,7 +931,7 @@ class RequestInfo(BaseModel):
     status: Annotated[str | None, Field(description="Status of modify order request")] = None
 
 
-class STPMode(Enum):
+class STPMode(str, Enum):
     stp_mode_expire_maker = "EXPIRE_MAKER"
     stp_mode_expire_taker = "EXPIRE_TAKER"
     stp_mode_expire_both = "EXPIRE_BOTH"
@@ -1079,7 +1063,7 @@ class SystemConfigResponse(BaseModel):
     ] = None
 
 
-class SystemStatus(Enum):
+class SystemStatus(str, Enum):
     system_status_ok = "ok"
     system_status_maintenance = "maintenance"
     system_status_cancel_only = "cancel_only"
@@ -1133,16 +1117,12 @@ class TradebustResult(BaseModel):
     ] = None
 
 
-class TraderRole(Enum):
+class TraderRole(str, Enum):
     trader_role_taker = "TAKER"
     trader_role_maker = "MAKER"
 
 
-class State(Enum):
-    """
-    Status of the transaction on Starknet
-    """
-
+class State(str, Enum):
     accepted_on_l1 = "ACCEPTED_ON_L1"
     accepted_on_l2 = "ACCEPTED_ON_L2"
     not_received = "NOT_RECEIVED"
@@ -1151,11 +1131,7 @@ class State(Enum):
     reverted = "REVERTED"
 
 
-class Type(Enum):
-    """
-    Event that triggered the transaction
-    """
-
+class Type(str, Enum):
     transaction_fill = "TRANSACTION_FILL"
     transaction_liquidate = "TRANSACTION_LIQUIDATE"
     transaction_settle_market = "TRANSACTION_SETTLE_MARKET"
@@ -1192,7 +1168,7 @@ class TransactionResponse(BaseModel):
     type: Annotated[Type | None, Field(description="Event that triggered the transaction")] = None
 
 
-class TransferBridge(Enum):
+class TransferBridge(str, Enum):
     transfer_bridge_unspecified = ""
     transfer_bridge_starkgate = "STARKGATE"
     transfer_bridge_layerswap = "LAYERSWAP"
@@ -1200,12 +1176,12 @@ class TransferBridge(Enum):
     transfer_bridge_hyperlane = "HYPERLANE"
 
 
-class TransferDirection(Enum):
+class TransferDirection(str, Enum):
     transfer_direction_in = "IN"
     transfer_direction_out = "OUT"
 
 
-class TransferKind(Enum):
+class TransferKind(str, Enum):
     transfer_kind_deposit = "DEPOSIT"
     transfer_kind_withdrawal = "WITHDRAWAL"
     transfer_kind_unwinding = "UNWINDING"
@@ -1214,7 +1190,7 @@ class TransferKind(Enum):
     transfer_kind_auto_withdrawal = "AUTO_WITHDRAWAL"
 
 
-class TransferStatus(Enum):
+class TransferStatus(str, Enum):
     transfer_status_pending = "PENDING"
     transfer_status_available = "AVAILABLE"
     transfer_status_completed = "COMPLETED"
@@ -1281,12 +1257,12 @@ class VaultHistoricalDataResp(BaseModel):
     timestamps: Annotated[list[int] | None, Field(description="Ordered list of timestamps")] = None
 
 
-class VaultKind(Enum):
+class VaultKind(str, Enum):
     vault_kind_user = "user"
     vault_kind_protocol = "protocol"
 
 
-class VaultStatus(Enum):
+class VaultStatus(str, Enum):
     vault_status_initializing = "INITIALIZING"
     vault_status_active = "ACTIVE"
     vault_status_closed = "CLOSED"

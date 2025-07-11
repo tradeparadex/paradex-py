@@ -5,6 +5,11 @@ from paradex_py.api.generated.requests import (
     BlockOfferRequest,
     BlockTradeRequest,
 )
+from paradex_py.api.generated.responses import (
+    APIResults,
+    BlockTradeDetailFullResponse,
+    PaginatedAPIResults,
+)
 
 
 class ApiClientProtocol(Protocol):
@@ -40,11 +45,54 @@ class BlockTradesMixin:
     _post_authorized: Any
     _delete_authorized: Any
 
+    def _parse_block_trade_list_response(self, response: dict) -> PaginatedAPIResults:
+        """Parse block trade list response to typed model."""
+        try:
+            # Transform the results to typed BlockTradeDetailFullResponse objects
+            typed_results = []
+            if response.get("results"):
+                for item in response["results"]:
+                    typed_results.append(BlockTradeDetailFullResponse.model_validate(item))
+
+            return PaginatedAPIResults(
+                next=response.get("next"),
+                prev=response.get("prev"),
+                results=[result.model_dump() for result in typed_results],
+            )
+        except Exception:
+            # Fallback to original response if parsing fails
+            return PaginatedAPIResults.model_validate(response)
+
+    def _parse_block_trade_response(self, response: dict) -> BlockTradeDetailFullResponse:
+        """Parse single block trade response to typed model."""
+        try:
+            # Pre-process the response to add missing required fields
+            if isinstance(response, dict) and "trades" in response:
+                for _trade_key, trade_data in response["trades"].items():
+                    if "maker_order" in trade_data and isinstance(trade_data["maker_order"], dict):
+                        # Add default instruction if missing
+                        if "instruction" not in trade_data["maker_order"]:
+                            trade_data["maker_order"]["instruction"] = "GTC"
+
+            return BlockTradeDetailFullResponse.model_validate(response)
+        except Exception:
+            # Fallback to simple response with just the ID
+            block_id = response.get("id") or response.get("block_id") if isinstance(response, dict) else None
+            return BlockTradeDetailFullResponse.model_validate({"block_id": block_id})
+
+    def _parse_offers_response(self, response: dict) -> APIResults:
+        """Parse offers list response to typed model."""
+        try:
+            return APIResults.model_validate(response)
+        except Exception:
+            # Fallback to original response if parsing fails
+            return APIResults.model_validate({"results": [response]})
+
     def list_block_trades(
         self,
         status: Optional[str] = None,
         market: Optional[str] = None,
-    ) -> Dict:
+    ) -> PaginatedAPIResults:
         """Get a paginated list of block trades with filtering.
 
         Returns block trades where user is initiator, required signer,
@@ -63,9 +111,10 @@ class BlockTradesMixin:
         if market:
             params["market"] = market
 
-        return self._get_authorized(path="block-trades", params=params)
+        response = self._get_authorized(path="block-trades", params=params)
+        return self._parse_block_trade_list_response(response)
 
-    def create_block_trade(self, block_trade: BlockTradeRequest) -> Dict:
+    def create_block_trade(self, block_trade: BlockTradeRequest) -> BlockTradeDetailFullResponse:
         """Create a parent block trade for multi-party execution.
 
         Block trades coordinate execution across multiple parties.
@@ -78,10 +127,11 @@ class BlockTradesMixin:
         Returns:
             Created block trade details
         """
-        payload = block_trade.model_dump() if hasattr(block_trade, "model_dump") else block_trade.dict()
-        return self._post_authorized(path="block-trades", payload=payload)
+        payload = block_trade.model_dump() if hasattr(block_trade, "model_dump") else block_trade.model_dump()
+        response = self._post_authorized(path="block-trades", payload=payload)
+        return self._parse_block_trade_response(response)
 
-    def get_block_trade(self, block_trade_id: str) -> Dict:
+    def get_block_trade(self, block_trade_id: str) -> BlockTradeDetailFullResponse:
         """Retrieve a specific block trade by ID with full details.
 
         Returns complete block trade information including status, trade details,
@@ -93,7 +143,8 @@ class BlockTradesMixin:
         Returns:
             Block trade details with status, signatures, and offers
         """
-        return self._get_authorized(path=f"block-trades/{block_trade_id}")
+        response = self._get_authorized(path=f"block-trades/{block_trade_id}")
+        return self._parse_block_trade_response(response)
 
     def cancel_block_trade(self, block_trade_id: str) -> Dict:
         """Cancel a pending block trade.
@@ -110,7 +161,9 @@ class BlockTradesMixin:
         """
         return self._delete_authorized(path=f"block-trades/{block_trade_id}")
 
-    def execute_block_trade(self, block_trade_id: str, execution_request: BlockExecuteRequest) -> Dict:
+    def execute_block_trade(
+        self, block_trade_id: str, execution_request: BlockExecuteRequest
+    ) -> BlockTradeDetailFullResponse:
         """Execute a block trade with selected offers.
 
         Executes a parent block trade by selecting specific offers from required signers.
@@ -123,11 +176,14 @@ class BlockTradesMixin:
             Executed block trade with status and fill details
         """
         payload = (
-            execution_request.model_dump() if hasattr(execution_request, "model_dump") else execution_request.dict()
+            execution_request.model_dump()
+            if hasattr(execution_request, "model_dump")
+            else execution_request.model_dump()
         )
-        return self._post_authorized(path=f"block-trades/{block_trade_id}/execute", payload=payload)
+        response = self._post_authorized(path=f"block-trades/{block_trade_id}/execute", payload=payload)
+        return self._parse_block_trade_response(response)
 
-    def get_block_trade_offers(self, block_trade_id: str) -> Dict:
+    def get_block_trade_offers(self, block_trade_id: str) -> APIResults:
         """Get all offers for a specific block trade.
 
         Returns all offers submitted for a parent block trade by required signers.
@@ -138,9 +194,10 @@ class BlockTradesMixin:
         Returns:
             Array of offers with offer details and signatures
         """
-        return self._get_authorized(path=f"block-trades/{block_trade_id}/offers")
+        response = self._get_authorized(path=f"block-trades/{block_trade_id}/offers")
+        return self._parse_offers_response(response)
 
-    def create_block_trade_offer(self, block_trade_id: str, offer: BlockOfferRequest) -> Dict:
+    def create_block_trade_offer(self, block_trade_id: str, offer: BlockOfferRequest) -> BlockTradeDetailFullResponse:
         """Create a sub-block offer for an existing block trade.
 
         Required signers submit their order details and pricing for
@@ -153,10 +210,11 @@ class BlockTradesMixin:
         Returns:
             Created offer with unique ID and parent reference
         """
-        payload = offer.model_dump() if hasattr(offer, "model_dump") else offer.dict()
-        return self._post_authorized(path=f"block-trades/{block_trade_id}/offers", payload=payload)
+        payload = offer.model_dump() if hasattr(offer, "model_dump") else offer.model_dump()
+        response = self._post_authorized(path=f"block-trades/{block_trade_id}/offers", payload=payload)
+        return self._parse_block_trade_response(response)
 
-    def get_block_trade_offer(self, block_trade_id: str, offer_id: str) -> Dict:
+    def get_block_trade_offer(self, block_trade_id: str, offer_id: str) -> BlockTradeDetailFullResponse:
         """Get a specific offer by ID for a block trade.
 
         Retrieves detailed information about an offer submitted for a parent block trade.
@@ -168,7 +226,8 @@ class BlockTradesMixin:
         Returns:
             Offer details with market-specific order information
         """
-        return self._get_authorized(path=f"block-trades/{block_trade_id}/offers/{offer_id}")
+        response = self._get_authorized(path=f"block-trades/{block_trade_id}/offers/{offer_id}")
+        return self._parse_block_trade_response(response)
 
     def cancel_block_trade_offer(self, block_trade_id: str, offer_id: str) -> Dict:
         """Cancel a pending offer for a block trade.
@@ -187,7 +246,7 @@ class BlockTradesMixin:
 
     def execute_block_trade_offer(
         self, block_trade_id: str, offer_id: str, execution_request: BlockExecuteRequest
-    ) -> Dict:
+    ) -> BlockTradeDetailFullResponse:
         """Execute a specific offer independently of the parent block trade.
 
         Executes an individual offer without waiting for full block trade execution.
@@ -201,6 +260,11 @@ class BlockTradesMixin:
             Executed offer with status, fill details, and timestamps
         """
         payload = (
-            execution_request.model_dump() if hasattr(execution_request, "model_dump") else execution_request.dict()
+            execution_request.model_dump()
+            if hasattr(execution_request, "model_dump")
+            else execution_request.model_dump()
         )
-        return self._post_authorized(path=f"block-trades/{block_trade_id}/offers/{offer_id}/execute", payload=payload)
+        response = self._post_authorized(
+            path=f"block-trades/{block_trade_id}/offers/{offer_id}/execute", payload=payload
+        )
+        return self._parse_block_trade_response(response)

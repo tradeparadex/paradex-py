@@ -15,6 +15,7 @@ from paradex_py.account.utils import derive_stark_key, derive_stark_key_from_led
 from paradex_py.api.models import SystemConfig
 from paradex_py.common.order import Order
 from paradex_py.message.auth import build_auth_message
+from paradex_py.message.block_trades import BlockTrade, build_block_trade_message
 from paradex_py.message.onboarding import build_onboarding_message
 from paradex_py.message.order import build_modify_order_message, build_order_message
 from paradex_py.message.stark_key import build_stark_key_message
@@ -140,6 +141,30 @@ class ParadexAccount:
             sig = self.starknet.sign_message(build_modify_order_message(self.l2_chain_id, order))
         else:
             sig = self.starknet.sign_message(build_order_message(self.l2_chain_id, order))
+        return flatten_signature(sig)
+
+    def sign_block_trade(self, block_trade_data: BlockTrade) -> str:
+        """Sign block trade data using Starknet account.
+        Args:
+            block_trade_data (dict): Block trade data containing trade details
+        Returns:
+            dict: Signed block trade data
+        """
+        # Convert block trade data to TypedData format
+        typed_data = build_block_trade_message(self.l2_chain_id, block_trade_data)
+        sig = self.starknet.sign_message(typed_data)
+        return flatten_signature(sig)
+
+    def sign_block_offer(self, offer_data: BlockTrade) -> str:
+        """Sign block offer data using Starknet account.
+        Args:
+            offer_data (dict): Block offer data containing offer details
+        Returns:
+            dict: Signed block offer data
+        """
+        # Convert block offer data to TypedData format
+        typed_data = build_block_trade_message(self.l2_chain_id, offer_data)
+        sig = self.starknet.sign_message(typed_data)
         return flatten_signature(sig)
 
     async def transfer_on_l2(self, target_l2_address: str, amount_decimal: Decimal):
