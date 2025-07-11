@@ -290,8 +290,8 @@ class BlockTradeOrder(BaseModel):
     ] = None
     flags: Annotated[list[OrderFlag] | None, Field(description="Order flags, allow flag: REDUCE_ONLY")] = None
     instruction: Annotated[
-        OrderInstruction, Field(description="Order Instruction, GTC, IOC, RPI or POST_ONLY if empty GTC")
-    ]
+        OrderInstruction | None, Field(description="Order Instruction, GTC, IOC, RPI or POST_ONLY if empty GTC")
+    ] = None
     market: Annotated[str, Field(description="Market for which order is created", examples=["BTC-USD-PERP"])]
     on_behalf_of_account: Annotated[
         str | None,

@@ -297,15 +297,14 @@ def load_test_accounts():
             accounts = json.load(f)
         logger.info(f"Loaded {len(accounts)} test accounts")
         return accounts
-    except FileNotFoundError:
+    except FileNotFoundError as e:
         logger.error("test_accounts.json not found. Please run generate_test_keys.py first.")
-        raise
+        raise e
 
 
 def create_paradex_clients(accounts):
     """Create Paradex clients for all test accounts."""
     clients = []
-
     for i, account_data in enumerate(accounts, 1):
         # Create Paradex client using the constructor pattern from the codebase
         client = Paradex(
@@ -313,10 +312,8 @@ def create_paradex_clients(accounts):
             l1_address=account_data["l1_address"],
             l1_private_key=account_data["l1_private_key"],
         )
-
         clients.append(client)
         logger.info(f"Created client for account_{i}: {account_data['l1_address']}")
-
     return clients
 
 
@@ -1004,24 +1001,20 @@ def monitor_execution_status(client, block_trade_id, initial_status=None, max_ch
     return final_status
 
 
-def test_execute_block_trade(client, block_trade_id, account_summaries, selected_offers=[]):
+def test_execute_block_trade(client, block_trade_id, account_summaries, selected_offers=None):
     """Test executing a block trade."""
     logger.info("Testing block trade execution...")
-
     # Check if executor account has sufficient funds
     executor_funded = account_summaries[0][1] if account_summaries else False
     executor_account = account_summaries[0][2].account if account_summaries and account_summaries[0][2] else None
-
     if not executor_funded or not executor_account:
         logger.warning("⚠️ Executor account lacks sufficient funds or info - execution may fail")
         return None
-
     current_time = int(time.time() * 1000)
     expiration_time = current_time + (5 * 60 * 1000)  # 5 minutes
-
     # For execution, we need to sign each selected offer individually
     signatures = {}
-
+    selected_offers = selected_offers or []
     if selected_offers:
         try:
             # Get the offers to extract their trade details for signing
@@ -1117,7 +1110,6 @@ def test_execute_block_trade(client, block_trade_id, account_summaries, selected
         # Make API call
         response = client.api_client.execute_block_trade(block_trade_id, request)
         logger.info(f"✅ Block trade executed successfully: {response}")
-
         return response
     except Exception as e:
         expected_errors = ["VALIDATION_ERROR", "Account is not active", "invalid request"]
@@ -1402,7 +1394,7 @@ def main():
         if offer_ids:
             test_execute_block_trade(clients[0], block_trade_id, account_summaries, offer_ids)
 
-            # Example: Poll both the block trade and offers using the new polling function
+            # Example: Polling both the block trade and offers using the new polling function
             log_info("🔄 Example: Polling multiple entities (block trade + offers)")
             all_entities = [block_trade_id, *offer_ids]  # Block trade + first 2 offers
             final_statuses, completed = poll_status_for_entities(

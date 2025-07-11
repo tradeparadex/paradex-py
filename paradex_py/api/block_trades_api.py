@@ -66,14 +66,6 @@ class BlockTradesMixin:
     def _parse_block_trade_response(self, response: dict) -> BlockTradeDetailFullResponse:
         """Parse single block trade response to typed model."""
         try:
-            # Pre-process the response to add missing required fields
-            if isinstance(response, dict) and "trades" in response:
-                for _trade_key, trade_data in response["trades"].items():
-                    if "maker_order" in trade_data and isinstance(trade_data["maker_order"], dict):
-                        # Add default instruction if missing
-                        if "instruction" not in trade_data["maker_order"]:
-                            trade_data["maker_order"]["instruction"] = "GTC"
-
             return BlockTradeDetailFullResponse.model_validate(response)
         except Exception:
             # Fallback to simple response with just the ID
@@ -127,9 +119,12 @@ class BlockTradesMixin:
         Returns:
             Created block trade details
         """
-        payload = block_trade.model_dump() if hasattr(block_trade, "model_dump") else block_trade.model_dump()
-        response = self._post_authorized(path="block-trades", payload=payload)
-        return self._parse_block_trade_response(response)
+        if not block_trade:
+            raise ValueError("BlockTradeRequest is required")
+        else:
+            payload = block_trade.model_dump() if hasattr(block_trade, "model_dump") else block_trade.model_dump()
+            response = self._post_authorized(path="block-trades", payload=payload)
+            return self._parse_block_trade_response(response)
 
     def get_block_trade(self, block_trade_id: str) -> BlockTradeDetailFullResponse:
         """Retrieve a specific block trade by ID with full details.
@@ -143,8 +138,11 @@ class BlockTradesMixin:
         Returns:
             Block trade details with status, signatures, and offers
         """
-        response = self._get_authorized(path=f"block-trades/{block_trade_id}")
-        return self._parse_block_trade_response(response)
+        if not block_trade_id:
+            raise ValueError("block_id is required")
+        else:
+            response = self._get_authorized(path=f"block-trades/{block_trade_id}")
+            return self._parse_block_trade_response(response)
 
     def cancel_block_trade(self, block_trade_id: str) -> Dict:
         """Cancel a pending block trade.
@@ -194,8 +192,11 @@ class BlockTradesMixin:
         Returns:
             Array of offers with offer details and signatures
         """
-        response = self._get_authorized(path=f"block-trades/{block_trade_id}/offers")
-        return self._parse_offers_response(response)
+        if block_trade_id and isinstance(block_trade_id, str):
+            response = self._get_authorized(path=f"block-trades/{block_trade_id}/offers")
+            return self._parse_offers_response(response)
+        else:
+            raise ValueError("block_trade_id must be a non-empty string")
 
     def create_block_trade_offer(self, block_trade_id: str, offer: BlockOfferRequest) -> BlockTradeDetailFullResponse:
         """Create a sub-block offer for an existing block trade.
