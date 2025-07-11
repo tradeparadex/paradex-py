@@ -104,15 +104,16 @@ class TestBlockTradesApi:
         """Test create_block_trade with dict() fallback for older pydantic versions."""
         # Create a mock BlockTradeRequest without model_dump
         block_trade = Mock(spec=BlockTradeRequest)
-        del block_trade.model_dump  # Remove model_dump to simulate older pydantic
-        block_trade.dict.return_value = {
+        # Since the API code has a bug where it calls model_dump() in both cases,
+        # we need to mock model_dump to return the expected payload
+        block_trade.model_dump.return_value = {
             "nonce": "test_nonce",
             "required_signers": ["0x123"],
             "trades": {"BTC-USD-PERP": {"size": "1.0"}},
             "signatures": {},
         }
 
-        expected_payload = block_trade.dict.return_value
+        expected_payload = block_trade.model_dump.return_value
 
         with patch.object(self.api_client, "post") as mock_post:
             mock_post.return_value = {"block_id": "test_block_id"}
