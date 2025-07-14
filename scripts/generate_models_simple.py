@@ -3,11 +3,12 @@
 Simple script to fetch Paradex API OpenAPI spec and generate Pydantic models.
 
 This script:
-1. Fetches the Swagger 2.0 spec from Paradex API
+1. Fetches the Swagger 2.0 spec from Paradex API OR uses a provided JSON file
 2. Uses swagger2openapi to convert it to OpenAPI 3.0 format
 3. Generates Pydantic models using datamodel-code-generator
 """
 
+import argparse
 import json
 import subprocess
 import sys
@@ -19,17 +20,42 @@ import httpx
 
 def main():
     """Main function to orchestrate the model generation."""
+    parser = argparse.ArgumentParser(description="Generate Pydantic models from Paradex API spec")
+    parser.add_argument(
+        "--spec-file",
+        type=str,
+        help="Path to local JSON spec file (if not provided, fetches from API)",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        default="paradex_py/api/generated",
+        help="Output directory for generated models (default: paradex_py/api/generated)",
+    )
+
+    args = parser.parse_args()
+
     api_url = "https://api.prod.paradex.trade/swagger/doc.json"
-    output_dir = Path("paradex_py/api/generated")
+    output_dir = Path(args.output_dir)
 
-    print("📡 Fetching OpenAPI spec from Paradex API...")
+    if args.spec_file:
+        print(f"📁 Reading spec from file: {args.spec_file}")
+        spec_path = Path(args.spec_file)
+        if not spec_path.exists():
+            print(f"❌ Spec file not found: {args.spec_file}")
+            sys.exit(1)
 
-    # Fetch the spec
-    with httpx.Client() as client:
-        response = client.get(api_url)
-        response.raise_for_status()
-        swagger_spec = response.json()
+        with open(spec_path) as f:
+            swagger_spec = json.load(f)
         api_version = swagger_spec.get("info", {}).get("version", "unknown")
+    else:
+        print("📡 Fetching OpenAPI spec from Paradex API...")
+        # Fetch the spec
+        with httpx.Client() as client:
+            response = client.get(api_url)
+            response.raise_for_status()
+            swagger_spec = response.json()
+            api_version = swagger_spec.get("info", {}).get("version", "unknown")
 
     # Save swagger spec to temp file
     with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:

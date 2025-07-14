@@ -3,6 +3,7 @@ import time
 from typing import Any, Dict, List, Optional, Union
 
 from paradex_py.account.account import ParadexAccount
+from paradex_py.api.block_trades_api import BlockTradesMixin
 from paradex_py.api.http_client import HttpClient, HttpMethod
 from paradex_py.api.models import AccountSummary, AccountSummarySchema, AuthSchema, SystemConfig, SystemConfigSchema
 from paradex_py.common.order import Order
@@ -10,7 +11,7 @@ from paradex_py.environment import Environment
 from paradex_py.utils import raise_value_error
 
 
-class ParadexApiClient(HttpClient):
+class ParadexApiClient(BlockTradesMixin, HttpClient):
     """Class to interact with Paradex REST API.
         Initialized along with `Paradex` class.
 
