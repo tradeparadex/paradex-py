@@ -11,7 +11,7 @@ from starknet_py.hash.selector import get_selector_from_name
 from starknet_py.net.account.account import Account as StarknetAccount
 from starknet_py.net.client import Client
 from starknet_py.net.client_errors import ClientError
-from starknet_py.net.client_models import Call, Calls, SentTransactionResponse
+from starknet_py.net.client_models import Call, Calls, DeclareTransactionResponse, SentTransactionResponse
 from starknet_py.net.models import Address, AddressRepresentation, DeclareV1, InvokeV1, StarknetChainId
 from starknet_py.net.signer import BaseSigner
 from starknet_py.net.signer.stark_curve_signer import KeyPair
@@ -76,13 +76,11 @@ class Account(StarknetAccount):
             salt=salt,
             abi=abi,
             calldata=constructor_args,
-            cairo_version=self.cairo_version,
         )
         contract = Contract(
             provider=self,
             address=address,
             abi=abi,
-            cairo_version=self.cairo_version,
         )
 
         invoke_tx = await self._prepare_invoke(deploy_call, max_fee=max_fee)
@@ -120,6 +118,8 @@ class Account(StarknetAccount):
         signature: list[int],
     ) -> DeclareResult:
         res = await self.send_transaction(prepared_invoke=prepared_invoke, signature=signature)
+        if not isinstance(res, DeclareTransactionResponse):
+            raise TypeError(f"Expected DeclareTransactionResponse, got {type(res)}")
 
         declare_result = DeclareResult(
             hash=res.transaction_hash,
@@ -127,7 +127,6 @@ class Account(StarknetAccount):
             class_hash=res.class_hash,
             _account=self,
             compiled_contract=compiled_contract,
-            _cairo_version=self.cairo_version,
         )
         return declare_result
 

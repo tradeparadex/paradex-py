@@ -1,7 +1,7 @@
 from decimal import Decimal
 from typing import List
 
-from starknet_py.net.models.typed_data import TypedData
+from starknet_py.utils.typed_data import TypedData
 
 from paradex_py.common.order import Order
 
@@ -62,37 +62,39 @@ def build_block_trade_message(chain_id: int, block_trade: BlockTrade) -> TypedDa
         }
         trades_message.append(trade_data)
 
-    message = {
-        "domain": {"name": "Paradex", "chainId": hex(chain_id), "version": "1"},
-        "primaryType": "BlockTrade",
-        "types": {
-            "StarkNetDomain": [
-                {"name": "name", "type": "felt"},
-                {"name": "chainId", "type": "felt"},
-                {"name": "version", "type": "felt"},
-            ],
-            "BlockTrade": [
-                {"name": "version", "type": "shortstring"},
-                {"name": "trades", "type": "Trade*"},
-            ],
-            "Trade": [
-                {"name": "price", "type": "felt"},
-                {"name": "size", "type": "felt"},
-                {"name": "maker_order", "type": "Order"},
-                {"name": "taker_order", "type": "Order"},
-            ],
-            "Order": [
-                {"name": "timestamp", "type": "felt"},
-                {"name": "market", "type": "felt"},
-                {"name": "side", "type": "felt"},
-                {"name": "orderType", "type": "felt"},
-                {"name": "size", "type": "felt"},
-                {"name": "price", "type": "felt"},
-            ],
-        },
-        "message": {
-            "version": block_trade.version,
-            "trades": trades_message,
-        },
-    }
+    message = TypedData.from_dict(
+        {
+            "domain": {"name": "Paradex", "chainId": hex(chain_id), "version": "1"},  # type: ignore[typeddict-item]
+            "primaryType": "BlockTrade",
+            "types": {
+                "StarkNetDomain": [
+                    {"name": "name", "type": "felt"},
+                    {"name": "chainId", "type": "felt"},
+                    {"name": "version", "type": "felt"},
+                ],
+                "BlockTrade": [
+                    {"name": "version", "type": "shortstring"},
+                    {"name": "trades", "type": "Trade*"},
+                ],
+                "Trade": [
+                    {"name": "price", "type": "felt"},
+                    {"name": "size", "type": "felt"},
+                    {"name": "maker_order", "type": "Order"},
+                    {"name": "taker_order", "type": "Order"},
+                ],
+                "Order": [
+                    {"name": "timestamp", "type": "felt"},
+                    {"name": "market", "type": "felt"},
+                    {"name": "side", "type": "felt"},
+                    {"name": "orderType", "type": "felt"},
+                    {"name": "size", "type": "felt"},
+                    {"name": "price", "type": "felt"},
+                ],
+            },
+            "message": {
+                "version": block_trade.version,
+                "trades": trades_message,
+            },
+        }
+    )
     return message
