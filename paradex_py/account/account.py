@@ -1,26 +1,31 @@
+import json
 import logging
 import time
+import types
 from decimal import Decimal
 from enum import IntEnum
 from typing import Optional
 
+from aiohttp import ClientSession
 from starknet_py.common import int_from_bytes, int_from_hex
 from starknet_py.hash.address import compute_address
 from starknet_py.hash.selector import get_selector_from_name
 from starknet_py.net.full_node_client import FullNodeClient
+from starknet_py.net.http_client import HttpMethod
 from starknet_py.net.signer.stark_curve_signer import KeyPair
 
 from paradex_py.account.starknet import Account as StarknetAccount
 from paradex_py.account.utils import derive_stark_key, derive_stark_key_from_ledger, flatten_signature
 from paradex_py.api.models import SystemConfig
 from paradex_py.common.order import Order
-from paradex_py.message.auth import build_auth_message
+from paradex_py.message.auth import build_auth_message, build_fullnode_message
 from paradex_py.message.block_trades import BlockTrade, build_block_trade_message
 from paradex_py.message.onboarding import build_onboarding_message
 from paradex_py.message.order import build_modify_order_message, build_order_message
 from paradex_py.message.stark_key import build_stark_key_message
 from paradex_py.utils import raise_value_error
 
+FULLNODE_SIGNATURE_VERSION = "1.0.0"
 
 # For matching existing chainId type
 class CustomStarknetChainId(IntEnum):
@@ -88,6 +93,35 @@ class ParadexAccount:
             chain=CustomStarknetChainId(self.l2_chain_id),
         )
 
+        # Monkey patch of _make_request method of starknet.py client
+        # to inject http headers requested by Paradex full node:
+        # - PARADEX-STARKNET-ACCOUNT: account address signing the request
+        # - PARADEX-STARKNET-SIGNATURE: signature of the request
+        # - PARADEX-STARKNET-SIGNATURE-TIMESTAMP: timestamp of the signature
+        # - PARADEX-STARKNET-SIGNATURE-VERSION: version of the signature
+        current_self = self
+
+        async def monkey_patched_make_request(
+            self,
+            session: ClientSession,
+            address: str,
+            http_method: HttpMethod,
+            params: dict,
+            payload: dict,
+        ) -> dict:
+            json_payload = json.dumps(payload)
+            headers = current_self.fullnode_request_headers(
+                current_self.starknet, current_self.l2_chain_id, json_payload
+            )
+
+            async with session.request(
+                method=http_method.value, url=address, params=params, json=payload, headers=headers
+            ) as request:
+                await self.handle_request_error(request)
+                return await request.json(content_type=None)
+
+        client._client._make_request = types.MethodType(monkey_patched_make_request, client._client)
+
     def _account_address(self) -> int:
         calldata = [
             int_from_hex(self.config.paraclear_account_hash),
@@ -136,6 +170,25 @@ class ParadexAccount:
             "PARADEX-SIGNATURE-EXPIRATION": str(expiry),
         }
 
+    def fullnode_request_headers(self, account: StarknetAccount, chain_id: int, json_payload: str):
+        signature_timestamp = int(time.time())
+        account_address = hex(account.address)
+        message = build_fullnode_message(
+            chain_id,
+            account_address,
+            json_payload,
+            signature_timestamp,
+            FULLNODE_SIGNATURE_VERSION,
+        )
+        sig = account.sign_message(message)
+        return {
+            "Content-Type": "application/json",
+            "PARADEX-STARKNET-ACCOUNT": account_address,
+            "PARADEX-STARKNET-SIGNATURE": f'["{sig[0]}","{sig[1]}"]',
+            "PARADEX-STARKNET-SIGNATURE-TIMESTAMP": str(signature_timestamp),
+            "PARADEX-STARKNET-SIGNATURE-VERSION": FULLNODE_SIGNATURE_VERSION,
+        }
+
     def sign_order(self, order: Order) -> str:
         if order.id:
             sig = self.starknet.sign_message(build_modify_order_message(self.l2_chain_id, order))
@@ -172,8 +225,8 @@ class ParadexAccount:
             # Load contracts
             paraclear_address = int_from_hex(self.config.paraclear_address)
             usdc_address = int_from_hex(self.config.bridged_tokens[0].l2_token_address)
-            paraclear_contract = await self.starknet.load_contract(paraclear_address)
-            account_contract = await self.starknet.load_contract(self.l2_address)
+            paraclear_contract = await self.starknet.load_contract(paraclear_address, is_cairo0_contract=False)
+            account_contract = await self.starknet.load_contract(self.l2_address, is_cairo0_contract=True)
 
             paraclear_decimals = self.config.paraclear_decimals
 
@@ -181,7 +234,7 @@ class ParadexAccount:
             token_asset_balance = await paraclear_contract.functions["getTokenAssetBalance"].call(
                 account=self.l2_address, token_address=usdc_address
             )
-            logging.info(f"USDC balance on Paraclear: {token_asset_balance.balance / 10**paraclear_decimals}")
+            logging.info(f"USDC balance on Paraclear: {token_asset_balance[0] / 10**paraclear_decimals}")
 
             # Calculate amounts
             amount_paraclear = int(amount_decimal * 10**paraclear_decimals)
