@@ -1,4 +1,4 @@
-# Generated from Paradex API spec version 1.97.0
+# Generated from Paradex API spec version 1.99.0
 
 from __future__ import annotations
 
@@ -24,17 +24,6 @@ class AccountMarginRequest(BaseModel):
             examples=["0x1234567890abcdef"],
         ),
     ] = None
-
-
-class BlockTradeConstraints(BaseModel):
-    model_config = ConfigDict(
-        extra="allow",
-        populate_by_name=True,
-    )
-    max_price: Annotated[str | None, Field(description="Maximum price allowed", examples=["31000.00"])] = None
-    max_size: Annotated[str | None, Field(description="Maximum trade size allowed", examples=["100.0"])] = None
-    min_price: Annotated[str | None, Field(description="Minimum price allowed", examples=["29000.00"])] = None
-    min_size: Annotated[str | None, Field(description="Minimum trade size allowed", examples=["0.1"])] = None
 
 
 class CancelOrderBatchRequest(BaseModel):
@@ -94,9 +83,11 @@ class ModifyOrderRequest(BaseModel):
     ] = None
     price: Annotated[str, Field(description="Existing or modified price of the order", examples=["29500.12"])]
     side: Annotated[str, Field(description="Existing side of the order", examples=["BUY"])]
-    signature: Annotated[str, Field(description="Order Payload signed with STARK Private Key")]
+    signature: Annotated[
+        str, Field(description='Order signature in as a string "[r,s]" signed by account\'s paradex private key')
+    ]
     signature_timestamp: Annotated[
-        int, Field(description="Timestamp of order creation, used for signature verification")
+        int, Field(description="Unix timestamp in milliseconds of order creation, used for signature verification")
     ]
     size: Annotated[str, Field(description="Existing or modified size of the order", examples=["1.213"])]
     type: Annotated[str, Field(description="Existing type of the order", examples=["LIMIT"])]
@@ -107,6 +98,10 @@ class Onboarding(BaseModel):
         extra="allow",
         populate_by_name=True,
     )
+    marketing_code: Annotated[
+        str | None,
+        Field(description="Marketing code of the campaign the user is being onboarded via.", examples=["abcd:code1"]),
+    ] = None
     public_key: Annotated[
         str | None,
         Field(
@@ -120,7 +115,7 @@ class Onboarding(BaseModel):
     ] = None
 
 
-class PriceKind(Enum):
+class PriceKind(str, Enum):
     price_kind_last = "last"
     price_kind_mark = "mark"
     price_kind_underlying = "underlying"
@@ -176,9 +171,11 @@ class AlgoOrderRequest(BaseModel):
         ),
     ] = None
     side: Annotated[responses.OrderSide, Field(description="Algo order side", examples=["MARKET"])]
-    signature: Annotated[str, Field(description="Order Payload signed with STARK Private Key")]
+    signature: Annotated[
+        str, Field(description='Order signature in as a string "[r,s]" signed by account\'s paradex private key')
+    ]
     signature_timestamp: Annotated[
-        int, Field(description="Timestamp of order creation, used for signature verification")
+        int, Field(description="Unix timestamp in milliseconds of order creation, used for signature verification")
     ]
     size: Annotated[str, Field(description="Size of the algo order", examples=["1.213"])]
     type: Annotated[responses.OrderType, Field(description="Algo order type, only MARKET is supported")]
@@ -233,9 +230,11 @@ class OrderRequest(BaseModel):
         ),
     ] = None
     side: Annotated[responses.OrderSide, Field(description="Order side")]
-    signature: Annotated[str, Field(description="Order Payload signed with STARK Private Key")]
+    signature: Annotated[
+        str, Field(description='Order signature in as a string "[r,s]" signed by account\'s paradex private key')
+    ]
     signature_timestamp: Annotated[
-        int, Field(description="Timestamp of order creation, used for signature verification")
+        int, Field(description="Unix timestamp in milliseconds of order creation, used for signature verification")
     ]
     signed_impact_price: Annotated[
         str | None, Field(description="Optional signed impact price for market orders (base64 encoded)")
@@ -292,7 +291,7 @@ class BlockTradeInfo(BaseModel):
         responses.BlockTradeOrder | None, Field(description="Taker order details (empty if requiring offers)")
     ] = None
     trade_constraints: Annotated[
-        BlockTradeConstraints | None, Field(description="Constraints for this trade when requiring offers")
+        responses.BlockTradeConstraints | None, Field(description="Constraints for this trade when requiring offers")
     ] = None
 
 
@@ -301,6 +300,9 @@ class BlockTradeRequest(BaseModel):
         extra="allow",
         populate_by_name=True,
     )
+    block_expiration: Annotated[
+        int, Field(description="Unix timestamp in milliseconds when block expires", examples=[1640995800000])
+    ]
     nonce: Annotated[str, Field(description="Unique nonce for this block trade request", examples=["67890"])]
     required_signers: Annotated[list[str], Field(description="Array of account addresses that must sign this block")]
     signatures: Annotated[
