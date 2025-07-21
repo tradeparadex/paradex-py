@@ -61,7 +61,6 @@ from paradex_py.api.generated.requests import (
     BlockExecuteRequest,
     BlockOfferInfo,
     BlockOfferRequest,
-    BlockTradeConstraints,
     BlockTradeInfo,
     BlockTradeRequest,
 )
@@ -72,6 +71,7 @@ from paradex_py.api.generated.responses import (
     MarketResp,
     MarketSummaryResp,
     OrderInstruction,
+    BlockTradeConstraints,
     OrderSide,
     OrderType,
     SignatureType,
@@ -161,19 +161,12 @@ def create_block_trade_order(
 
     return BlockTradeOrder(
         client_id=client_id,
-        flags=None,
-        instruction=OrderInstruction.order_instruction_gtc,
         market=market,
-        on_behalf_of_account=None,
         price=price,
-        recv_window=None,
         side=order_side,
         signature=signature,
         signature_timestamp=timestamp,
-        signed_impact_price=None,
         size=size,
-        stp=None,
-        trigger_price=None,
         type=OrderType.order_type_limit,
     )
 
@@ -625,6 +618,7 @@ def test_create_block_trade(client, account_summaries):
         required_signers=required_signers,
         signatures={},  # Will be filled by utility function
         trades=trades,
+        block_expiration=current_time + (5 * 60 * 1000),  # 5 minutes
     )
 
     # Sign the block trade request

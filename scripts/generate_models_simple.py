@@ -99,7 +99,7 @@ def main():
             "--output-model-type",
             "pydantic_v2.BaseModel",
             "--target-python-version",
-            "3.9",
+            "3.10",
             "--use-schema-description",
             "--field-constraints",
             "--snake-case-field",
@@ -110,6 +110,7 @@ def main():
             "--use-double-quotes",
             "--use-standard-collections",
             "--disable-timestamp",
+            "--use-subclass-enum",
             "--custom-file-header",
             f"# Generated from Paradex API spec version {api_version}",
         ]
@@ -133,7 +134,6 @@ def main():
                 f'"""Generated API models from Paradex OpenAPI spec v{api_version}."""\n\n'
                 "# ruff: noqa: F403, A003\n"
                 "# Import all generated models\n"
-                "from .model import *\n"
                 "from .requests import *\n"
                 "from .responses import *\n\n"
                 "__all__: list[str] = [\n"
