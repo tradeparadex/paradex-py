@@ -196,34 +196,6 @@ class BalanceResp(BaseModel):
     token: Annotated[str | None, Field(description="Name of the token", examples=["USDC"])] = None
 
 
-class BlockExecutionResultResponse(BaseModel):
-    model_config = ConfigDict(
-        extra="allow",
-        populate_by_name=True,
-    )
-    executed_at: Annotated[int | None, Field(description="When execution completed", examples=[1640995500000])] = None
-    failed_trades: Annotated[int | None, Field(description="Number of trades that failed", examples=[1])] = None
-    successful_trades: Annotated[
-        int | None, Field(description="Number of trades that executed successfully", examples=[3])
-    ] = None
-    total_notional: Annotated[
-        str | None, Field(description="Total notional value executed", examples=["315000.00"])
-    ] = None
-
-
-class BlockOffersSummaryResponse(BaseModel):
-    model_config = ConfigDict(
-        extra="allow",
-        populate_by_name=True,
-    )
-    accepted_offers: Annotated[
-        int | None, Field(description="Number of offers that were accepted", examples=[2])
-    ] = None
-    pending_offers: Annotated[int | None, Field(description="Number of offers still pending", examples=[6])] = None
-    total_offered_size: Annotated[str | None, Field(description="Sum of all offered sizes", examples=["85.5"])] = None
-    total_offers: Annotated[int | None, Field(description="Total number of offers received", examples=[8])] = None
-
-
 class BlockTradeConstraints(BaseModel):
     model_config = ConfigDict(
         extra="allow",
@@ -233,17 +205,6 @@ class BlockTradeConstraints(BaseModel):
     max_size: Annotated[str | None, Field(description="Maximum trade size allowed", examples=["100.0"])] = None
     min_price: Annotated[str | None, Field(description="Minimum price allowed", examples=["29000.00"])] = None
     min_size: Annotated[str | None, Field(description="Minimum trade size allowed", examples=["0.1"])] = None
-
-
-class BlockTradeFillResponse(BaseModel):
-    model_config = ConfigDict(
-        extra="allow",
-        populate_by_name=True,
-    )
-    fee: Annotated[str | None, Field(description="Fee charged for this fill", examples=["5.25"])] = None
-    fill_id: Annotated[str | None, Field(description="Unique identifier for the fill", examples=["fill_789"])] = None
-    price: Annotated[str | None, Field(description="Actual execution price", examples=["30000.00"])] = None
-    size: Annotated[str | None, Field(description="Actual size that was filled", examples=["10.5"])] = None
 
 
 class SignatureType(str, Enum):
@@ -259,9 +220,6 @@ class BlockTradeSignature(BaseModel):
         extra="allow",
         populate_by_name=True,
     )
-    block_expiration: Annotated[
-        int, Field(description="Unix timestamp in milliseconds when block expires", examples=[1640995800000])
-    ]
     nonce: Annotated[str, Field(description="Unique nonce to prevent replay attacks", examples=["12345"])]
     signature_data: Annotated[
         str,
@@ -269,6 +227,9 @@ class BlockTradeSignature(BaseModel):
             description='Order signature in as a string "[r,s]" signed by account\'s paradex private key',
             examples=["0xabc123..."],
         ),
+    ]
+    signature_expiration: Annotated[
+        int, Field(description="Unix timestamp in milliseconds when signature expires", examples=[1640995800000])
     ]
     signature_timestamp: Annotated[
         int, Field(description="Unix timestamp in milliseconds when signature was created", examples=[1640995200000])
@@ -287,6 +248,7 @@ class BlockTradeStatus(str, Enum):
     block_trade_status_ready_to_execute = "READY_TO_EXECUTE"
     block_trade_status_executing = "EXECUTING"
     block_trade_status_completed = "COMPLETED"
+    block_trade_status_failed = "FAILED"
     block_trade_status_cancelled = "CANCELLED"
 
 
@@ -1854,20 +1816,20 @@ class BlockTradeDetailResponse(BaseModel):
         int | None, Field(description="When this trade was executed", examples=[1640995500000])
     ] = None
     failure_reason: Annotated[str | None, Field(description="Reason for failure (if failed)")] = None
-    fill: Annotated[BlockTradeFillResponse | None, Field(description="Execution details (if executed)")] = None
     maker_account: Annotated[
         str | None, Field(description="Maker account (if fully executable)", examples=["0x123...abc"])
     ] = None
+    maker_fill: Annotated[FillResult | None, Field(description="Execution details (if executed)")] = None
     maker_order: Annotated[
-        BlockTradeOrder | None, Field(description="Include original orders for signature verification if needed")
+        BlockTradeOrder | None, Field(description="Original maker order (for signature generation)")
     ] = None
     market: Annotated[str | None, Field(description="Trading pair for this trade", examples=["BTC-USD-PERP"])] = None
     price: Annotated[str | None, Field(description="Agreed price (if fully executable)", examples=["30000.00"])] = None
     size: Annotated[str | None, Field(description="Agreed size (if fully executable)", examples=["10.5"])] = None
-    status: Annotated[str | None, Field(description="Current status of this trade", examples=["PENDING"])] = None
     taker_account: Annotated[
         str | None, Field(description="Taker account (if fully executable)", examples=["0x456...def"])
     ] = None
+    taker_fill: Annotated[FillResult | None, Field(description="Execution details (if executed)")] = None
     taker_order: Annotated[
         BlockTradeOrder | None, Field(description="Original taker order (for signature generation)")
     ] = None
@@ -1965,9 +1927,6 @@ class BlockTradeDetailFullResponse(BaseModel):
     ] = None
     block_type: Annotated[BlockTradeType | None, Field(description="Block type", examples=["OFFER_BASED"])] = None
     created_at: Annotated[int | None, Field(description="When block was created", examples=[1640995200000])] = None
-    execution_result: Annotated[
-        BlockExecutionResultResponse | None, Field(description="Final execution results (if executed)")
-    ] = None
     initiator: Annotated[
         str | None, Field(description="Account that initiated this block trade", examples=["0x123...abc"])
     ] = None
@@ -1975,9 +1934,6 @@ class BlockTradeDetailFullResponse(BaseModel):
         int | None, Field(description="When block was last updated", examples=[1640995400000])
     ] = None
     nonce: Annotated[str | None, Field(description="Original block nonce", examples=["67890"])] = None
-    offers_summary: Annotated[
-        BlockOffersSummaryResponse | None, Field(description="Summary of offers (if offer-based)")
-    ] = None
     parent_block_id: Annotated[
         str | None, Field(description="Parent block ID (if offer-based)", examples=["block_123"])
     ] = None

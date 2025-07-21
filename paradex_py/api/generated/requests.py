@@ -195,7 +195,11 @@ class BlockExecuteRequest(BaseModel):
     ] = None
     signatures: Annotated[
         dict[str, responses.BlockTradeSignature],
-        Field(description="Map of offer IDs to initiator signatures accepting each offer"),
+        Field(
+            description=(
+                "Map of offer IDs to initiator signatures accepting each offer. Block id if it is a direct block trade."
+            )
+        ),
     ]
 
 
@@ -304,9 +308,12 @@ class BlockTradeRequest(BaseModel):
         int, Field(description="Unix timestamp in milliseconds when block expires", examples=[1640995800000])
     ]
     nonce: Annotated[str, Field(description="Unique nonce for this block trade request", examples=["67890"])]
-    required_signers: Annotated[list[str], Field(description="Array of account addresses that must sign this block")]
+    required_signers: Annotated[
+        list[str], Field(description="List of accounts that can participate in the block trade")
+    ]
     signatures: Annotated[
-        dict[str, responses.BlockTradeSignature], Field(description="Map of account addresses to their signatures")
+        dict[str, responses.BlockTradeSignature],
+        Field(description="Map of account addresses to their signatures. Can be empty or partial."),
     ]
     trades: Annotated[
         dict[str, BlockTradeInfo], Field(description="Map of market symbol to trade info (one per market)")
