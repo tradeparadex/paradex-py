@@ -1,5 +1,5 @@
 from poseidon_py.poseidon_hash import poseidon_hash_many
-from starknet_py.net.models.typed_data import TypedData
+from starknet_py.utils.typed_data import TypedData
 from starknet_py.serialization.data_serializers.byte_array_serializer import ByteArraySerializer
 
 

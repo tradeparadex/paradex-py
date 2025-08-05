@@ -1,7 +1,7 @@
 from decimal import Decimal
 from typing import List
 
-from starknet_py.net.models.typed_data import TypedData
+from starknet_py.utils.typed_data import TypedData
 
 from paradex_py.common.order import Order
 

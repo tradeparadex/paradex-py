@@ -1,4 +1,4 @@
-from starknet_py.net.models.typed_data import TypedData
+from starknet_py.utils.typed_data import TypedData
 
 
 def build_onboarding_message(chain_id: int) -> TypedData:

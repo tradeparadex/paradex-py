@@ -12,7 +12,7 @@ from starknet_crypto_py import sign as rs_sign
 from starknet_crypto_py import verify as rs_verify
 from starknet_py.common import int_from_hex
 from starknet_py.constants import EC_ORDER
-from starknet_py.net.models.typed_data import TypedData
+from starknet_py.utils.typed_data import TypedData
 from starknet_py.utils.typed_data import TypedData as TypedDataDataclass
 from web3.auto import w3
 
