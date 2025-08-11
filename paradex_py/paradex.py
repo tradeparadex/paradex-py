@@ -17,11 +17,14 @@ class Paradex:
         l1_private_key (str, optional): L1 private key. Defaults to None.
         l2_private_key (str, optional): L2 private key. Defaults to None.
         logger (logging.Logger, optional): Logger. Defaults to None.
+        ws_timeout (int, optional): WebSocket read timeout in seconds. Defaults to None (uses default).
 
     Examples:
         >>> from paradex_py import Paradex
         >>> from paradex_py.environment import Environment
         >>> paradex = Paradex(env=Environment.TESTNET)
+        >>> # With custom timeout
+        >>> paradex = Paradex(env=Environment.TESTNET, ws_timeout=30)
     """
 
     def __init__(
@@ -31,6 +34,7 @@ class Paradex:
         l1_private_key: Optional[str] = None,
         l2_private_key: Optional[str] = None,
         logger: Optional[logging.Logger] = None,
+        ws_timeout: Optional[int] = None,
     ):
         if env is None:
             return raise_value_error("Paradex: Invalid environment")
@@ -38,7 +42,7 @@ class Paradex:
         self.logger: logging.Logger = logger or logging.getLogger(__name__)
         # Load api client and system config
         self.api_client = ParadexApiClient(env=env, logger=logger)
-        self.ws_client = ParadexWebsocketClient(env=env, logger=logger)
+        self.ws_client = ParadexWebsocketClient(env=env, logger=logger, ws_timeout=ws_timeout)
         self.config = self.api_client.fetch_system_config()
         self.account: Optional[ParadexAccount] = None
 

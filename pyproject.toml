@@ -57,6 +57,7 @@ dev = [
     "griffe==0.45.2",
     "hatchling==1.27.0",
     "datamodel-code-generator>=0.30.1",
+    "pytest-asyncio>=1.1.0",
 ]
 
 [tool.black]
