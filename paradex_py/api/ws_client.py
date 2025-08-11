@@ -10,7 +10,7 @@ import websockets
 from websockets import ClientConnection, State
 
 from paradex_py.account.account import ParadexAccount
-from paradex_py.constants import WS_READ_TIMEOUT
+from paradex_py.constants import WS_TIMEOUT
 from paradex_py.environment import Environment
 
 
@@ -70,12 +70,16 @@ class ParadexWebsocketClient:
     Args:
         env (Environment): Environment
         logger (Optional[logging.Logger], optional): Logger. Defaults to None.
+        ws_timeout (Optional[int], optional): WebSocket read timeout in seconds. Defaults to 20s.
 
     Examples:
         >>> from paradex_py import Paradex
         >>> from paradex_py.environment import Environment
         >>> paradex = Paradex(env=Environment.TESTNET)
         >>> paradex.ws_client.connect()
+        >>> # With custom timeout
+        >>> from paradex_py.api.ws_client import ParadexWebsocketClient
+        >>> ws_client = ParadexWebsocketClient(env=Environment.TESTNET, ws_timeout=30)
     """
 
     classname: str = "ParadexWebsocketClient"
@@ -84,6 +88,8 @@ class ParadexWebsocketClient:
         self,
         env: Environment,
         logger: Optional[logging.Logger] = None,
+        ws_timeout: Optional[int] = None,
+        auto_start_reader: bool = True,
     ):
         self.env = env
         self.api_url = f"wss://ws.api.{self.env}.paradex.trade/v1"
@@ -92,7 +98,9 @@ class ParadexWebsocketClient:
         self.account: Optional[ParadexAccount] = None
         self.callbacks: Dict[str, Callable] = {}
         self.subscribed_channels: Dict[str, bool] = {}
-        asyncio.get_event_loop().create_task(self._read_messages())
+        self.ws_timeout = ws_timeout if ws_timeout is not None else WS_TIMEOUT
+        if auto_start_reader:
+            asyncio.get_event_loop().create_task(self._read_messages())
 
     async def __aexit__(self):
         await self._close_connection()
@@ -197,7 +205,7 @@ class ParadexWebsocketClient:
         while True:
             if self.ws and self.ws.state == State.OPEN:
                 try:
-                    response = await asyncio.wait_for(self.ws.recv(), timeout=WS_READ_TIMEOUT)
+                    response = await asyncio.wait_for(self.ws.recv(), timeout=self.ws_timeout)
                     message = json.loads(response)
                     self._check_subscribed_channel(message)
                     if "params" not in message:
