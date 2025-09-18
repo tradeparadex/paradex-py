@@ -1,6 +1,4 @@
-from typing import cast
-
-from starknet_py.utils.typed_data import TypedData, TypedDataDict
+from starknet_py.utils.typed_data import TypedData
 
 from paradex_py.common.order import Order
 
@@ -39,7 +37,7 @@ def build_order_message(chain_id: int, o: Order) -> TypedData:
             "price": o.chain_price(),
         },
     }
-    return TypedData.from_dict(cast(TypedDataDict, message))
+    return message
 
 
 def build_modify_order_message(chain_id: int, o: Order) -> TypedData:
@@ -81,4 +79,4 @@ def build_modify_order_message(chain_id: int, o: Order) -> TypedData:
             "id": o.id,
         },
     }
-    return TypedData.from_dict(cast(TypedDataDict, message))
+    return message

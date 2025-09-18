@@ -1,7 +1,7 @@
 import dataclasses
 import logging
 import re
-from typing import Callable, List, Optional, Union
+from typing import Callable, List, Optional
 
 import marshmallow_dataclass
 from starknet_py.constants import RPC_CONTRACT_ERROR
@@ -16,10 +16,10 @@ from starknet_py.net.signer import BaseSigner
 from starknet_py.net.signer.stark_curve_signer import KeyPair
 from starknet_py.proxy.contract_abi_resolver import ProxyConfig
 from starknet_py.proxy.proxy_check import ArgentProxyCheck, OpenZeppelinProxyCheck, ProxyCheck
-from starknet_py.utils.typed_data import TypedData, TypedDataDict
 
 from paradex_py.utils import random_resource_bounds
 
+from .typed_data import TypedData
 from .utils import message_signature, typed_data_to_message_hash
 
 
@@ -78,7 +78,7 @@ class Account(StarknetAccount):
             proxy_config = get_proxy_config() if is_cairo0_contract else False
             contract = await Contract.from_address(address=address, provider=self, proxy_config=proxy_config)
         except Exception as e:
-            logging.error(f"Error loading contract at address {hex(int(address))}: {e}")
+            logging.error(f"Error loading contract at address {hex(address)}: {e}")
             raise
         else:
             return contract
@@ -86,15 +86,15 @@ class Account(StarknetAccount):
     async def check_multisig_required(self, contract: Contract) -> bool:
         try:
             get_signer_call = await contract.functions["getSigner"].call()
-            current_signer = hex(get_signer_call.signer)  # type: ignore[union-attr]
+            current_signer = hex(get_signer_call.signer)
             logging.info(f"Current signer: {current_signer}")
 
             get_guardian_call = await contract.functions["getGuardian"].call()
-            current_guardian = hex(get_guardian_call.guardian)  # type: ignore[union-attr]
+            current_guardian = hex(get_guardian_call.guardian)
             logging.info(f"Current guardian: {current_guardian}")
 
             get_guardian_backup_call = await contract.functions["getGuardianBackup"].call()
-            current_guardian_backup = hex(get_guardian_backup_call.guardianBackup)  # type: ignore[union-attr]
+            current_guardian_backup = hex(get_guardian_backup_call.guardianBackup)
             logging.info(f"Current guardian backup: {current_guardian_backup}")
 
             need_multisig = current_guardian != "0x0" or current_guardian_backup != "0x0"
@@ -140,9 +140,9 @@ class Account(StarknetAccount):
         print(invoke_schema.dumps(invoke))
         print("---\n")
 
-    def sign_message(self, typed_data: Union[TypedData, TypedDataDict]) -> List[int]:
+    def sign_message(self, typed_data: TypedData) -> List[int]:
         msg_hash = typed_data_to_message_hash(typed_data, self.address)
-        r, s = message_signature(msg_hash=msg_hash, priv_key=self.signer.key_pair.private_key)  # type: ignore[attr-defined]
+        r, s = message_signature(msg_hash=msg_hash, priv_key=self.signer.key_pair.private_key)
         return [r, s]
 
 
@@ -189,5 +189,6 @@ class StarkwareETHProxyCheck(ProxyCheck):
 
 def get_proxy_config():
     return ProxyConfig(
+        max_steps=5,
         proxy_checks=[StarkwareETHProxyCheck(), ArgentProxyCheck(), OpenZeppelinProxyCheck()],
     )

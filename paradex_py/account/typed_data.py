@@ -20,19 +20,19 @@ class TypedData(StarknetTypedDataDataclass):
 
         return values
 
-    def _encode_value(self, type_name: str, value: Union[int, str, dict, list], context=None) -> int:
+    def _encode_value(self, type_name: str, value: Union[int, str, dict, list]) -> int:
         if is_pointer(type_name) and isinstance(value, list):
             type_name = strip_pointer(type_name)
 
             if self._is_struct(type_name):
                 return compute_hash_on_elements([self.struct_hash(type_name, data) for data in value])
-            return compute_hash_on_elements([int(parse_felt(val)) for val in value])
+            return compute_hash_on_elements([int(parse_felt(val), 16) for val in value])
 
         if self._is_struct(type_name) and isinstance(value, dict):
             return self.struct_hash(type_name, value)
 
         value = cast(Union[int, str], value)
-        return int(parse_felt(value))
+        return int(parse_felt(value), 16)
 
     def struct_hash(self, type_name: str, data: dict) -> int:
         """
