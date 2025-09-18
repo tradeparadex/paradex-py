@@ -3,12 +3,21 @@ from typing import List, Union, cast
 from starknet_py.cairo.felt import encode_shortstring
 from starknet_py.utils.typed_data import TypedData as StarknetTypedDataDataclass
 from starknet_py.utils.typed_data import (
-    get_hex,
     is_pointer,
     strip_pointer,
 )
 
 from .utils import compute_hash_on_elements
+
+
+def get_hex(value: Union[int, str]) -> str:
+    if isinstance(value, int):
+        return hex(value)
+    if value[:2] == "0x":
+        return value
+    if value.isnumeric():
+        return hex(int(value))
+    return hex(encode_shortstring(value))
 
 
 class TypedData(StarknetTypedDataDataclass):

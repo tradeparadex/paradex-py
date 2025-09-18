@@ -12,8 +12,7 @@ from starknet_crypto_py import sign as rs_sign
 from starknet_crypto_py import verify as rs_verify
 from starknet_py.common import int_from_hex
 from starknet_py.constants import EC_ORDER
-from starknet_py.net.models.typed_data import TypedData
-from starknet_py.utils.typed_data import TypedData as TypedDataDataclass
+from starknet_py.utils.typed_data import TypedData
 from web3.auto import w3
 
 from paradex_py.utils import raise_value_error
@@ -95,7 +94,7 @@ def unflatten_signature(sig: str) -> list:
 
 
 def typed_data_to_message_hash(typed_data: TypedData, address: str) -> int:
-    typed_data_dataclass = TypedDataDataclass.from_dict(typed_data)
+    typed_data_dataclass = TypedData.from_dict(typed_data)
     return typed_data_dataclass.message_hash(address)
 
 

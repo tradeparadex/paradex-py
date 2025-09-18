@@ -1,25 +1,23 @@
 import dataclasses
 import logging
 import re
-from typing import Callable, List, Optional, Union
+from typing import Callable, List, Optional
 
 import marshmallow_dataclass
-from starknet_py.common import create_compiled_contract
 from starknet_py.constants import RPC_CONTRACT_ERROR
-from starknet_py.contract import Contract, DeclareResult, DeployResult, InvokeResult
+from starknet_py.contract import Contract, InvokeResult
 from starknet_py.hash.selector import get_selector_from_name
 from starknet_py.net.account.account import Account as StarknetAccount
 from starknet_py.net.client import Client
 from starknet_py.net.client_errors import ClientError
-from starknet_py.net.client_models import Call, Calls, SentTransactionResponse
-from starknet_py.net.models import Address, AddressRepresentation, DeclareV1, InvokeV1, StarknetChainId
+from starknet_py.net.client_models import Call, Calls, ResourceBoundsMapping, SentTransactionResponse
+from starknet_py.net.models import Address, AddressRepresentation, InvokeV3, StarknetChainId
 from starknet_py.net.signer import BaseSigner
 from starknet_py.net.signer.stark_curve_signer import KeyPair
-from starknet_py.net.udc_deployer.deployer import Deployer
 from starknet_py.proxy.contract_abi_resolver import ProxyConfig
 from starknet_py.proxy.proxy_check import ArgentProxyCheck, OpenZeppelinProxyCheck, ProxyCheck
 
-from paradex_py.utils import random_max_fee
+from paradex_py.utils import random_resource_bounds
 
 from .typed_data import TypedData
 from .utils import message_signature, typed_data_to_message_hash
@@ -37,60 +35,22 @@ class Account(StarknetAccount):
     ):
         super().__init__(address=address, client=client, signer=signer, key_pair=key_pair, chain=chain)
 
-    def _add_signature(self, invoke: InvokeV1, signature: list[int]) -> InvokeV1:
+    def _add_signature(self, invoke: InvokeV3, signature: list[int]) -> InvokeV3:
         return dataclasses.replace(invoke, signature=signature)
 
     async def prepare_invoke(
         self,
         calls: Calls,
-        max_fee: Optional[int] = None,
+        resource_bounds: Optional[ResourceBoundsMapping] = None,
         nonce: Optional[int] = None,
-    ) -> InvokeV1:
-        if max_fee is None:
-            max_fee = random_max_fee()
-        return await self._prepare_invoke(calls, max_fee=max_fee, nonce=nonce)
-
-    async def prepare_declare(self, compiled_contract: str, max_fee: int) -> DeclareV1:
-        declare_tx = await self._make_declare_v1_transaction(compiled_contract)
-        declare_tx = dataclasses.replace(declare_tx, max_fee=max_fee)
-        return declare_tx
-
-    async def prepare_deploy(
-        self,
-        declare_result: DeclareResult,
-        deployer_address: int,
-        constructor_args: Optional[Union[list, dict]] = None,
-        salt: Optional[int] = None,
-        unique: bool = True,
-        max_fee: Optional[int] = None,
-    ) -> tuple[InvokeV1, Contract]:
-        if max_fee is None:
-            max_fee = random_max_fee()
-        abi = create_compiled_contract(compiled_contract=declare_result.compiled_contract).abi
-        deployer = Deployer(
-            deployer_address=deployer_address,
-            account_address=self.address if unique else None,
-        )
-        deploy_call, address = deployer.create_contract_deployment(
-            class_hash=declare_result.class_hash,
-            salt=salt,
-            abi=abi,
-            calldata=constructor_args,
-            cairo_version=self.cairo_version,
-        )
-        contract = Contract(
-            provider=self,
-            address=address,
-            abi=abi,
-            cairo_version=self.cairo_version,
-        )
-
-        invoke_tx = await self._prepare_invoke(deploy_call, max_fee=max_fee)
-        return invoke_tx, contract
+    ) -> InvokeV3:
+        if resource_bounds is None:
+            resource_bounds = random_resource_bounds()
+        return await self._prepare_invoke_v3(calls, resource_bounds=resource_bounds, nonce=nonce)
 
     async def send_transaction(
         self,
-        prepared_invoke: InvokeV1,
+        prepared_invoke: InvokeV3,
         signature: list[int],
     ) -> SentTransactionResponse:
         signed_invoke = self._add_signature(prepared_invoke, signature)
@@ -99,7 +59,7 @@ class Account(StarknetAccount):
     async def invoke(
         self,
         contract: Contract,
-        prepared_invoke: InvokeV1,
+        prepared_invoke: InvokeV3,
         signature: list[int],
     ) -> InvokeResult:
         invoke_transaction = self._add_signature(prepared_invoke, signature)
@@ -112,40 +72,6 @@ class Account(StarknetAccount):
             invoke_transaction=invoke_transaction,
         )
         return invoke_result
-
-    async def declare(
-        self,
-        compiled_contract: str,
-        prepared_invoke: InvokeV1,
-        signature: list[int],
-    ) -> DeclareResult:
-        res = await self.send_transaction(prepared_invoke=prepared_invoke, signature=signature)
-
-        declare_result = DeclareResult(
-            hash=res.transaction_hash,
-            _client=self.client,
-            class_hash=res.class_hash,
-            _account=self,
-            compiled_contract=compiled_contract,
-            _cairo_version=self.cairo_version,
-        )
-        return declare_result
-
-    async def deploy(
-        self,
-        contract: Contract,
-        prepared_invoke: InvokeV1,
-        signature: list[int],
-    ) -> DeployResult:
-        res = await self.send_transaction(prepared_invoke=prepared_invoke, signature=signature)
-
-        deploy_result = DeployResult(
-            hash=res.transaction_hash,
-            _client=self.client,
-            deployed_contract=contract,
-        )
-
-        return deploy_result
 
     async def load_contract(self, address: AddressRepresentation, is_cairo0_contract: bool = False) -> Contract:
         try:
@@ -182,7 +108,7 @@ class Account(StarknetAccount):
         self,
         contract: Contract,
         need_multisig: bool,
-        prepared_invoke: InvokeV1,
+        prepared_invoke: InvokeV3,
         func_name: str,
     ):
         try:
@@ -208,8 +134,8 @@ class Account(StarknetAccount):
             logging.error(f"Error processing invoke: {e}")
             raise
 
-    def print_invoke(self, invoke: InvokeV1):
-        invoke_schema = marshmallow_dataclass.class_schema(InvokeV1)()
+    def print_invoke(self, invoke: InvokeV3):
+        invoke_schema = marshmallow_dataclass.class_schema(InvokeV3)()
         print("\n---")
         print(invoke_schema.dumps(invoke))
         print("---\n")

@@ -242,7 +242,7 @@ class ParadexAccount:
 
             # Prepare calls
             calls = [
-                paraclear_contract.functions["transfer"].prepare_invoke_v1(
+                paraclear_contract.functions["transfer"].prepare_invoke_v3(
                     recipient=int_from_hex(target_l2_address),
                     token_address=usdc_address,
                     amount=amount_paraclear,
