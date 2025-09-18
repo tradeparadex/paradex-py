@@ -1,7 +1,7 @@
 from decimal import Decimal
-from typing import List
+from typing import List, cast
 
-from starknet_py.utils.typed_data import TypedData
+from starknet_py.utils.typed_data import TypedData, TypedDataDict
 
 from paradex_py.common.order import Order
 
@@ -95,4 +95,4 @@ def build_block_trade_message(chain_id: int, block_trade: BlockTrade) -> TypedDa
             "trades": trades_message,
         },
     }
-    return message
+    return TypedData.from_dict(cast(TypedDataDict, message))

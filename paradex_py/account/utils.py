@@ -1,6 +1,6 @@
 import functools
 import hashlib
-from typing import List, Sequence
+from typing import List, Sequence, Union, cast
 
 from eth_account.messages import SignableMessage, encode_typed_data
 from ledgereth.accounts import find_account
@@ -12,7 +12,7 @@ from starknet_crypto_py import sign as rs_sign
 from starknet_crypto_py import verify as rs_verify
 from starknet_py.common import int_from_hex
 from starknet_py.constants import EC_ORDER
-from starknet_py.utils.typed_data import TypedData
+from starknet_py.utils.typed_data import TypedData, TypedDataDict
 from web3.auto import w3
 
 from paradex_py.utils import raise_value_error
@@ -78,8 +78,8 @@ def derive_stark_key(l1_private_key: int, stark_key_msg: TypedData) -> int:
     return l2_private_key
 
 
-def derive_stark_key_from_ledger(eth_account_address: str, stark_key_msg: TypedData) -> int:
-    signable_message = encode_typed_data(full_message=stark_key_msg)
+def derive_stark_key_from_ledger(eth_account_address: str, stark_key_msg: Union[TypedData, TypedDataDict]) -> int:
+    signable_message = encode_typed_data(full_message=stark_key_msg)  # type: ignore[arg-type]
     message_signature = _sign_stark_key_message_ledger(signable_message, eth_account_address)
     l2_private_key = _get_private_key_from_eth_signature(message_signature)
     return l2_private_key
@@ -93,8 +93,8 @@ def unflatten_signature(sig: str) -> list:
     return [int(x) for x in sig[2:-2].split('","')]
 
 
-def typed_data_to_message_hash(typed_data: TypedData, address: str) -> int:
-    typed_data_dataclass = TypedData.from_dict(typed_data)
+def typed_data_to_message_hash(typed_data: Union[TypedData, TypedDataDict], address: int) -> int:
+    typed_data_dataclass = TypedData.from_dict(cast(TypedDataDict, typed_data))
     return typed_data_dataclass.message_hash(address)
 
 
