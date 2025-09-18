@@ -201,7 +201,7 @@ class ParadexWebsocketClient:
                 self.logger.info(f"{self.classname}: Subscribed to channel:{channel_subscribed}")
                 self.subscribed_channels[channel_subscribed] = True
 
-    async def _read_messages(self):
+    async def _read_messages(self) -> None:
         while True:
             if self.ws and self.ws.state == State.OPEN:
                 try:

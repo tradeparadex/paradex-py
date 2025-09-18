@@ -1,12 +1,13 @@
 from typing import List, Union, cast
 
 from starknet_py.cairo.felt import encode_shortstring
-from starknet_py.utils.typed_data import TypedData as StarknetTypedDataDataclass
 from starknet_py.utils.typed_data import (
+    TypeContext,
     is_pointer,
     parse_felt,
     strip_pointer,
 )
+from starknet_py.utils.typed_data import TypedData as StarknetTypedDataDataclass
 
 from .utils import compute_hash_on_elements
 
@@ -20,19 +21,21 @@ class TypedData(StarknetTypedDataDataclass):
 
         return values
 
-    def _encode_value(self, type_name: str, value: Union[int, str, dict, list]) -> int:
+    def _encode_value(
+        self, type_name: str, value: Union[int, str, dict, list], context: TypeContext | None = None
+    ) -> int:
         if is_pointer(type_name) and isinstance(value, list):
             type_name = strip_pointer(type_name)
 
             if self._is_struct(type_name):
                 return compute_hash_on_elements([self.struct_hash(type_name, data) for data in value])
-            return compute_hash_on_elements([int(parse_felt(val), 16) for val in value])
+            return compute_hash_on_elements([int(parse_felt(val)) for val in value])
 
         if self._is_struct(type_name) and isinstance(value, dict):
             return self.struct_hash(type_name, value)
 
         value = cast(Union[int, str], value)
-        return int(parse_felt(value), 16)
+        return int(parse_felt(value))
 
     def struct_hash(self, type_name: str, data: dict) -> int:
         """
