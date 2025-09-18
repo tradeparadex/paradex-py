@@ -4,20 +4,11 @@ from starknet_py.cairo.felt import encode_shortstring
 from starknet_py.utils.typed_data import TypedData as StarknetTypedDataDataclass
 from starknet_py.utils.typed_data import (
     is_pointer,
+    parse_felt,
     strip_pointer,
 )
 
 from .utils import compute_hash_on_elements
-
-
-def get_hex(value: Union[int, str]) -> str:
-    if isinstance(value, int):
-        return hex(value)
-    if value[:2] == "0x":
-        return value
-    if value.isnumeric():
-        return hex(int(value))
-    return hex(encode_shortstring(value))
 
 
 class TypedData(StarknetTypedDataDataclass):
@@ -35,13 +26,13 @@ class TypedData(StarknetTypedDataDataclass):
 
             if self._is_struct(type_name):
                 return compute_hash_on_elements([self.struct_hash(type_name, data) for data in value])
-            return compute_hash_on_elements([int(get_hex(val), 16) for val in value])
+            return compute_hash_on_elements([int(parse_felt(val), 16) for val in value])
 
         if self._is_struct(type_name) and isinstance(value, dict):
             return self.struct_hash(type_name, value)
 
         value = cast(Union[int, str], value)
-        return int(get_hex(value), 16)
+        return int(parse_felt(value), 16)
 
     def struct_hash(self, type_name: str, data: dict) -> int:
         """
