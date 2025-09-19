@@ -1,9 +1,11 @@
+from typing import cast
+
 from poseidon_py.poseidon_hash import poseidon_hash_many
 from starknet_py.serialization.data_serializers.byte_array_serializer import ByteArraySerializer
-from starknet_py.utils.typed_data import TypedData
+from starknet_py.utils.typed_data import TypedDataDict
 
 
-def build_auth_message(chain_id: int, timestamp: int, expiry: int) -> TypedData:
+def build_auth_message(chain_id: int, timestamp: int, expiry: int) -> TypedDataDict:
     message = {
         "message": {
             "method": "POST",
@@ -29,7 +31,7 @@ def build_auth_message(chain_id: int, timestamp: int, expiry: int) -> TypedData:
             ],
         },
     }
-    return message
+    return cast(TypedDataDict, message)
 
 
 def poseidon_hash(input_str: str) -> int:
@@ -40,7 +42,7 @@ def poseidon_hash(input_str: str) -> int:
 
 def build_fullnode_message(
     chainId: int, account: str, json_payload: str, signature_timestamp: int, signature_version: str
-) -> TypedData:
+) -> TypedDataDict:
     payload_hash = poseidon_hash(json_payload)
     message = {
         "message": {
@@ -65,4 +67,4 @@ def build_fullnode_message(
             ],
         },
     }
-    return message
+    return cast(TypedDataDict, message)

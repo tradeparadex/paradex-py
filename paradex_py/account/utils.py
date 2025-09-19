@@ -72,13 +72,13 @@ def _get_private_key_from_eth_signature(eth_signature_hex: str) -> int:
     return _grind_key(int_from_hex(r), EC_ORDER)
 
 
-def derive_stark_key(l1_private_key: int, stark_key_msg: TypedData) -> int:
+def derive_stark_key(l1_private_key: int, stark_key_msg: TypedDataDict) -> int:
     message_signature = _sign_stark_key_message(stark_key_msg, l1_private_key)
     l2_private_key = _get_private_key_from_eth_signature(message_signature)
     return l2_private_key
 
 
-def derive_stark_key_from_ledger(eth_account_address: str, stark_key_msg: TypedData) -> int:
+def derive_stark_key_from_ledger(eth_account_address: str, stark_key_msg: TypedDataDict) -> int:
     signable_message = encode_typed_data(full_message=stark_key_msg)  # type: ignore[arg-type]
     message_signature = _sign_stark_key_message_ledger(signable_message, eth_account_address)
     l2_private_key = _get_private_key_from_eth_signature(message_signature)

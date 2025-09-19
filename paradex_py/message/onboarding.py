@@ -1,7 +1,9 @@
-from starknet_py.utils.typed_data import TypedData
+from typing import cast
+
+from starknet_py.utils.typed_data import TypedDataDict
 
 
-def build_onboarding_message(chain_id: int) -> TypedData:
+def build_onboarding_message(chain_id: int) -> TypedDataDict:
     message = {
         "message": {
             "action": "Onboarding",
@@ -19,4 +21,4 @@ def build_onboarding_message(chain_id: int) -> TypedData:
             ],
         },
     }
-    return message
+    return cast(TypedDataDict, message)

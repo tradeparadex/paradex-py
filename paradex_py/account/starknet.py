@@ -189,6 +189,5 @@ class StarkwareETHProxyCheck(ProxyCheck):
 
 def get_proxy_config():
     return ProxyConfig(
-        max_steps=5,
         proxy_checks=[StarkwareETHProxyCheck(), ArgentProxyCheck(), OpenZeppelinProxyCheck()],
     )
