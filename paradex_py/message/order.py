@@ -1,9 +1,11 @@
-from starknet_py.net.models.typed_data import TypedData
+from typing import cast
+
+from starknet_py.utils.typed_data import TypedDataDict
 
 from paradex_py.common.order import Order
 
 
-def build_order_message(chain_id: int, o: Order) -> TypedData:
+def build_order_message(chain_id: int, o: Order) -> TypedDataDict:
     message = {
         "domain": {"name": "Paradex", "chainId": hex(chain_id), "version": "1"},
         "primaryType": "Order",
@@ -37,10 +39,10 @@ def build_order_message(chain_id: int, o: Order) -> TypedData:
             "price": o.chain_price(),
         },
     }
-    return message
+    return cast(TypedDataDict, message)
 
 
-def build_modify_order_message(chain_id: int, o: Order) -> TypedData:
+def build_modify_order_message(chain_id: int, o: Order) -> TypedDataDict:
     message = {
         "domain": {"name": "Paradex", "chainId": hex(chain_id), "version": "1"},
         "primaryType": "ModifyOrder",
@@ -79,4 +81,4 @@ def build_modify_order_message(chain_id: int, o: Order) -> TypedData:
             "id": o.id,
         },
     }
-    return message
+    return cast(TypedDataDict, message)

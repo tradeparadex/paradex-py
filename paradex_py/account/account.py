@@ -90,7 +90,7 @@ class ParadexAccount:
             client=client,
             address=self.l2_address,
             key_pair=key_pair,
-            chain=CustomStarknetChainId(self.l2_chain_id),
+            chain=CustomStarknetChainId(self.l2_chain_id),  # type: ignore[arg-type]
         )
 
         # Monkey patch of _make_request method of starknet.py client
@@ -120,7 +120,7 @@ class ParadexAccount:
                 await self.handle_request_error(request)
                 return await request.json(content_type=None)
 
-        client._client._make_request = types.MethodType(monkey_patched_make_request, client._client)
+        client._client._make_request = types.MethodType(monkey_patched_make_request, client._client)  # type: ignore[method-assign]
 
     def _account_address(self) -> int:
         calldata = [
@@ -242,7 +242,7 @@ class ParadexAccount:
 
             # Prepare calls
             calls = [
-                paraclear_contract.functions["transfer"].prepare_invoke_v1(
+                paraclear_contract.functions["transfer"].prepare_invoke_v3(
                     recipient=int_from_hex(target_l2_address),
                     token_address=usdc_address,
                     amount=amount_paraclear,

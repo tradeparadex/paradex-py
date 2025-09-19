@@ -24,8 +24,8 @@ else:
 
 paradex = Paradex(env=TESTNET, l1_address=TEST_L1_ADDRESS, l1_private_key=TEST_L1_PRIVATE_KEY)
 
-receipient_address = ""
+recipient_address = ""
 amount = Decimal(0)
-logger.info(f"Transferring USDC from {TEST_L1_ADDRESS} to {receipient_address} amount {amount}")
+logger.info(f"Transferring USDC from {TEST_L1_ADDRESS} to {recipient_address} amount {amount}")
 
-asyncio.run(paradex.account.transfer_on_l2(receipient_address, amount))
+asyncio.run(paradex.account.transfer_on_l2(recipient_address, amount))
