@@ -1815,7 +1815,7 @@ wheels = [
 
 [[package]]
 name = "paradex-py"
-version = "0.4.9"
+version = "0.5.0rc0"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
