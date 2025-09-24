@@ -16,15 +16,23 @@ class Paradex:
         l1_address (str, optional): L1 address. Defaults to None.
         l1_private_key (str, optional): L1 private key. Defaults to None.
         l2_private_key (str, optional): L2 private key. Defaults to None.
+        l2_address (str, optional): L2 address. Defaults to None.
         logger (logging.Logger, optional): Logger. Defaults to None.
         ws_timeout (int, optional): WebSocket read timeout in seconds. Defaults to None (uses default).
+
+    Note:
+        - If only L2 private key is provided, the account will be authenticated directly (L2-only mode)
+        - For subkeys, L2 address of the main accountmust be provided.
 
     Examples:
         >>> from paradex_py import Paradex
         >>> from paradex_py.environment import Environment
-        >>> paradex = Paradex(env=Environment.TESTNET)
+        >>> # L1+L2 authentication (traditional)
+        >>> paradex = Paradex(env=Environment.TESTNET, l1_address="0x...", l1_private_key="0x...")
+        >>> # L2-only authentication (subkey)
+        >>> paradex = Paradex(env=Environment.TESTNET, l2_private_key="0x...", l2_address="0x...")
         >>> # With custom timeout
-        >>> paradex = Paradex(env=Environment.TESTNET, ws_timeout=30)
+        >>> paradex = Paradex(env=Environment.TESTNET, l2_private_key="0x...", ws_timeout=30)
     """
 
     def __init__(

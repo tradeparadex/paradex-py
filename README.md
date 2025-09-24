@@ -10,6 +10,8 @@ Paradex Python SDK provides a simple interface to interact with the Paradex REST
 
 ## Examples
 
+### L1 + L2 Authentication (Traditional)
+
 ```python
 from paradex_py import Paradex
 from paradex_py.environment import Environment
@@ -18,9 +20,24 @@ paradex = Paradex(env=Environment.TESTNET, l1_address="0x...", l1_private_key="0
 print(hex(paradex.account.l2_address)) # 0x...
 print(hex(paradex.account.l2_public_key)) # 0x...
 print(hex(paradex.account.l2_private_key)) # 0x...
+```
 
-paradex.api_client.fetch_system_config() # { ..., "paraclear_decimals": 8, ... }
+### L2-Only Authentication (Subkey)
 
+```python
+from paradex_py import Paradex
+from paradex_py.environment import Environment
+
+# Use only L2 private key - no L1 address needed
+paradex = Paradex(env=Environment.TESTNET, l2_private_key="0x...", l2_address="0x...")
+print(hex(paradex.account.l2_address)) # 0x...
+print(hex(paradex.account.l2_public_key)) # 0x...
+print(hex(paradex.account.l2_private_key)) # 0x...
+```
+
+### WebSocket Usage
+
+```python
 async def on_message(ws_channel, message):
     print(ws_channel, message)
 
@@ -32,7 +49,8 @@ await paradex.ws_client.subscribe(ParadexWebsocketChannel.MARKETS_SUMMARY, callb
 
 💻 For comprehensive examples refer to following files:
 
-- API: [examples/call_rest_api.py](examples/call_rest_api.py)
+- API (L1+L2): [examples/call_rest_api.py](examples/call_rest_api.py)
+- API (L2-only): [examples/subkey_rest_api.py](examples/subkey_rest_api.py)
 - WS: [examples/connect_ws_api.py](examples/connect_ws_api.py)
 - Transfer: [examples/transfer_l2_usdc.py](examples/transfer_l2_usdc.py)
 

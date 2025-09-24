@@ -43,11 +43,22 @@ class ParadexAccount:
         l1_address (Optional[str], optional): Ethereum address. Defaults to None.
         l1_private_key (Optional[str], optional): Ethereum private key. Defaults to None.
         l2_private_key (Optional[str], optional): Paradex private key. Defaults to None.
+        l2_address (Optional[str], optional): L2 address. Defaults to None.
+
+    Note:
+        - If only L2 private key is provided, authentication will happen without onboarding. Account must have been onboarded previously.
+        - if L2 private key is a subkey, L2 address of the main account must be provided.
 
     Examples:
         >>> from paradex_py import Paradex
         >>> from paradex_py.environment import Environment
+        >>> # L1+L2 authentication (traditional)
         >>> paradex = Paradex(env=Environment.TESTNET, l1_address="0x...", l1_private_key="0x...")
+        >>> paradex.account.l2_address
+        >>> paradex.account.l2_public_key
+        >>> paradex.account.l2_private_key
+        >>> # L2-only authentication (subkey)
+        >>> paradex = Paradex(env=Environment.TESTNET, l2_private_key="0x...", l2_address="0x...")
         >>> paradex.account.l2_address
         >>> paradex.account.l2_public_key
         >>> paradex.account.l2_private_key
