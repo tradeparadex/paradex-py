@@ -33,6 +33,7 @@ class Paradex:
         l1_address: Optional[str] = None,
         l1_private_key: Optional[str] = None,
         l2_private_key: Optional[str] = None,
+        l2_address: Optional[str] = None,
         logger: Optional[logging.Logger] = None,
         ws_timeout: Optional[int] = None,
     ):
@@ -47,18 +48,20 @@ class Paradex:
         self.account: Optional[ParadexAccount] = None
 
         # Initialize account if private key is provided
-        if l1_address and (l2_private_key is not None or l1_private_key is not None):
+        if l2_private_key is not None or l1_private_key is not None:
             self.init_account(
                 l1_address=l1_address,
                 l1_private_key=l1_private_key,
                 l2_private_key=l2_private_key,
+                l2_address=l2_address,
             )
 
     def init_account(
         self,
-        l1_address: str,
+        l1_address: Optional[str] = None,
         l1_private_key: Optional[str] = None,
         l2_private_key: Optional[str] = None,
+        l2_address: Optional[str] = None,
     ):
         """Initialize paradex account with l1 or l2 private keys.
         Cannot be called if account is already initialized.
@@ -75,6 +78,7 @@ class Paradex:
             l1_address=l1_address,
             l1_private_key=l1_private_key,
             l2_private_key=l2_private_key,
+            l2_address=l2_address,
         )
         self.api_client.init_account(self.account)
         self.ws_client.init_account(self.account)

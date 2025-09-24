@@ -40,7 +40,7 @@ class ParadexAccount:
 
     Args:
         config (SystemConfig): SystemConfig
-        l1_address (str): Ethereum address
+        l1_address (Optional[str], optional): Ethereum address. Defaults to None.
         l1_private_key (Optional[str], optional): Ethereum private key. Defaults to None.
         l2_private_key (Optional[str], optional): Paradex private key. Defaults to None.
 
@@ -56,15 +56,14 @@ class ParadexAccount:
     def __init__(
         self,
         config: SystemConfig,
-        l1_address: str,
+        l1_address: Optional[str] = None,
         l1_private_key_from_ledger: Optional[bool] = False,
         l1_private_key: Optional[str] = None,
         l2_private_key: Optional[str] = None,
+        l2_address: Optional[str] = None,
     ):
         self.config = config
 
-        if l1_address is None:
-            return raise_value_error("Paradex: Provide Ethereum address")
         self.l1_address = l1_address
 
         if l1_private_key is not None:
@@ -72,8 +71,10 @@ class ParadexAccount:
             stark_key_msg = build_stark_key_message(int(config.l1_chain_id))
             self.l2_private_key = derive_stark_key(self.l1_private_key, stark_key_msg)
         elif l1_private_key_from_ledger:
+            if self.l1_address is None:
+                return raise_value_error("Paradex: Provide Ethereum address")
             stark_key_msg = build_stark_key_message(int(config.l1_chain_id))
-            self.l2_private_key = derive_stark_key_from_ledger(l1_address, stark_key_msg)
+            self.l2_private_key = derive_stark_key_from_ledger(self.l1_address, stark_key_msg)
         elif l2_private_key is not None:
             self.l2_private_key = int_from_hex(l2_private_key)
         else:
@@ -81,7 +82,7 @@ class ParadexAccount:
 
         key_pair = KeyPair.from_private_key(self.l2_private_key)
         self.l2_public_key = key_pair.public_key
-        self.l2_address = self._account_address()
+        self.l2_address = int_from_hex(l2_address) if l2_address else self._derived_account_address()
 
         # Create starknet account
         client = FullNodeClient(node_url=config.starknet_fullnode_rpc_url)
@@ -122,7 +123,7 @@ class ParadexAccount:
 
         client._client._make_request = types.MethodType(monkey_patched_make_request, client._client)  # type: ignore[method-assign]
 
-    def _account_address(self) -> int:
+    def _derived_account_address(self) -> int:
         calldata = [
             int_from_hex(self.config.paraclear_account_hash),
             get_selector_from_name("initialize"),
@@ -149,6 +150,8 @@ class ParadexAccount:
         return flatten_signature(sig)
 
     def onboarding_headers(self) -> dict:
+        if self.l1_address is None:
+            return raise_value_error("Paradex: Ethereum address not set")
         return {
             "PARADEX-ETHEREUM-ACCOUNT": self.l1_address,
             "PARADEX-STARKNET-ACCOUNT": hex(self.l2_address),
@@ -257,7 +260,7 @@ class ParadexAccount:
             prepared_invoke = await self.starknet.prepare_invoke(calls=calls)
             await self.starknet.process_invoke(account_contract, need_multisig, prepared_invoke, func_name)
 
-        except Exception as e:
-            logging.error(f"Error during transfer_on_l2: {e}")
+        except Exception:
+            logging.exception("Error during transfer_on_l2")
             # Re-raise the exception to handle it upstream if necessary
             raise

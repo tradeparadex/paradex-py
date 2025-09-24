@@ -42,7 +42,8 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
 
     def init_account(self, account: ParadexAccount):
         self.account = account
-        self.onboarding()
+        if self.account.l1_address is not None:
+            self.onboarding()
         self.auth()
 
     def onboarding(self):
@@ -52,7 +53,8 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
 
     def auth(self):
         headers = self.account.auth_headers()
-        res = self.post(api_url=self.api_url, path="auth", headers=headers)
+        public_key = hex(self.account.l2_public_key)
+        res = self.post(api_url=self.api_url, path=f"auth/{public_key}", headers=headers)
         data = AuthSchema().load(res, unknown="exclude", partial=True)
         self.auth_timestamp = time.time()
         self.account.set_jwt_token(data.jwt_token)
