@@ -1,5 +1,4 @@
 import logging
-from typing import Optional
 
 from paradex_py.account.account import ParadexAccount
 from paradex_py.api.api_client import ParadexApiClient
@@ -30,11 +29,11 @@ class Paradex:
     def __init__(
         self,
         env: Environment,
-        l1_address: Optional[str] = None,
-        l1_private_key: Optional[str] = None,
-        l2_private_key: Optional[str] = None,
-        logger: Optional[logging.Logger] = None,
-        ws_timeout: Optional[int] = None,
+        l1_address: str | None = None,
+        l1_private_key: str | None = None,
+        l2_private_key: str | None = None,
+        logger: logging.Logger | None = None,
+        ws_timeout: int | None = None,
     ):
         if env is None:
             return raise_value_error("Paradex: Invalid environment")
@@ -44,7 +43,7 @@ class Paradex:
         self.api_client = ParadexApiClient(env=env, logger=logger)
         self.ws_client = ParadexWebsocketClient(env=env, logger=logger, ws_timeout=ws_timeout)
         self.config = self.api_client.fetch_system_config()
-        self.account: Optional[ParadexAccount] = None
+        self.account: ParadexAccount | None = None
 
         # Initialize account if private key is provided
         if l1_address and (l2_private_key is not None or l1_private_key is not None):
@@ -57,8 +56,8 @@ class Paradex:
     def init_account(
         self,
         l1_address: str,
-        l1_private_key: Optional[str] = None,
-        l2_private_key: Optional[str] = None,
+        l1_private_key: str | None = None,
+        l2_private_key: str | None = None,
     ):
         """Initialize paradex account with l1 or l2 private keys.
         Cannot be called if account is already initialized.

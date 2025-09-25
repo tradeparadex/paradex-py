@@ -287,9 +287,10 @@ class TestBlockTradesApi:
             # Reset the mock
             cast(Mock, self.api_client._validate_auth).reset_mock()
 
-            with patch.object(self.api_client, "get") as mock_get, patch.object(
-                self.api_client, "delete"
-            ) as mock_delete:
+            with (
+                patch.object(self.api_client, "get") as mock_get,
+                patch.object(self.api_client, "delete") as mock_delete,
+            ):
                 mock_get.return_value = {}
                 mock_delete.return_value = {}
 

@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional, Protocol, Union
+from typing import Any, Protocol
 
 from pydantic import TypeAdapter
 
@@ -18,21 +18,21 @@ from paradex_py.api.generated.responses import (
 class ApiClientProtocol(Protocol):
     """Protocol defining the interface expected by BlockTradesMixin."""
 
-    def _get_authorized(self, path: str, params: Optional[dict] = None) -> dict:
+    def _get_authorized(self, path: str, params: dict | None = None) -> dict:
         """Make authorized GET request."""
         ...
 
     def _post_authorized(
         self,
         path: str,
-        payload: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]] = None,
-        params: Optional[dict] = None,
-        headers: Optional[dict] = None,
+        payload: dict[str, Any] | list[dict[str, Any]] | None = None,
+        params: dict | None = None,
+        headers: dict | None = None,
     ) -> dict:
         """Make authorized POST request."""
         ...
 
-    def _delete_authorized(self, path: str, params: Optional[dict] = None, payload: Optional[dict] = None) -> dict:
+    def _delete_authorized(self, path: str, params: dict | None = None, payload: dict | None = None) -> dict:
         """Make authorized DELETE request."""
         ...
 
@@ -58,7 +58,7 @@ class BlockTradesMixin:
         try:
             # Use TypeAdapter to validate list of BlockTradeDetailFullResponse objects
             if response.get("results"):
-                adapter = TypeAdapter(List[BlockTradeDetailFullResponse])
+                adapter = TypeAdapter(list[BlockTradeDetailFullResponse])
                 typed_results = adapter.validate_python(response["results"])
 
                 return PaginatedAPIResults(
@@ -108,8 +108,8 @@ class BlockTradesMixin:
 
     def list_block_trades(
         self,
-        status: Optional[str] = None,
-        market: Optional[str] = None,
+        status: str | None = None,
+        market: str | None = None,
     ) -> PaginatedAPIResults:
         """Get a paginated list of block trades with filtering.
 
@@ -170,7 +170,7 @@ class BlockTradesMixin:
         response = self._get_authorized(path=f"block-trades/{block_trade_id}")
         return self._parse_block_trade_response(response)
 
-    def cancel_block_trade(self, block_trade_id: str) -> Dict:
+    def cancel_block_trade(self, block_trade_id: str) -> dict:
         """Cancel a pending block trade.
 
         Only the initiator can cancel a block trade in cancellable state
@@ -256,7 +256,7 @@ class BlockTradesMixin:
         response = self._get_authorized(path=f"block-trades/{block_trade_id}/offers/{offer_id}")
         return self._parse_block_trade_response(response)
 
-    def cancel_block_trade_offer(self, block_trade_id: str, offer_id: str) -> Dict:
+    def cancel_block_trade_offer(self, block_trade_id: str, offer_id: str) -> dict:
         """Cancel a pending offer for a block trade.
 
         Only the offering account can cancel their own offer if it's in

@@ -1,6 +1,7 @@
 import functools
 import hashlib
-from typing import List, Sequence, Union, cast
+from collections.abc import Sequence
+from typing import cast
 
 from eth_account.messages import SignableMessage, encode_typed_data
 from ledgereth.accounts import find_account
@@ -85,7 +86,7 @@ def derive_stark_key_from_ledger(eth_account_address: str, stark_key_msg: TypedD
     return l2_private_key
 
 
-def flatten_signature(sig: List[int]) -> str:
+def flatten_signature(sig: list[int]) -> str:
     return f'["{sig[0]}","{sig[1]}"]'
 
 
@@ -93,7 +94,7 @@ def unflatten_signature(sig: str) -> list:
     return [int(x) for x in sig[2:-2].split('","')]
 
 
-def typed_data_to_message_hash(typed_data: Union[TypedData, TypedDataDict], address: int) -> int:
+def typed_data_to_message_hash(typed_data: TypedData | TypedDataDict, address: int) -> int:
     typed_data_dataclass = TypedData.from_dict(cast(TypedDataDict, typed_data))
     return typed_data_dataclass.message_hash(address)
 
@@ -140,7 +141,7 @@ def message_signature(msg_hash: int, priv_key: int, seed: int = 32) -> tuple[int
     return rs_sign(private_key=priv_key, msg_hash=msg_hash, seed=seed)
 
 
-def verify_message_signature(msg_hash: int, signature: List[int], public_key: int) -> bool:
+def verify_message_signature(msg_hash: int, signature: list[int], public_key: int) -> bool:
     """
     Verifies ECDSA signature of a given message hash with a given public key.
     Returns true if public_key signs the message.
