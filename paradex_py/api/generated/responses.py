@@ -1,4 +1,4 @@
-# Generated from Paradex API spec version 1.99.0
+# Generated from Paradex API spec version 1.101.8
 
 from __future__ import annotations
 
@@ -115,6 +115,31 @@ class AnnouncementKind(str, Enum):
     announcement_kind_update = "UPDATE"
     announcement_kind_listing = "LISTING"
     announcement_kind_delisting = "DELISTING"
+
+
+class ApiToken(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        populate_by_name=True,
+    )
+    created_at: Annotated[
+        int | None, Field(description="Token creation timestamp (nanoseconds since epoch)", examples=[1640995200])
+    ] = None
+    expiry_at: Annotated[
+        int | None, Field(description="Expiration timestamp (nanoseconds since epoch)", examples=[1672531200])
+    ] = None
+    kind: Annotated[str | None, Field(description="Token type (jwt, api_key, etc.)")] = None
+    last_updated_at: Annotated[
+        int | None, Field(description="Last modification timestamp (nanoseconds since epoch)", examples=[1640995200])
+    ] = None
+    lookup_id: Annotated[
+        str | None, Field(description="Identifier used for the token lookup", examples=["uuid-123"])
+    ] = None
+    name: Annotated[str | None, Field(description="User-provided token name", examples=["My API Token"])] = None
+    revoked_at: Annotated[
+        int | None, Field(description="Revocation timestamp (nanoseconds since epoch, 0 if not revoked)", examples=[0])
+    ] = None
+    token_id: Annotated[str | None, Field(description="Unique ID for the auth token", examples=["token_123"])] = None
 
 
 class AskBidArray(BaseModel):
@@ -285,6 +310,17 @@ class CancelOrderResult(BaseModel):
     ] = None
 
 
+class CreateTokenResponse(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        populate_by_name=True,
+    )
+    api_token: Annotated[ApiToken | None, Field(description="The token metadata")] = None
+    token: Annotated[
+        str | None, Field(description="The generated JWT token", examples=["eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."])
+    ] = None
+
+
 class Delta1CrossMarginParams(BaseModel):
     model_config = ConfigDict(
         extra="allow",
@@ -376,6 +412,16 @@ class ErrorCode(str, Enum):
     error_code_string_invalid_o_auth_request = "INVALID_OAUTH_REQUEST"
     error_code_string_rpi_account_not_whitelisted = "RPI_ACCOUNT_NOT_WHITELISTED"
     error_code_string_invalid_marketing_code = "INVALID_MARKETING_CODE"
+    error_code_string_invalid_join_waitlist_request = "INVALID_JOIN_WAITLIST_REQUEST"
+    error_code_string_transaction_not_found = "TRANSACTION_NOT_FOUND"
+    error_code_string_offer_not_found = "OFFER_NOT_FOUND"
+    error_code_string_market_margin_restricted = "MARKET_MARGIN_RESTRICTED"
+    error_code_string_not_unique = "NOT_UNIQUE"
+    error_code_string_account_already_referred = "ACCOUNT_ALREADY_REFERRED"
+    error_code_string_onboarding_period_expired = "ONBOARDING_PERIOD_EXPIRED"
+    error_code_string_onboarding_rate_limited = "ONBOARDING_RATE_LIMITED"
+    error_code_string_token_limit_reached = "TOKEN_LIMIT_REACHED"
+    error_code_string_invalid_token_scope = "INVALID_TOKEN_SCOPE"
 
 
 class ErrorResponse(BaseModel):
@@ -387,6 +433,16 @@ class ErrorResponse(BaseModel):
     message: str | None = None
 
 
+class FeeWithCap(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        populate_by_name=True,
+    )
+    fee: Annotated[str | None, Field(description="fee rate", examples=["0.0003"])] = None
+    fee_cap: Annotated[str | None, Field(description="fee cap (used for option)", examples=["0.5"])] = None
+    fee_floor: Annotated[str | None, Field(description="fee floor (used for option)", examples=["-0.5"])] = None
+
+
 class Fees(BaseModel):
     model_config = ConfigDict(
         extra="allow",
@@ -396,6 +452,8 @@ class Fees(BaseModel):
         str | None,
         Field(description="multiplier used to calculate the commission amount from fee", examples=["0.0001"]),
     ] = None
+    dated_option_maker_rate: Annotated[str | None, Field(examples=["0.0001"])] = None
+    dated_option_taker_rate: Annotated[str | None, Field(examples=["0.0001"])] = None
     discount_rate: Annotated[
         str | None,
         Field(
@@ -407,8 +465,10 @@ class Fees(BaseModel):
         ),
     ] = None
     maker_rate: Annotated[str | None, Field(examples=["0.0001"])] = None
-    option_maker_rate: Annotated[str | None, Field(examples=["0.0001"])] = None
-    option_taker_rate: Annotated[str | None, Field(examples=["0.0001"])] = None
+    perp_option_maker_rate: Annotated[str | None, Field(examples=["0.0001"])] = None
+    perp_option_taker_rate: Annotated[str | None, Field(examples=["0.0001"])] = None
+    spot_maker_rate: Annotated[str | None, Field(examples=["0.0001"])] = None
+    spot_taker_rate: Annotated[str | None, Field(examples=["0.0001"])] = None
     taker_rate: Annotated[str | None, Field(examples=["0.0001"])] = None
 
 
@@ -474,6 +534,9 @@ class GetAccountMarginConfigsResp(BaseModel):
     configs: Annotated[
         list[AccountMarginEntry] | None, Field(description="List of margin configurations per market")
     ] = None
+    margin_methodology: Annotated[
+        str | None, Field(description="Margin methodology (cross_margin/portfolio_margin)")
+    ] = None
 
 
 class Greeks(BaseModel):
@@ -535,6 +598,15 @@ class LiquidationResp(BaseModel):
     id: Annotated[str | None, Field(description="Liquidation transaction hash", examples=["0x123456789"])] = None
 
 
+class MakerTakerFee(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        populate_by_name=True,
+    )
+    maker_fee: Annotated[FeeWithCap | None, Field(description="fee for maker")] = None
+    taker_fee: Annotated[FeeWithCap | None, Field(description="fee for taker")] = None
+
+
 class MarketChainDetails(BaseModel):
     model_config = ConfigDict(
         extra="allow",
@@ -555,10 +627,23 @@ class MarketChainDetails(BaseModel):
     symbol: Annotated[str | None, Field(description="Market symbol", examples=["ETH-USD-PERP"])] = None
 
 
+class MarketFeeConfig(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        populate_by_name=True,
+    )
+    api_fee: Annotated[MakerTakerFee | None, Field(description="fee for order coming from API")] = None
+    interactive_fee: Annotated[MakerTakerFee | None, Field(description="fee for order coming from UI")] = None
+    rpi_fee: Annotated[
+        MakerTakerFee | None, Field(description="fee for order coming from API with RPI instruction")
+    ] = None
+
+
 class MarketKind(str, Enum):
     market_kind_unknown = ""
     market_kind_cross = "cross"
     market_kind_isolated = "isolated"
+    market_kind_isolated_margin = "isolated_margin"
 
 
 class AssetKind(str, Enum):
@@ -647,6 +732,26 @@ class Nft(BaseModel):
     name: str | None = None
 
 
+class OptionMarginParams(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        populate_by_name=True,
+    )
+    long_itm: Annotated[str | None, Field(description="Margin fraction for long ITM options", examples=["0.2"])] = None
+    premium_multiplier: Annotated[
+        str | None, Field(description="Multiplier for margin fraction for premium", examples=["1.2"])
+    ] = None
+    short_itm: Annotated[
+        str | None, Field(description="Margin fraction for short ITM options", examples=["0.4"])
+    ] = None
+    short_otm: Annotated[
+        str | None, Field(description="Margin fraction for short OTM options", examples=["0.25"])
+    ] = None
+    short_put_cap: Annotated[
+        str | None, Field(description="Cap for margin fraction for short put options", examples=["0.5"])
+    ] = None
+
+
 class OrderFlag(str, Enum):
     flags_reduce_only = "REDUCE_ONLY"
     flags_stop_condition_below_trigger = "STOP_CONDITION_BELOW_TRIGGER"
@@ -704,26 +809,6 @@ class PaginatedAPIResults(BaseModel):
         ),
     ] = None
     results: Annotated[list[dict[str, Any]] | None, Field(description="Array of paginated results")] = None
-
-
-class PerpetualOptionMarginParams(BaseModel):
-    model_config = ConfigDict(
-        extra="allow",
-        populate_by_name=True,
-    )
-    long_itm: Annotated[str | None, Field(description="Margin fraction for long ITM options", examples=["0.2"])] = None
-    premium_multiplier: Annotated[
-        str | None, Field(description="Multiplier for margin fraction for premium", examples=["1.2"])
-    ] = None
-    short_itm: Annotated[
-        str | None, Field(description="Margin fraction for short ITM options", examples=["0.4"])
-    ] = None
-    short_otm: Annotated[
-        str | None, Field(description="Margin fraction for short OTM options", examples=["0.25"])
-    ] = None
-    short_put_cap: Annotated[
-        str | None, Field(description="Cap for margin fraction for short put options", examples=["0.5"])
-    ] = None
 
 
 class Side(str, Enum):
@@ -878,6 +963,26 @@ class RequestInfo(BaseModel):
     status: Annotated[str | None, Field(description="Status of modify order request")] = None
 
 
+class RevokeSubkeyResponse(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        populate_by_name=True,
+    )
+    public_key: Annotated[
+        str | None, Field(description="The public key of the revoked subkey", examples=["0xabcdef1234567890abcdef"])
+    ] = None
+
+
+class RevokeTokenResponse(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        populate_by_name=True,
+    )
+    lookup_id: Annotated[
+        str | None, Field(description="The lookup ID of the revoked token", examples=["uuid-123"])
+    ] = None
+
+
 class STPMode(str, Enum):
     stp_mode_expire_maker = "EXPIRE_MAKER"
     stp_mode_expire_taker = "EXPIRE_TAKER"
@@ -897,6 +1002,30 @@ class Strategy(BaseModel):
         ),
     ] = None
     name: Annotated[str | None, Field(description="Strategy name", examples=["Alpha Strategy"])] = None
+
+
+class Subkey(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        populate_by_name=True,
+    )
+    account_id: Annotated[
+        str | None, Field(description="Account ID that owns this subkey", examples=["0x1234567890abcdef"])
+    ] = None
+    created_at: Annotated[
+        int | None, Field(description="Subkey creation timestamp (nanoseconds since epoch)", examples=[1640995200])
+    ] = None
+    id: Annotated[int | None, Field(description="Unique subkey identifier", examples=[1])] = None
+    name: Annotated[str | None, Field(description="User-provided subkey name", examples=["My Subkey"])] = None
+    public_key: Annotated[
+        str | None, Field(description="Subkey public key", examples=["0xabcdef1234567890abcdef"])
+    ] = None
+    revoked_at: Annotated[
+        int | None, Field(description="Revocation timestamp (nanoseconds since epoch, 0 if not revoked)", examples=[0])
+    ] = None
+    updated_at: Annotated[
+        int | None, Field(description="Last modification timestamp (nanoseconds since epoch)", examples=[1640995200])
+    ] = None
 
 
 class SystemConfigResponse(BaseModel):
@@ -1310,10 +1439,7 @@ class VaultSummaryResp(BaseModel):
         str | None, Field(description="Total ROI of the vault in percentage, i.e. 0.1 means 10%", examples=["0.724"])
     ] = None
     tvl: Annotated[
-        str | None,
-        Field(
-            description="Net deposits of the vault in USDC (deprecated; use net_deposits instead)", examples=["1000000"]
-        ),
+        str | None, Field(description="Total Value Locked (deposits + unrealized PnL) in USDC", examples=["1000000"])
     ] = None
     volume: Annotated[
         str | None, Field(description="All time volume traded by the vault in USD", examples=["12345678.16"])
@@ -1430,6 +1556,7 @@ class AccountProfileResp(BaseModel):
     referred_by: Annotated[str | None, Field(examples=["maxDegen"])] = None
     size_currency_display: Annotated[str | None, Field(examples=["BASE"])] = None
     twitter: TwitterProfile | None = None
+    twitter_following: dict[str, bool] | None = None
     username: Annotated[str | None, Field(examples=["username"])] = None
 
 
@@ -1582,6 +1709,15 @@ class GetSubAccountsResponse(BaseModel):
     results: list[AccountInfoResponse] | None = None
 
 
+class OptionCrossMarginParams(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        populate_by_name=True,
+    )
+    imf: OptionMarginParams | None = None
+    mmf: OptionMarginParams | None = None
+
+
 class OrderResp(BaseModel):
     model_config = ConfigDict(
         extra="allow",
@@ -1646,15 +1782,6 @@ class OrderResp(BaseModel):
     timestamp: Annotated[int | None, Field(description="Order signature timestamp", examples=[1681493746016])] = None
     trigger_price: Annotated[str | None, Field(description="Trigger price for stop order", examples=["26000"])] = None
     type: Annotated[OrderType | None, Field(description="Order type")] = None
-
-
-class PerpetualOptionCrossMarginParams(BaseModel):
-    model_config = ConfigDict(
-        extra="allow",
-        populate_by_name=True,
-    )
-    imf: PerpetualOptionMarginParams | None = None
-    mmf: PerpetualOptionMarginParams | None = None
 
 
 class SystemStateResponse(BaseModel):
@@ -1854,6 +1981,16 @@ class MarketResp(BaseModel):
         Delta1CrossMarginParams | None, Field(description="Delta1 Cross margin parameters")
     ] = None
     expiry_at: Annotated[int | None, Field(description="Market expiry time", examples=[0])] = None
+    fee_config: Annotated[
+        MarketFeeConfig | None,
+        Field(
+            description=(
+                "Fee config indicates override fee for the market. If not set, it will use the global exchange fee"
+                " config"
+            )
+        ),
+    ] = None
+    funding_multiplier: Annotated[float | None, Field(description="Funding multiplier", examples=[1])] = None
     funding_period_hours: Annotated[float | None, Field(description="Funding period in hours", examples=[8])] = None
     interest_rate: Annotated[str | None, Field(description="Interest rate", examples=["0.01"])] = None
     iv_bands_width: Annotated[str | None, Field(description="IV Bands Width", examples=["0.05"])] = None
@@ -1881,7 +2018,7 @@ class MarketResp(BaseModel):
     ] = None
     open_at: Annotated[int | None, Field(description="Market open time in milliseconds", examples=[0])] = None
     option_cross_margin_params: Annotated[
-        PerpetualOptionCrossMarginParams | None, Field(description="Option Cross margin parameters")
+        OptionCrossMarginParams | None, Field(description="Option Cross margin parameters")
     ] = None
     option_type: Annotated[OptionType | None, Field(description="Type of option", examples=["PUT"])] = None
     oracle_ewma_factor: Annotated[str | None, Field(description="Oracle EWMA factor", examples=["0.2"])] = None
