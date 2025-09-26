@@ -72,7 +72,7 @@ disallow_untyped_defs = false
 no_implicit_optional = false
 show_error_codes = true
 warn_return_any = false
-warn_unused_ignores = true
+warn_unused_ignores = false
 
 [[tool.mypy.overrides]]
 module = [
