@@ -93,12 +93,17 @@ class ParadexAccount:
             chain=CustomStarknetChainId(self.l2_chain_id),  # type: ignore[arg-type]
         )
 
-        # Monkey patch of _make_request method of starknet.py client
-        # to inject http headers requested by Paradex full node:
-        # - PARADEX-STARKNET-ACCOUNT: account address signing the request
-        # - PARADEX-STARKNET-SIGNATURE: signature of the request
-        # - PARADEX-STARKNET-SIGNATURE-TIMESTAMP: timestamp of the signature
-        # - PARADEX-STARKNET-SIGNATURE-VERSION: version of the signature
+        # Apply the fullnode headers patch
+        self._apply_fullnode_headers_patch(client)
+
+    # Monkey patch of _make_request method of starknet.py client
+    # to inject http headers requested by Paradex full node:
+    # - PARADEX-STARKNET-ACCOUNT: account address signing the request
+    # - PARADEX-STARKNET-SIGNATURE: signature of the request
+    # - PARADEX-STARKNET-SIGNATURE-TIMESTAMP: timestamp of the signature
+    # - PARADEX-STARKNET-SIGNATURE-VERSION: version of the signature
+    def _apply_fullnode_headers_patch(self, client):
+        """Apply the fullnode headers patch for Paradex-specific headers."""
         current_self = self
 
         async def monkey_patched_make_request(
@@ -258,6 +263,6 @@ class ParadexAccount:
             await self.starknet.process_invoke(account_contract, need_multisig, prepared_invoke, func_name)
 
         except Exception as e:
-            logging.error(f"Error during transfer_on_l2: {e}")
+            logging.exception(f"Error during transfer_on_l2: {e}")
             # Re-raise the exception to handle it upstream if necessary
             raise

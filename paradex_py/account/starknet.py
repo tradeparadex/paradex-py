@@ -78,7 +78,7 @@ class Account(StarknetAccount):
             proxy_config = get_proxy_config() if is_cairo0_contract else False
             contract = await Contract.from_address(address=address, provider=self, proxy_config=proxy_config)
         except Exception as e:
-            logging.error(f"Error loading contract at address {hex(int(address))}: {e}")
+            logging.exception(f"Error loading contract at address {hex(int(address))}: {e}")
             raise
         else:
             return contract
@@ -99,7 +99,7 @@ class Account(StarknetAccount):
 
             need_multisig = current_guardian != "0x0" or current_guardian_backup != "0x0"
         except Exception as e:
-            logging.error(f"Error checking multisig requirement: {e}")
+            logging.exception(f"Error checking multisig requirement: {e}")
             raise
         else:
             return need_multisig
@@ -131,7 +131,7 @@ class Account(StarknetAccount):
                     " command."
                 )
         except Exception as e:
-            logging.error(f"Error processing invoke: {e}")
+            logging.exception(f"Error processing invoke: {e}")
             raise
 
     def print_invoke(self, invoke: InvokeV3):
