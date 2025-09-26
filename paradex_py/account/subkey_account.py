@@ -70,7 +70,7 @@ class SubkeyAccount(ParadexAccount):
             client=client,
             address=self.l2_address,
             key_pair=KeyPair.from_private_key(self.l2_private_key),
-            chain=CustomStarknetChainId(self.l2_chain_id),  # type: ignore[arg-type]
+            chain=CustomStarknetChainId(self.l2_chain_id),
         )
 
         # Apply the same monkey patch as ParadexAccount
