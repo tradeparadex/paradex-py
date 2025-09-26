@@ -47,7 +47,7 @@ class SubkeyAccount(ParadexAccount):
         self.config = config
 
         # No L1 address for subkeys
-        self.l1_address = None
+        self.l1_address = ""
 
         # Set L2 credentials
         self.l2_private_key = int_from_hex(l2_private_key)
@@ -70,7 +70,7 @@ class SubkeyAccount(ParadexAccount):
             client=client,
             address=self.l2_address,
             key_pair=KeyPair.from_private_key(self.l2_private_key),
-            chain=CustomStarknetChainId(self.l2_chain_id),
+            chain=CustomStarknetChainId(self.l2_chain_id),  # type: ignore[arg-type]
         )
 
         # Apply the same monkey patch as ParadexAccount
@@ -78,7 +78,7 @@ class SubkeyAccount(ParadexAccount):
 
     def onboarding_headers(self) -> dict:
         """Override to prevent onboarding for subkeys."""
-        raise_value_error("SubkeyAccount: Onboarding not supported for subkeys")
+        return {}
 
     def transfer_on_l2(self, target_l2_address: str, amount_decimal: Decimal):
         """Override to prevent on-chain operations for subkeys."""

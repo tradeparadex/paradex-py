@@ -125,7 +125,7 @@ class ParadexAccount:
                 await self.handle_request_error(request)
                 return await request.json(content_type=None)
 
-        client._client._make_request = types.MethodType(monkey_patched_make_request, client._client)  # type: ignore[method-assign]
+        client._client._make_request = types.MethodType(monkey_patched_make_request, client._client)
 
     def _account_address(self) -> int:
         calldata = [
