@@ -23,7 +23,7 @@ try:
 except ImportError:
     TYPED_MODELS_AVAILABLE = False
 
-    def validate_ws_message(message_data):
+    def validate_ws_message(message_data: dict[str, Any]) -> None:
         return None
 
 
@@ -158,7 +158,7 @@ class ParadexWebsocketClient:
         self.env = env
         self.api_url = ws_url_override or f"wss://ws.api.{self.env}.paradex.trade/v1"
         self.logger = logger or logging.getLogger(__name__)
-        self.ws: WebSocketConnection | None = None
+        self.ws: WebSocketConnection | ClientConnection | None = None
         self.account: ParadexAccount | None = None
         self.callbacks: dict[str, Callable] = {}
         self.subscribed_channels: dict[str, bool] = {}
@@ -222,7 +222,7 @@ class ParadexWebsocketClient:
                     "additional_headers": extra_headers,
                 }
                 if self.ping_interval is not None:
-                    connect_kwargs["ping_interval"] = self.ping_interval
+                    connect_kwargs["ping_interval"] = int(self.ping_interval)
 
                 self.ws = await websockets.connect(self.api_url, **connect_kwargs)
 
@@ -292,7 +292,7 @@ class ParadexWebsocketClient:
 
     async def _send_auth_id(
         self,
-        websocket: ClientConnection,
+        websocket: WebSocketConnection | ClientConnection,
         paradex_jwt: str,
     ) -> None:
         """
@@ -331,7 +331,7 @@ class ParadexWebsocketClient:
 
     async def _read_messages(self) -> None:
         while True:
-            if self._is_connection_open():
+            if self._is_connection_open() and self.ws is not None:
                 try:
                     response = await asyncio.wait_for(self.ws.recv(), timeout=self.ws_timeout)
                     await self._process_message(response)

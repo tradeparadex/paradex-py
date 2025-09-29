@@ -48,7 +48,10 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
 
         # Initialize parent with optional HTTP client injection
         if http_client is not None:
-            super().__init__(http_client=http_client.client if hasattr(http_client, "client") else http_client)
+            if hasattr(http_client, "client"):
+                super().__init__(http_client=http_client.client)
+            else:
+                super().__init__(http_client=http_client)
         else:
             super().__init__()
 
@@ -78,15 +81,19 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
             self.auth()
 
     def onboarding(self):
+        if self.account is None:
+            raise ValueError("Account not initialized")
         headers = self.account.onboarding_headers()
         payload = {"public_key": hex(self.account.l2_public_key)}
         self.post(api_url=self.api_url, path="onboarding", headers=headers, payload=payload)
 
     def auth(self):
+        if self.account is None:
+            raise ValueError("Account not initialized")
         headers = self.account.auth_headers()
         res = self.post(api_url=self.api_url, path="auth", headers=headers)
         data = AuthSchema().load(res, unknown="exclude", partial=True)
-        self.auth_timestamp = time.time()
+        self.auth_timestamp = int(time.time())
         self.account.set_jwt_token(data.jwt_token)
         self.client.headers.update({"Authorization": f"Bearer {data.jwt_token}"})
 
@@ -100,7 +107,7 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
             jwt: JWT token string
         """
         self._manual_token = jwt
-        self.auth_timestamp = time.time()
+        self.auth_timestamp = int(time.time())
         self.client.headers.update({"Authorization": f"Bearer {jwt}"})
         if self.account:
             self.account.set_jwt_token(jwt)
@@ -433,6 +440,8 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
             order_payload = signed_data
         else:
             # Fall back to account signing
+            if self.account is None:
+                raise ValueError("Account not initialized and no signer provided")
             order.signature = self.account.sign_order(order)
             order_payload = order.dump_to_dict()
 
@@ -459,6 +468,8 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
             order_payloads = self.signer.sign_batch(order_data_list)
         else:
             # Fall back to account signing
+            if self.account is None:
+                raise ValueError("Account not initialized and no signer provided")
             order_payloads = []
             for order in orders:
                 order.signature = self.account.sign_order(order)
@@ -487,6 +498,8 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
             order_payload = signed_data
         else:
             # Fall back to account signing
+            if self.account is None:
+                raise ValueError("Account not initialized and no signer provided")
             order.signature = self.account.sign_order(order)
             order_payload = order.dump_to_dict()
 
