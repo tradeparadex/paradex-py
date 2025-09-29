@@ -77,7 +77,7 @@ def create_subscription_request(channel: str, request_id: str | int | None = Non
     if request_id is None:
         request_id = str(int(time.time() * 1_000_000))
 
-    request = JSONRPCRequest(method="subscribe", params={"channel": channel}, id=request_id)
+    request = JSONRPCRequest(jsonrpc="2.0", method="subscribe", params={"channel": channel}, id=request_id)
 
     return json.dumps(request.model_dump())
 
@@ -89,7 +89,7 @@ def create_auth_request(jwt_token: str, request_id: str | int | None = None) -> 
     if request_id is None:
         request_id = str(int(time.time() * 1_000_000))
 
-    request = JSONRPCRequest(method="auth", params={"bearer": jwt_token}, id=request_id)
+    request = JSONRPCRequest(jsonrpc="2.0", method="auth", params={"bearer": jwt_token}, id=request_id)
 
     return json.dumps(request.model_dump())
 
@@ -103,14 +103,14 @@ def create_data_message(channel: str, data: Any) -> str:
 
 def create_success_response(request_id: str | int, result: Any) -> str:
     """Create a successful JSON-RPC response."""
-    response = JSONRPCResponse(id=request_id, result=result)
+    response = JSONRPCResponse(jsonrpc="2.0", id=request_id, result=result, error=None)
 
     return json.dumps(response.model_dump())
 
 
 def create_error_response(request_id: str | int, code: int, message: str) -> str:
     """Create an error JSON-RPC response."""
-    response = JSONRPCResponse(id=request_id, error={"code": code, "message": message})
+    response = JSONRPCResponse(jsonrpc="2.0", id=request_id, result=None, error={"code": code, "message": message})
 
     return json.dumps(response.model_dump())
 

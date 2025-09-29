@@ -9,6 +9,7 @@ from enum import Enum
 from typing import Any, Protocol
 
 import websockets
+from pydantic import BaseModel
 from websockets import ClientConnection, State
 
 from paradex_py.account.account import ParadexAccount
@@ -23,7 +24,7 @@ try:
 except ImportError:
     TYPED_MODELS_AVAILABLE = False
 
-    def validate_ws_message(message_data: dict[str, Any]) -> None:
+    def validate_ws_message(message_data: dict[str, Any]) -> BaseModel | None:
         return None
 
 
@@ -218,7 +219,7 @@ class ParadexWebsocketClient:
             if self.connector is not None:
                 self.ws = await self.connector(self.api_url, extra_headers)
             else:
-                connect_kwargs = {
+                connect_kwargs: dict[str, Any] = {
                     "additional_headers": extra_headers,
                 }
                 if self.ping_interval is not None:
@@ -334,6 +335,8 @@ class ParadexWebsocketClient:
             if self._is_connection_open() and self.ws is not None:
                 try:
                     response = await asyncio.wait_for(self.ws.recv(), timeout=self.ws_timeout)
+                    if isinstance(response, bytes):
+                        response = response.decode("utf-8")
                     await self._process_message(response)
                 except (
                     websockets.exceptions.ConnectionClosedError,
@@ -401,6 +404,8 @@ class ParadexWebsocketClient:
             self.logger.exception(f"{self.classname}: Error in pump_once: {traceback.format_exc()}")
             return False
         else:
+            if isinstance(response, bytes):
+                response = response.decode("utf-8")
             await self._process_message(response)
             return True
 

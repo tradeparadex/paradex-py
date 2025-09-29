@@ -48,10 +48,9 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
 
         # Initialize parent with optional HTTP client injection
         if http_client is not None:
-            if hasattr(http_client, "client"):
-                super().__init__(http_client=http_client.client)
-            else:
-                super().__init__(http_client=http_client)
+            # Extract the underlying httpx.Client if it's wrapped in HttpClient
+            underlying_client = getattr(http_client, "client", http_client)
+            super().__init__(http_client=underlying_client)
         else:
             super().__init__()
 
