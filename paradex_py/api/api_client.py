@@ -1,6 +1,8 @@
 import logging
 import time
-from typing import Any
+from typing import Any, cast
+
+import httpx
 
 from paradex_py.account.account import ParadexAccount
 from paradex_py.api.block_trades_api import BlockTradesMixin
@@ -49,7 +51,12 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         # Initialize parent with optional HTTP client injection
         if http_client is not None:
             # Extract the underlying httpx.Client if it's wrapped in HttpClient
-            underlying_client = getattr(http_client, "client", http_client)
+            if hasattr(http_client, "client"):
+                # http_client is another HttpClient instance, extract the underlying client
+                underlying_client = http_client.client
+            else:
+                # http_client is already an httpx.Client, cast to ensure type safety
+                underlying_client = cast(httpx.Client, http_client)
             super().__init__(http_client=underlying_client)
         else:
             super().__init__()
