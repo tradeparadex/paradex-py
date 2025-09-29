@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from typing import Optional
 
 import marshmallow_dataclass
 
@@ -8,7 +7,7 @@ import marshmallow_dataclass
 class ApiError:
     error: str
     message: str
-    data: Optional[dict]
+    data: dict | None
 
 
 @dataclass

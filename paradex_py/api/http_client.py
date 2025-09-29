@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 import httpx
 
@@ -22,9 +22,9 @@ class HttpClient:
         self,
         url: str,
         http_method: HttpMethod,
-        params: Optional[dict] = None,
-        payload: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]] = None,
-        headers: Optional[Any] = None,
+        params: dict | None = None,
+        payload: dict[str, Any] | list[dict[str, Any]] | None = None,
+        headers: Any | None = None,
     ):
         res = self.client.request(
             method=http_method.value,
@@ -33,6 +33,8 @@ class HttpClient:
             json=payload,
             headers=headers,
         )
+        if res.status_code == 429:
+            raise Exception("Rate limit exceeded")
         if res.status_code >= 300:
             error = ApiErrorSchema().loads(res.text)
             raise Exception(error)
@@ -41,7 +43,7 @@ class HttpClient:
         except ValueError:
             print(f"HttpClient: No response request({url}, {http_method.value})")
 
-    def get(self, api_url: str, path: str, params: Optional[dict] = None) -> dict:
+    def get(self, api_url: str, path: str, params: dict | None = None) -> dict:
         return self.request(
             url=f"{api_url}/{path}",
             http_method=HttpMethod.GET,
@@ -55,9 +57,9 @@ class HttpClient:
         self,
         api_url: str,
         path: str,
-        payload: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]] = None,
-        params: Optional[dict] = None,
-        headers: Optional[dict] = None,
+        payload: dict[str, Any] | list[dict[str, Any]] | None = None,
+        params: dict | None = None,
+        headers: dict | None = None,
     ) -> dict:
         use_headers = headers if headers else self.client.headers
         return self.request(
@@ -72,9 +74,9 @@ class HttpClient:
         self,
         api_url: str,
         path: str,
-        payload: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]] = None,
-        params: Optional[dict] = None,
-        headers: Optional[dict] = None,
+        payload: dict[str, Any] | list[dict[str, Any]] | None = None,
+        params: dict | None = None,
+        headers: dict | None = None,
     ) -> dict:
         use_headers = headers if headers else self.client.headers
         return self.request(
@@ -89,8 +91,8 @@ class HttpClient:
         self,
         api_url: str,
         path: str,
-        params: Optional[dict] = None,
-        payload: Optional[dict] = None,
+        params: dict | None = None,
+        payload: dict | None = None,
     ) -> dict:
         return self.request(
             url=f"{api_url}/{path}",

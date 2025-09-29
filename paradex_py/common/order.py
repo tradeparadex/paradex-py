@@ -1,6 +1,6 @@
 from decimal import Decimal
 from enum import Enum
-from typing import Any, Dict, Optional
+from typing import Any
 
 from paradex_py.utils import time_now_milli_secs
 
@@ -54,15 +54,15 @@ class Order:
         size: Decimal,
         limit_price: Decimal = decimal_zero,
         client_id: str = "",
-        signature_timestamp: Optional[int] = None,
+        signature_timestamp: int | None = None,
         instruction: str = "GTC",
         reduce_only: bool = False,
-        recv_window: Optional[int] = None,
-        stp: Optional[
-            str
-        ] = None,  # Self Trade Prevention, EXPIRE_MAKER, EXPIRE_TAKER or EXPIRE_BOTH, default: EXPIRE_TAKER
-        trigger_price: Optional[Decimal] = None,
-        order_id: Optional[str] = None,
+        recv_window: int | None = None,
+        stp: (
+            str | None
+        ) = None,  # Self Trade Prevention, EXPIRE_MAKER, EXPIRE_TAKER or EXPIRE_BOTH, default: EXPIRE_TAKER
+        trigger_price: Decimal | None = None,
+        order_id: str | None = None,
     ) -> None:
         ts = time_now_milli_secs()
         self.id = order_id
@@ -109,8 +109,8 @@ class Order:
     def __hash__(self) -> int:
         return hash(self.id)
 
-    def dump_to_dict(self) -> Dict[Any, Any]:
-        order_dict: Dict[Any, Any] = {
+    def dump_to_dict(self) -> dict[Any, Any]:
+        order_dict: dict[Any, Any] = {
             "market": self.market,
             "side": self.order_side.value,
             "size": str(self.size),

@@ -52,7 +52,6 @@ import json
 import logging
 import time
 from decimal import Decimal
-from typing import List
 
 from pydantic import TypeAdapter
 
@@ -61,17 +60,16 @@ from paradex_py.api.generated.requests import (
     BlockExecuteRequest,
     BlockOfferInfo,
     BlockOfferRequest,
-    BlockTradeConstraints,
     BlockTradeInfo,
     BlockTradeRequest,
 )
 from paradex_py.api.generated.responses import (
     ApiError,
+    BlockTradeConstraints,
     BlockTradeOrder,
     BlockTradeSignature,
     MarketResp,
     MarketSummaryResp,
-    OrderInstruction,
     OrderSide,
     OrderType,
     SignatureType,
@@ -84,6 +82,7 @@ from paradex_py.message.block_trades import BlockTrade, Trade
 # Set up logging with better console formatting
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)-8s | %(message)s", datefmt="%H:%M:%S")
 logger = logging.getLogger(__name__)
+
 
 # Console formatting helpers
 class Colors:
@@ -161,19 +160,12 @@ def create_block_trade_order(
 
     return BlockTradeOrder(
         client_id=client_id,
-        flags=None,
-        instruction=OrderInstruction.order_instruction_gtc,
         market=market,
-        on_behalf_of_account=None,
         price=price,
-        recv_window=None,
         side=order_side,
         signature=signature,
         signature_timestamp=timestamp,
-        signed_impact_price=None,
         size=size,
-        stp=None,
-        trigger_price=None,
         type=OrderType.order_type_limit,
     )
 
@@ -194,15 +186,17 @@ def sign_block_trade_request(client, request: BlockTradeRequest, signer_account:
         maker_order = Order(
             market=market_symbol,
             order_type=CommonOrderType.Limit,
-            order_side=CommonOrderSide.Buy
-            if maker_order_data and maker_order_data.side == OrderSide.order_side_buy
-            else CommonOrderSide.Sell,
+            order_side=(
+                CommonOrderSide.Buy
+                if maker_order_data and maker_order_data.side == OrderSide.order_side_buy
+                else CommonOrderSide.Sell
+            ),
             size=Decimal(str(trade_info.size)) if trade_info.size else Decimal("0"),
             limit_price=Decimal(str(trade_info.price)) if trade_info.price else Decimal("0"),
             client_id=maker_order_data.client_id if maker_order_data and maker_order_data.client_id else "",
-            signature_timestamp=maker_order_data.signature_timestamp
-            if maker_order_data and maker_order_data.signature_timestamp
-            else 0,
+            signature_timestamp=(
+                maker_order_data.signature_timestamp if maker_order_data and maker_order_data.signature_timestamp else 0
+            ),
             instruction="GTC",
         )
 
@@ -254,9 +248,9 @@ def sign_block_offer_request(client, request: BlockOfferRequest, signer_account:
         offerer_order = Order(
             market=market_symbol,
             order_type=CommonOrderType.Limit,
-            order_side=CommonOrderSide.Buy
-            if offerer_order_data.side == OrderSide.order_side_buy
-            else CommonOrderSide.Sell,
+            order_side=(
+                CommonOrderSide.Buy if offerer_order_data.side == OrderSide.order_side_buy else CommonOrderSide.Sell
+            ),
             size=Decimal(str(offer_info.size)) if offer_info.size else Decimal("0"),
             limit_price=Decimal(str(offer_info.price)) if offer_info.price else Decimal("0"),
             client_id=offerer_order_data.client_id if offerer_order_data and offerer_order_data.client_id else "",
@@ -394,7 +388,7 @@ def fetch_multiple_markets_data(client, num_markets=3):
 
         # Parse all markets using TypeAdapter
         if markets_response.get("results"):
-            adapter = TypeAdapter(List[MarketResp])
+            adapter = TypeAdapter(list[MarketResp])
             all_markets = adapter.validate_python(markets_response["results"])
         else:
             logger.error("No markets found in response")
@@ -408,7 +402,7 @@ def fetch_multiple_markets_data(client, num_markets=3):
 
         # Prioritize common markets: ETH, BTC, SOL
         preferred_symbols = ["ETH-USD-PERP", "BTC-USD-PERP", "SOL-USD-PERP"]
-        selected_markets: List[MarketResp] = []
+        selected_markets: list[MarketResp] = []
 
         # First, try to get preferred markets
         for symbol in preferred_symbols:
@@ -441,7 +435,7 @@ def fetch_multiple_markets_data(client, num_markets=3):
 
                 if summary_response and summary_response.get("results"):
                     # Parse market summaries using TypeAdapter
-                    adapter = TypeAdapter(List[MarketSummaryResp])
+                    adapter = TypeAdapter(list[MarketSummaryResp])
                     summaries = adapter.validate_python(summary_response["results"])
 
                     if summaries:
@@ -625,6 +619,7 @@ def test_create_block_trade(client, account_summaries):
         required_signers=required_signers,
         signatures={},  # Will be filled by utility function
         trades=trades,
+        block_expiration=current_time + (5 * 60 * 1000),  # 5 minutes
     )
 
     # Sign the block trade request
@@ -717,7 +712,9 @@ def test_submit_offers(
         account_summaries[1:3] if account_summaries else [(f"Account {i}", False, None) for i in range(2, 4)]
     )
 
-    for i, (client, (account_name, has_funds, summary)) in enumerate(zip(signer_clients, signer_summaries), 1):
+    for i, (client, (account_name, has_funds, summary)) in enumerate(
+        zip(signer_clients, signer_summaries, strict=False), 1
+    ):
         if not has_funds:
             logger.warning(f"⚠️ {account_name} lacks sufficient funds - offer may fail")
             continue

@@ -1,4 +1,4 @@
-# Generated from Paradex API spec version 1.97.0
+# Generated from Paradex API spec version 1.101.8
 
 from __future__ import annotations
 
@@ -26,17 +26,6 @@ class AccountMarginRequest(BaseModel):
     ] = None
 
 
-class BlockTradeConstraints(BaseModel):
-    model_config = ConfigDict(
-        extra="allow",
-        populate_by_name=True,
-    )
-    max_price: Annotated[str | None, Field(description="Maximum price allowed", examples=["31000.00"])] = None
-    max_size: Annotated[str | None, Field(description="Maximum trade size allowed", examples=["100.0"])] = None
-    min_price: Annotated[str | None, Field(description="Minimum price allowed", examples=["29000.00"])] = None
-    min_size: Annotated[str | None, Field(description="Minimum trade size allowed", examples=["0.1"])] = None
-
-
 class CancelOrderBatchRequest(BaseModel):
     model_config = ConfigDict(
         extra="allow",
@@ -50,6 +39,39 @@ class CancelOrderBatchRequest(BaseModel):
         list[str] | None,
         Field(description="List of order IDs to cancel", examples=[['["order-id-1"', '"order-id-2"]']]),
     ] = None
+
+
+class CreateSubkey(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        populate_by_name=True,
+    )
+    key_type: Annotated[str | None, Field(description="Key type to be registered as a subkey.")] = None
+    name: Annotated[
+        str | None, Field(description="User-friendly name for the subkey.", examples=["My Trading Subkey"])
+    ] = None
+    public_key: Annotated[
+        str | None,
+        Field(
+            description="Public key to be registered as a subkey.",
+            examples=["0x3d9f2b2e5f50c1aade60ca540368cd7490160f41270c192c05729fe35b656a9"],
+        ),
+    ] = None
+
+
+class CreateToken(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        populate_by_name=True,
+    )
+    expiry_duration: Annotated[
+        int | None,
+        Field(description="Duration in seconds from now until expiration (1 min to 1 year).", examples=[86400]),
+    ] = None
+    name: Annotated[
+        str | None, Field(description="User-friendly name for the JWT token.", examples=["My Long-term Trading Token"])
+    ] = None
+    token_type: Annotated[str | None, Field(description="Type of token to create.")] = None
 
 
 class CreateVault(BaseModel):
@@ -94,33 +116,17 @@ class ModifyOrderRequest(BaseModel):
     ] = None
     price: Annotated[str, Field(description="Existing or modified price of the order", examples=["29500.12"])]
     side: Annotated[str, Field(description="Existing side of the order", examples=["BUY"])]
-    signature: Annotated[str, Field(description="Order Payload signed with STARK Private Key")]
+    signature: Annotated[
+        str, Field(description='Order signature in as a string "[r,s]" signed by account\'s paradex private key')
+    ]
     signature_timestamp: Annotated[
-        int, Field(description="Timestamp of order creation, used for signature verification")
+        int, Field(description="Unix timestamp in milliseconds of order creation, used for signature verification")
     ]
     size: Annotated[str, Field(description="Existing or modified size of the order", examples=["1.213"])]
     type: Annotated[str, Field(description="Existing type of the order", examples=["LIMIT"])]
 
 
-class Onboarding(BaseModel):
-    model_config = ConfigDict(
-        extra="allow",
-        populate_by_name=True,
-    )
-    public_key: Annotated[
-        str | None,
-        Field(
-            description="Public key of the user being onboarded.",
-            examples=["0x3d9f2b2e5f50c1aade60ca540368cd7490160f41270c192c05729fe35b656a9"],
-        ),
-    ] = None
-    referral_code: Annotated[
-        str | None,
-        Field(description="Referral code of the user who referred the user being onboarded.", examples=["cryptofox8"]),
-    ] = None
-
-
-class PriceKind(Enum):
+class PriceKind(str, Enum):
     price_kind_last = "last"
     price_kind_mark = "mark"
     price_kind_underlying = "underlying"
@@ -150,6 +156,15 @@ class UpdateTradingValueDisplayRequest(BaseModel):
     trading_value_display: str
 
 
+class Utm(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        populate_by_name=True,
+    )
+    campaign: Annotated[str | None, Field(description="UTM campaign parameter", examples=["summer2024"])] = None
+    source: Annotated[str | None, Field(description="UTM source parameter", examples=["google"])] = None
+
+
 class AlgoOrderRequest(BaseModel):
     model_config = ConfigDict(
         extra="allow",
@@ -176,9 +191,11 @@ class AlgoOrderRequest(BaseModel):
         ),
     ] = None
     side: Annotated[responses.OrderSide, Field(description="Algo order side", examples=["MARKET"])]
-    signature: Annotated[str, Field(description="Order Payload signed with STARK Private Key")]
+    signature: Annotated[
+        str, Field(description='Order signature in as a string "[r,s]" signed by account\'s paradex private key')
+    ]
     signature_timestamp: Annotated[
-        int, Field(description="Timestamp of order creation, used for signature verification")
+        int, Field(description="Unix timestamp in milliseconds of order creation, used for signature verification")
     ]
     size: Annotated[str, Field(description="Size of the algo order", examples=["1.213"])]
     type: Annotated[responses.OrderType, Field(description="Algo order type, only MARKET is supported")]
@@ -198,8 +215,35 @@ class BlockExecuteRequest(BaseModel):
     ] = None
     signatures: Annotated[
         dict[str, responses.BlockTradeSignature],
-        Field(description="Map of offer IDs to initiator signatures accepting each offer"),
+        Field(
+            description=(
+                "Map of offer IDs to initiator signatures accepting each offer. Block id if it is a direct block trade."
+            )
+        ),
     ]
+
+
+class Onboarding(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        populate_by_name=True,
+    )
+    marketing_code: Annotated[
+        str | None,
+        Field(description="Marketing code of the campaign the user is being onboarded via.", examples=["abcd:code1"]),
+    ] = None
+    public_key: Annotated[
+        str | None,
+        Field(
+            description="Public key of the user being onboarded.",
+            examples=["0x3d9f2b2e5f50c1aade60ca540368cd7490160f41270c192c05729fe35b656a9"],
+        ),
+    ] = None
+    referral_code: Annotated[
+        str | None,
+        Field(description="Referral code of the user who referred the user being onboarded.", examples=["cryptofox8"]),
+    ] = None
+    utm: Annotated[Utm | None, Field(description="UTM tracking parameters (optional).")] = None
 
 
 class OrderRequest(BaseModel):
@@ -218,7 +262,7 @@ class OrderRequest(BaseModel):
     on_behalf_of_account: Annotated[
         str | None,
         Field(
-            description="ID corresponding to the configured isolated margin account.  Only for isolated margin orders",
+            description="ID corresponding to the configured isolated margin account. Only for isolated margin orders",
             examples=["0x1234567890abcdef"],
         ),
     ] = None
@@ -233,9 +277,11 @@ class OrderRequest(BaseModel):
         ),
     ] = None
     side: Annotated[responses.OrderSide, Field(description="Order side")]
-    signature: Annotated[str, Field(description="Order Payload signed with STARK Private Key")]
+    signature: Annotated[
+        str, Field(description='Order signature in as a string "[r,s]" signed by account\'s paradex private key')
+    ]
     signature_timestamp: Annotated[
-        int, Field(description="Timestamp of order creation, used for signature verification")
+        int, Field(description="Unix timestamp in milliseconds of order creation, used for signature verification")
     ]
     signed_impact_price: Annotated[
         str | None, Field(description="Optional signed impact price for market orders (base64 encoded)")
@@ -292,7 +338,7 @@ class BlockTradeInfo(BaseModel):
         responses.BlockTradeOrder | None, Field(description="Taker order details (empty if requiring offers)")
     ] = None
     trade_constraints: Annotated[
-        BlockTradeConstraints | None, Field(description="Constraints for this trade when requiring offers")
+        responses.BlockTradeConstraints | None, Field(description="Constraints for this trade when requiring offers")
     ] = None
 
 
@@ -301,10 +347,16 @@ class BlockTradeRequest(BaseModel):
         extra="allow",
         populate_by_name=True,
     )
+    block_expiration: Annotated[
+        int, Field(description="Unix timestamp in milliseconds when block expires", examples=[1640995800000])
+    ]
     nonce: Annotated[str, Field(description="Unique nonce for this block trade request", examples=["67890"])]
-    required_signers: Annotated[list[str], Field(description="Array of account addresses that must sign this block")]
+    required_signers: Annotated[
+        list[str], Field(description="List of accounts that can participate in the block trade")
+    ]
     signatures: Annotated[
-        dict[str, responses.BlockTradeSignature], Field(description="Map of account addresses to their signatures")
+        dict[str, responses.BlockTradeSignature],
+        Field(description="Map of account addresses to their signatures. Can be empty or partial."),
     ]
     trades: Annotated[
         dict[str, BlockTradeInfo], Field(description="Map of market symbol to trade info (one per market)")

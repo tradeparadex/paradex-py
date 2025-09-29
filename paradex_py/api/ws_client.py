@@ -3,8 +3,8 @@ import json
 import logging
 import time
 import traceback
+from collections.abc import Callable
 from enum import Enum
-from typing import Callable, Dict, Optional
 
 import websockets
 from websockets import ClientConnection, State
@@ -56,7 +56,7 @@ def _paradex_channel_prefix(value: str) -> str:
     return value.split(".")[0]
 
 
-def _get_ws_channel_from_name(message_channel: str) -> Optional[ParadexWebsocketChannel]:
+def _get_ws_channel_from_name(message_channel: str) -> ParadexWebsocketChannel | None:
     for channel in ParadexWebsocketChannel:
         if message_channel.startswith(_paradex_channel_prefix(channel.value)):
             return channel
@@ -87,17 +87,17 @@ class ParadexWebsocketClient:
     def __init__(
         self,
         env: Environment,
-        logger: Optional[logging.Logger] = None,
-        ws_timeout: Optional[int] = None,
+        logger: logging.Logger | None = None,
+        ws_timeout: int | None = None,
         auto_start_reader: bool = True,
     ):
         self.env = env
         self.api_url = f"wss://ws.api.{self.env}.paradex.trade/v1"
         self.logger = logger or logging.getLogger(__name__)
-        self.ws: Optional[ClientConnection] = None
-        self.account: Optional[ParadexAccount] = None
-        self.callbacks: Dict[str, Callable] = {}
-        self.subscribed_channels: Dict[str, bool] = {}
+        self.ws: ClientConnection | None = None
+        self.account: ParadexAccount | None = None
+        self.callbacks: dict[str, Callable] = {}
+        self.subscribed_channels: dict[str, bool] = {}
         self.ws_timeout = ws_timeout if ws_timeout is not None else WS_TIMEOUT
         if auto_start_reader:
             asyncio.get_event_loop().create_task(self._read_messages())
@@ -196,7 +196,7 @@ class ParadexWebsocketClient:
 
     def _check_subscribed_channel(self, message: dict) -> None:
         if "id" in message:
-            channel_subscribed: Optional[str] = message.get("result", {}).get("channel")
+            channel_subscribed: str | None = message.get("result", {}).get("channel")
             if channel_subscribed:
                 self.logger.info(f"{self.classname}: Subscribed to channel:{channel_subscribed}")
                 self.subscribed_channels[channel_subscribed] = True
@@ -212,7 +212,7 @@ class ParadexWebsocketClient:
                         self.logger.debug(f"{self.classname}: Non-actionable message:{message}")
                     else:
                         message_channel = message["params"].get("channel")
-                        ws_channel: Optional[ParadexWebsocketChannel] = _get_ws_channel_from_name(message_channel)
+                        ws_channel: ParadexWebsocketChannel | None = _get_ws_channel_from_name(message_channel)
                         if ws_channel is None:
                             self.logger.debug(
                                 f"{self.classname}: unregistered channel:{message_channel} message:{message}"
@@ -258,7 +258,7 @@ class ParadexWebsocketClient:
         self,
         channel: ParadexWebsocketChannel,
         callback: Callable,
-        params: Optional[dict] = None,
+        params: dict | None = None,
     ) -> None:
         """Subscribe to a websocket channel with optional parameters.
             Callback function is invoked when a message is received.

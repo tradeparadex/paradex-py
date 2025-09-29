@@ -4,7 +4,6 @@ import time
 import types
 from decimal import Decimal
 from enum import IntEnum
-from typing import Optional
 
 from aiohttp import ClientSession
 from starknet_py.common import int_from_bytes, int_from_hex
@@ -26,6 +25,7 @@ from paradex_py.message.stark_key import build_stark_key_message
 from paradex_py.utils import raise_value_error
 
 FULLNODE_SIGNATURE_VERSION = "1.0.0"
+
 
 # For matching existing chainId type
 class CustomStarknetChainId(IntEnum):
@@ -57,9 +57,9 @@ class ParadexAccount:
         self,
         config: SystemConfig,
         l1_address: str,
-        l1_private_key_from_ledger: Optional[bool] = False,
-        l1_private_key: Optional[str] = None,
-        l2_private_key: Optional[str] = None,
+        l1_private_key_from_ledger: bool | None = False,
+        l1_private_key: str | None = None,
+        l2_private_key: str | None = None,
     ):
         self.config = config
 
@@ -258,6 +258,6 @@ class ParadexAccount:
             await self.starknet.process_invoke(account_contract, need_multisig, prepared_invoke, func_name)
 
         except Exception as e:
-            logging.error(f"Error during transfer_on_l2: {e}")
+            logging.exception(f"Error during transfer_on_l2: {e}")
             # Re-raise the exception to handle it upstream if necessary
             raise
