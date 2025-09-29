@@ -5,7 +5,7 @@ import types
 from decimal import Decimal
 from enum import IntEnum
 
-from aiohttp import ClientSession
+from httpx import AsyncClient
 from starknet_py.common import int_from_bytes, int_from_hex
 from starknet_py.hash.address import compute_address
 from starknet_py.hash.selector import get_selector_from_name
@@ -103,7 +103,7 @@ class ParadexAccount:
 
         async def monkey_patched_make_request(
             self,
-            session: ClientSession,
+            session: AsyncClient,
             address: str,
             http_method: HttpMethod,
             params: dict,
@@ -114,11 +114,11 @@ class ParadexAccount:
                 current_self.starknet, current_self.l2_chain_id, json_payload
             )
 
-            async with session.request(
+            response = await session.request(
                 method=http_method.value, url=address, params=params, json=payload, headers=headers
-            ) as request:
-                await self.handle_request_error(request)
-                return await request.json(content_type=None)
+            )
+            await self.handle_request_error(response)
+            return response.json()
 
         client._client._make_request = types.MethodType(monkey_patched_make_request, client._client)  # type: ignore[method-assign]
 
