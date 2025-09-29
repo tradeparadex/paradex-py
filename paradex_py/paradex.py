@@ -28,15 +28,11 @@ class Paradex:
         l2_private_key (str, optional): L2 private key. Defaults to None.
         logger (logging.Logger, optional): Logger. Defaults to None.
         ws_timeout (int, optional): WebSocket read timeout in seconds. Defaults to None (uses default).
-
-        # HTTP client injection and configuration
         http_client (HttpClient, optional): Custom HTTP client for injection. Defaults to None.
         api_base_url (str, optional): Custom API base URL override. Defaults to None.
         default_timeout (float, optional): Default HTTP request timeout in seconds. Defaults to None.
         retry_strategy (RetryStrategy, optional): Custom retry/backoff strategy. Defaults to None.
         request_hook (RequestHook, optional): Hook for request/response observability. Defaults to None.
-
-        # WebSocket client injection and configuration
         auto_start_ws_reader (bool, optional): Whether to automatically start WS message reader. Defaults to True.
         ws_connector (WebSocketConnector, optional): Custom WebSocket connector for injection. Defaults to None.
         ws_url_override (str, optional): Custom WebSocket URL override. Defaults to None.
@@ -45,12 +41,8 @@ class Paradex:
         validate_ws_messages (bool, optional): Enable JSON-RPC message validation. Defaults to False.
         ping_interval (float, optional): WebSocket ping interval in seconds. Defaults to None.
         disable_reconnect (bool, optional): Disable automatic WebSocket reconnection. Defaults to False.
-
-        # Auth configuration
         auto_auth (bool, optional): Whether to automatically handle onboarding/auth. Defaults to True.
         auth_provider (AuthProvider, optional): Custom authentication provider. Defaults to None.
-
-        # Signing configuration
         signer (Signer, optional): Custom order signer for submit/modify/batch operations. Defaults to None.
 
     Examples:
