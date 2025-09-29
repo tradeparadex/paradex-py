@@ -18,6 +18,8 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
     Args:
         env (Environment): Environment
         logger (logging.Logger, optional): Logger. Defaults to None.
+        http_client (HttpClient, optional): Custom HTTP client for injection. Defaults to None.
+        api_base_url (str, optional): Custom base URL override. Defaults to None.
 
     Examples:
         >>> from paradex_py import Paradex
@@ -31,11 +33,23 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         self,
         env: Environment,
         logger: logging.Logger | None = None,
+        http_client: HttpClient | None = None,
+        api_base_url: str | None = None,
     ):
         self.env = env
         self.logger = logger or logging.getLogger(__name__)
-        super().__init__()
-        self.api_url = f"https://api.{self.env}.paradex.trade/v1"
+
+        # Initialize parent with optional HTTP client injection
+        if http_client is not None:
+            super().__init__(http_client=http_client.client if hasattr(http_client, "client") else http_client)
+        else:
+            super().__init__()
+
+        # Use custom base URL if provided, otherwise use default
+        if api_base_url is not None:
+            self.api_url = api_base_url
+        else:
+            self.api_url = f"https://api.{self.env}.paradex.trade/v1"
 
     async def __aexit__(self):
         self.client.close()

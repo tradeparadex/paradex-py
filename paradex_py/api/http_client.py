@@ -14,9 +14,21 @@ class HttpMethod(Enum):
 
 
 class HttpClient:
-    def __init__(self):
-        self.client = httpx.Client()
-        self.client.headers.update({"Content-Type": "application/json"})
+    def __init__(self, http_client: httpx.Client | None = None):
+        """Initialize HTTP client with optional injection.
+
+        Args:
+            http_client: Optional httpx.Client instance for injection.
+                        If None, creates a default client.
+        """
+        if http_client is not None:
+            self.client = http_client
+        else:
+            self.client = httpx.Client()
+
+        # Only set default headers if they're not already set
+        if "Content-Type" not in self.client.headers:
+            self.client.headers.update({"Content-Type": "application/json"})
 
     def request(
         self,
