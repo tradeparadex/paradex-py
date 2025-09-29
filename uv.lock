@@ -1599,7 +1599,6 @@ name = "paradex-py"
 version = "0.5.0rc0"
 source = { editable = "." }
 dependencies = [
-    { name = "aiohttp" },
     { name = "eth-account" },
     { name = "httpx" },
     { name = "ledgereth" },
@@ -1632,7 +1631,6 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "aiohttp", specifier = ">=3.10.0,<4.0.0" },
     { name = "eth-account", specifier = ">=0.11.0,<0.12.0" },
     { name = "httpx", specifier = ">=0.27.0,<0.28.0" },
     { name = "ledgereth", specifier = ">=0.9.1,<0.10.0" },

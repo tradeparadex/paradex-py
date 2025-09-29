@@ -115,6 +115,10 @@ def create_error_response(request_id: str | int, code: int, message: str) -> str
     return json.dumps(response.model_dump())
 
 
+# Note: For payload validation, use the generated models in paradex_py.api.generated.responses
+# This module focuses on JSON-RPC message structure only
+
+
 # Re-export for convenience
 __all__ = [
     # JSON-RPC 2.0 models

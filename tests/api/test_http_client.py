@@ -96,6 +96,7 @@ class TestHttpClient:
                 http_method=HttpMethod.GET,
                 params={"param": "value"},
                 headers=self.http_client.client.headers,
+                timeout=None,
             )
 
     def test_post_method_with_default_headers(self):
@@ -112,6 +113,7 @@ class TestHttpClient:
                 payload={"data": "test"},
                 params=None,
                 headers=self.http_client.client.headers,
+                timeout=None,
             )
 
     def test_post_method_with_custom_headers(self):
@@ -132,6 +134,7 @@ class TestHttpClient:
                 payload={"data": "test"},
                 params=None,
                 headers=custom_headers,
+                timeout=None,
             )
 
     def test_put_method(self):
@@ -150,6 +153,7 @@ class TestHttpClient:
                 payload={"data": "updated"},
                 params=None,
                 headers=self.http_client.client.headers,
+                timeout=None,
             )
 
     def test_delete_method(self):
@@ -171,6 +175,7 @@ class TestHttpClient:
                 params={"confirm": "true"},
                 payload={"reason": "test"},
                 headers=self.http_client.client.headers,
+                timeout=None,
             )
 
     def test_http_method_enum(self):

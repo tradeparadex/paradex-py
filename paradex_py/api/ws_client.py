@@ -119,6 +119,8 @@ class ParadexWebsocketClient:
         reader_sleep_on_error (float, optional): Sleep duration after connection errors. Set to 0 for no sleep. Defaults to 1.0.
         reader_sleep_on_no_connection (float, optional): Sleep duration when no connection. Set to 0 for no sleep. Defaults to 1.0.
         validate_messages (bool, optional): Enable pydantic message validation. Requires pydantic. Defaults to False.
+        ping_interval (float, optional): WebSocket ping interval in seconds. None uses websockets default. Defaults to None.
+        disable_reconnect (bool, optional): Disable automatic reconnection for tight simulation control. Defaults to False.
 
     Examples:
         >>> from paradex_py import Paradex
@@ -150,6 +152,8 @@ class ParadexWebsocketClient:
         reader_sleep_on_error: float = 1.0,
         reader_sleep_on_no_connection: float = 1.0,
         validate_messages: bool = False,
+        ping_interval: float | None = None,
+        disable_reconnect: bool = False,
     ):
         self.env = env
         self.api_url = ws_url_override or f"wss://ws.api.{self.env}.paradex.trade/v1"
@@ -166,6 +170,10 @@ class ParadexWebsocketClient:
         # Configurable sleep durations for simulator-friendly behavior
         self.reader_sleep_on_error = reader_sleep_on_error
         self.reader_sleep_on_no_connection = reader_sleep_on_no_connection
+
+        # Heartbeat and reconnection control
+        self.ping_interval = ping_interval
+        self.disable_reconnect = disable_reconnect
 
         # Optional message validation
         self.validate_messages = validate_messages and TYPED_MODELS_AVAILABLE
@@ -210,10 +218,13 @@ class ParadexWebsocketClient:
             if self.connector is not None:
                 self.ws = await self.connector(self.api_url, extra_headers)
             else:
-                self.ws = await websockets.connect(
-                    self.api_url,
-                    additional_headers=extra_headers,
-                )
+                connect_kwargs = {
+                    "additional_headers": extra_headers,
+                }
+                if self.ping_interval is not None:
+                    connect_kwargs["ping_interval"] = self.ping_interval
+
+                self.ws = await websockets.connect(self.api_url, **connect_kwargs)
 
             self.logger.info(f"{self.classname}: Connected to {self.api_url}")
 
@@ -237,12 +248,7 @@ class ParadexWebsocketClient:
         # Check connection state - handle both websockets.State and custom connection states
         is_connected = False
         if self.ws is not None:
-            if hasattr(self.ws.state, "value"):
-                # websockets.State enum
-                is_connected = self.ws.state == State.OPEN
-            else:
-                # Custom connection state - assume connected if state exists
-                is_connected = hasattr(self.ws, "state")
+            is_connected = self.ws.state == State.OPEN if hasattr(self.ws.state, "value") else hasattr(self.ws, "state")
 
         return is_connected
 
@@ -265,6 +271,10 @@ class ParadexWebsocketClient:
             self.logger.exception(f"{self.classname}: Error thrown when closing connection {traceback.format_exc()}")
 
     async def _reconnect(self):
+        if self.disable_reconnect:
+            self.logger.info(f"{self.classname}: Reconnection disabled, skipping...")
+            return
+
         try:
             self.logger.info(f"{self.classname}: Reconnect websocket...")
             await self._close_connection()
@@ -476,6 +486,90 @@ class ParadexWebsocketClient:
             self.logger.info(f"{self.classname}: Subscribe by name channel:{channel_name} callback:{callback}")
 
         await self._subscribe_to_channel_by_name(channel_name)
+
+    async def unsubscribe_by_name(self, channel_name: str) -> None:
+        """Unsubscribe from a channel by exact name string.
+
+        Symmetric with subscribe_by_name for complete channel lifecycle control.
+
+        Args:
+            channel_name: Exact channel name (e.g., "bbo.BTC-USD-PERP")
+        """
+        # Remove from subscribed channels and callbacks
+        self.subscribed_channels.pop(channel_name, None)
+        self.callbacks.pop(channel_name, None)
+
+        self.logger.info(f"{self.classname}: Unsubscribe by name channel:{channel_name}")
+
+        # Send unsubscribe message
+        unsubscribe_message = {
+            "jsonrpc": "2.0",
+            "method": "unsubscribe",
+            "params": {"channel": channel_name},
+            "id": str(int(time.time() * 1_000_000)),
+        }
+        await self._send(json.dumps(unsubscribe_message))
+
+    def get_subscriptions(self) -> dict[str, bool]:
+        """Get current subscription map.
+
+        Returns:
+            Dictionary mapping channel names to subscription status
+        """
+        return self.subscribed_channels.copy()
+
+    async def pump_until(self, predicate: Callable[[dict], bool], timeout_s: float = 10.0) -> int:
+        """Deterministic consumption helper for simulators.
+
+        Pumps messages until predicate returns True or timeout is reached.
+        Useful for waiting for specific message conditions in tests.
+
+        Args:
+            predicate: Function that takes a message dict and returns True to stop
+            timeout_s: Maximum time to wait in seconds
+
+        Returns:
+            Number of messages processed before predicate was satisfied or timeout
+
+        Examples:
+            # Wait for BBO message with specific price
+            count = await ws_client.pump_until(
+                lambda msg: msg.get('params', {}).get('channel', '').startswith('bbo')
+                           and float(msg.get('data', {}).get('bid', 0)) > 50000,
+                timeout_s=5.0
+            )
+        """
+        start_time = time.time()
+        message_count = 0
+        last_message = None
+
+        # Set up temporary message capture
+        def capture_message(channel: str, message: dict):
+            nonlocal last_message
+            last_message = message
+
+        # Store original callbacks to restore later
+        original_callbacks = self.callbacks.copy()
+
+        try:
+            while time.time() - start_time < timeout_s:
+                # Try to pump one message
+                if await self.pump_once():
+                    message_count += 1
+                    # Check if predicate is satisfied with the last message
+                    if last_message and predicate(last_message):
+                        break
+                    else:
+                        # Continue processing if predicate not satisfied
+                        pass
+                else:
+                    # No message available, small delay to avoid busy waiting
+                    await asyncio.sleep(0.001)
+        finally:
+            # Restore original callbacks
+            self.callbacks = original_callbacks
+
+        return message_count
 
     async def _subscribe_to_channel_by_name(
         self,

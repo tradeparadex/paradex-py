@@ -6,6 +6,7 @@ from paradex_py.account.account import ParadexAccount
 from paradex_py.api.block_trades_api import BlockTradesMixin
 from paradex_py.api.http_client import HttpClient, HttpMethod
 from paradex_py.api.models import AccountSummary, AccountSummarySchema, AuthSchema, SystemConfig, SystemConfigSchema
+from paradex_py.api.protocols import AuthProvider, Signer
 from paradex_py.common.order import Order
 from paradex_py.environment import Environment
 from paradex_py.utils import raise_value_error
@@ -20,6 +21,9 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         logger (logging.Logger, optional): Logger. Defaults to None.
         http_client (HttpClient, optional): Custom HTTP client for injection. Defaults to None.
         api_base_url (str, optional): Custom base URL override. Defaults to None.
+        auto_auth (bool, optional): Whether to automatically handle onboarding/auth. Defaults to True.
+        auth_provider (AuthProvider, optional): Custom authentication provider. Defaults to None.
+        signer (Signer, optional): Custom order signer for submit/modify/batch operations. Defaults to None.
 
     Examples:
         >>> from paradex_py import Paradex
@@ -35,6 +39,9 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         logger: logging.Logger | None = None,
         http_client: HttpClient | None = None,
         api_base_url: str | None = None,
+        auto_auth: bool = True,
+        auth_provider: AuthProvider | None = None,
+        signer: Signer | None = None,
     ):
         self.env = env
         self.logger = logger or logging.getLogger(__name__)
@@ -51,13 +58,24 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         else:
             self.api_url = f"https://api.{self.env}.paradex.trade/v1"
 
+        # Auth configuration
+        self.auto_auth = auto_auth
+        self.auth_provider = auth_provider
+        self._manual_token: str | None = None
+        self.account: ParadexAccount | None = None
+        self.auth_timestamp = 0
+
+        # Signing configuration
+        self.signer = signer
+
     async def __aexit__(self):
         self.client.close()
 
     def init_account(self, account: ParadexAccount):
         self.account = account
-        self.onboarding()
-        self.auth()
+        if self.auto_auth:
+            self.onboarding()
+            self.auth()
 
     def onboarding(self):
         headers = self.account.onboarding_headers()
@@ -72,12 +90,45 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         self.account.set_jwt_token(data.jwt_token)
         self.client.headers.update({"Authorization": f"Bearer {data.jwt_token}"})
 
+    def set_token(self, jwt: str) -> None:
+        """Inject a JWT token without HTTP calls.
+
+        Useful for simulation and testing scenarios where you want to
+        bypass the normal authentication flow.
+
+        Args:
+            jwt: JWT token string
+        """
+        self._manual_token = jwt
+        self.auth_timestamp = time.time()
+        self.client.headers.update({"Authorization": f"Bearer {jwt}"})
+        if self.account:
+            self.account.set_jwt_token(jwt)
+
     def _validate_auth(self):
+        # Skip auth validation if auto_auth is disabled and we have a manual token
+        if not self.auto_auth and self._manual_token:
+            return
+
+        # Use custom auth provider if available
+        if self.auth_provider:
+            token = self.auth_provider.refresh_if_needed()
+            if token:
+                self.client.headers.update({"Authorization": f"Bearer {token}"})
+                return
+
+        # Fall back to standard account-based auth
         if self.account is None:
+            if not self.auto_auth:
+                return  # Skip auth if disabled and no account
             return raise_value_error(f"{self.classname}: Account not found")
+
         # Refresh JWT if it's older than 4 minutes
         if time.time() - self.auth_timestamp > 4 * 60:
-            self.auth()
+            if self.auto_auth:
+                self.auth()
+            else:
+                self.logger.warning(f"{self.classname}: JWT expired but auto_auth disabled")
 
     def _get(self, path: str, params: dict | None = None) -> dict:
         return self.get(api_url=self.api_url, path=path, params=params)
@@ -363,45 +414,82 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         """
         return self._get_authorized(path="account/info")
 
-    def submit_order(self, order: Order) -> dict:
+    def submit_order(self, order: Order, signer: Signer | None = None) -> dict:
         """Send order to Paradex.
             Private endpoint requires authorization.
 
         Args:
             order: Order containing all required fields.
+            signer: Optional custom signer. Uses instance signer or account signer if None.
         """
-        order.signature = self.account.sign_order(order)
-        order_payload = order.dump_to_dict()
+        # Use provided signer, instance signer, or account signer
+        if signer is not None:
+            order_data = order.dump_to_dict()
+            signed_data = signer.sign_order(order_data)
+            order_payload = signed_data
+        elif self.signer is not None:
+            order_data = order.dump_to_dict()
+            signed_data = self.signer.sign_order(order_data)
+            order_payload = signed_data
+        else:
+            # Fall back to account signing
+            order.signature = self.account.sign_order(order)
+            order_payload = order.dump_to_dict()
+
         return self._post_authorized(path="orders", payload=order_payload)
 
-    def submit_orders_batch(self, orders: list[Order]) -> dict:
+    def submit_orders_batch(self, orders: list[Order], signer: Signer | None = None) -> dict:
         """Send batch of orders to Paradex.
             Private endpoint requires authorization.
 
         Args:
             orders: List of orders containing all required fields.
+            signer: Optional custom signer. Uses instance signer or account signer if None.
 
         Returns:
             orders (list): List of Orders
             errors (list): List of Errors
         """
-        order_payloads = []
-        for order in orders:
-            order.signature = self.account.sign_order(order)
-            order_payload = order.dump_to_dict()
-            order_payloads.append(order_payload)
+        # Use provided signer, instance signer, or account signer
+        if signer is not None:
+            order_data_list = [order.dump_to_dict() for order in orders]
+            order_payloads = signer.sign_batch(order_data_list)
+        elif self.signer is not None:
+            order_data_list = [order.dump_to_dict() for order in orders]
+            order_payloads = self.signer.sign_batch(order_data_list)
+        else:
+            # Fall back to account signing
+            order_payloads = []
+            for order in orders:
+                order.signature = self.account.sign_order(order)
+                order_payload = order.dump_to_dict()
+                order_payloads.append(order_payload)
+
         return self._post_authorized(path="orders/batch", payload=order_payloads)
 
-    def modify_order(self, order_id: str, order: Order) -> dict:
+    def modify_order(self, order_id: str, order: Order, signer: Signer | None = None) -> dict:
         """Modify an open order previously sent to Paradex from this account.
             Private endpoint requires authorization.
 
         Args:
             order_id: Order Id
             order: Order update
+            signer: Optional custom signer. Uses instance signer or account signer if None.
         """
-        order.signature = self.account.sign_order(order)
-        order_payload = order.dump_to_dict()
+        # Use provided signer, instance signer, or account signer
+        if signer is not None:
+            order_data = order.dump_to_dict()
+            signed_data = signer.sign_order(order_data)
+            order_payload = signed_data
+        elif self.signer is not None:
+            order_data = order.dump_to_dict()
+            signed_data = self.signer.sign_order(order_data)
+            order_payload = signed_data
+        else:
+            # Fall back to account signing
+            order.signature = self.account.sign_order(order)
+            order_payload = order.dump_to_dict()
+
         return self._put_authorized(path=f"orders/{order_id}", payload=order_payload)
 
     def cancel_order(self, order_id: str) -> None:
