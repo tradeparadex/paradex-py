@@ -1,11 +1,21 @@
 import logging
-from typing import Optional
+from typing import TYPE_CHECKING
 
 from paradex_py.account.account import ParadexAccount
 from paradex_py.api.api_client import ParadexApiClient
 from paradex_py.api.ws_client import ParadexWebsocketClient
 from paradex_py.environment import Environment
 from paradex_py.utils import raise_value_error
+
+if TYPE_CHECKING:
+    from paradex_py.api.http_client import HttpClient
+    from paradex_py.api.protocols import (
+        AuthProvider,
+        RequestHook,
+        RetryStrategy,
+        Signer,
+        WebSocketConnector,
+    )
 
 
 class Paradex:
@@ -18,6 +28,22 @@ class Paradex:
         l2_private_key (str, optional): L2 private key. Defaults to None.
         logger (logging.Logger, optional): Logger. Defaults to None.
         ws_timeout (int, optional): WebSocket read timeout in seconds. Defaults to None (uses default).
+        http_client (HttpClient, optional): Custom HTTP client for injection. Defaults to None.
+        api_base_url (str, optional): Custom API base URL override. Defaults to None.
+        default_timeout (float, optional): Default HTTP request timeout in seconds. Defaults to None.
+        retry_strategy (RetryStrategy, optional): Custom retry/backoff strategy. Defaults to None.
+        request_hook (RequestHook, optional): Hook for request/response observability. Defaults to None.
+        auto_start_ws_reader (bool, optional): Whether to automatically start WS message reader. Defaults to True.
+        ws_connector (WebSocketConnector, optional): Custom WebSocket connector for injection. Defaults to None.
+        ws_url_override (str, optional): Custom WebSocket URL override. Defaults to None.
+        ws_reader_sleep_on_error (float, optional): WebSocket reader sleep duration after errors. Defaults to 1.0.
+        ws_reader_sleep_on_no_connection (float, optional): WebSocket reader sleep when no connection. Defaults to 1.0.
+        validate_ws_messages (bool, optional): Enable JSON-RPC message validation. Defaults to False.
+        ping_interval (float, optional): WebSocket ping interval in seconds. Defaults to None.
+        disable_reconnect (bool, optional): Disable automatic WebSocket reconnection. Defaults to False.
+        auto_auth (bool, optional): Whether to automatically handle onboarding/auth. Defaults to True.
+        auth_provider (AuthProvider, optional): Custom authentication provider. Defaults to None.
+        signer (Signer, optional): Custom order signer for submit/modify/batch operations. Defaults to None.
 
     Examples:
         >>> from paradex_py import Paradex
@@ -25,26 +51,84 @@ class Paradex:
         >>> paradex = Paradex(env=Environment.TESTNET)
         >>> # With custom timeout
         >>> paradex = Paradex(env=Environment.TESTNET, ws_timeout=30)
+        >>> # With simulator-friendly injection (high-frequency, no sleeps)
+        >>> paradex = Paradex(env=Environment.TESTNET, auto_start_ws_reader=False,
+        ...                   http_client=custom_client, ws_connector=custom_connector,
+        ...                   ws_reader_sleep_on_error=0, ws_reader_sleep_on_no_connection=0)
     """
 
     def __init__(
         self,
         env: Environment,
-        l1_address: Optional[str] = None,
-        l1_private_key: Optional[str] = None,
-        l2_private_key: Optional[str] = None,
-        logger: Optional[logging.Logger] = None,
-        ws_timeout: Optional[int] = None,
+        l1_address: str | None = None,
+        l1_private_key: str | None = None,
+        l2_private_key: str | None = None,
+        logger: logging.Logger | None = None,
+        ws_timeout: int | None = None,
+        # HTTP client injection and configuration
+        http_client: "HttpClient | None" = None,
+        api_base_url: str | None = None,
+        default_timeout: float | None = None,
+        retry_strategy: "RetryStrategy | None" = None,
+        request_hook: "RequestHook | None" = None,
+        # WebSocket client injection and configuration
+        auto_start_ws_reader: bool = True,
+        ws_connector: "WebSocketConnector | None" = None,
+        ws_url_override: str | None = None,
+        ws_reader_sleep_on_error: float = 1.0,
+        ws_reader_sleep_on_no_connection: float = 1.0,
+        validate_ws_messages: bool = False,
+        ping_interval: float | None = None,
+        disable_reconnect: bool = False,
+        # Auth configuration
+        auto_auth: bool = True,
+        auth_provider: "AuthProvider | None" = None,
+        # Signing configuration
+        signer: "Signer | None" = None,
     ):
         if env is None:
             return raise_value_error("Paradex: Invalid environment")
         self.env = env
         self.logger: logging.Logger = logger or logging.getLogger(__name__)
-        # Load api client and system config
-        self.api_client = ParadexApiClient(env=env, logger=logger)
-        self.ws_client = ParadexWebsocketClient(env=env, logger=logger, ws_timeout=ws_timeout)
+
+        # Create enhanced HTTP client if needed
+        if http_client is None and (default_timeout or retry_strategy or request_hook):
+            from paradex_py.api.http_client import HttpClient
+
+            http_client = HttpClient(
+                default_timeout=default_timeout,
+                retry_strategy=retry_strategy,
+                request_hook=request_hook,
+            )
+
+        # Load api client and system config with all optional injection
+        self.api_client = ParadexApiClient(
+            env=env,
+            logger=logger,
+            http_client=http_client,
+            api_base_url=api_base_url,
+            auto_auth=auto_auth,
+            auth_provider=auth_provider,
+            signer=signer,
+        )
+
+        # Initialize WebSocket client with all optional injection
+        self.ws_client = ParadexWebsocketClient(
+            env=env,
+            logger=logger,
+            ws_timeout=ws_timeout,
+            auto_start_reader=auto_start_ws_reader,
+            connector=ws_connector,
+            ws_url_override=ws_url_override,
+            reader_sleep_on_error=ws_reader_sleep_on_error,
+            reader_sleep_on_no_connection=ws_reader_sleep_on_no_connection,
+            validate_messages=validate_ws_messages,
+            ping_interval=ping_interval,
+            disable_reconnect=disable_reconnect,
+        )
+
         self.config = self.api_client.fetch_system_config()
-        self.account: Optional[ParadexAccount] = None
+        self.account: ParadexAccount | None = None
 
         # Initialize account if private key is provided
         if l1_address and (l2_private_key is not None or l1_private_key is not None):
@@ -57,8 +141,8 @@ class Paradex:
     def init_account(
         self,
         l1_address: str,
-        l1_private_key: Optional[str] = None,
-        l2_private_key: Optional[str] = None,
+        l1_private_key: str | None = None,
+        l2_private_key: str | None = None,
     ):
         """Initialize paradex account with l1 or l2 private keys.
         Cannot be called if account is already initialized.

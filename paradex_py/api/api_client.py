@@ -1,12 +1,15 @@
 import contextlib
 import logging
 import time
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, cast
+
+import httpx
 
 from paradex_py.account.account import ParadexAccount
 from paradex_py.api.block_trades_api import BlockTradesMixin
 from paradex_py.api.http_client import HttpClient, HttpMethod
 from paradex_py.api.models import AccountSummary, AccountSummarySchema, AuthSchema, SystemConfig, SystemConfigSchema
+from paradex_py.api.protocols import AuthProvider, Signer
 from paradex_py.common.order import Order
 from paradex_py.environment import Environment
 from paradex_py.utils import raise_value_error
@@ -19,6 +22,11 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
     Args:
         env (Environment): Environment
         logger (logging.Logger, optional): Logger. Defaults to None.
+        http_client (HttpClient, optional): Custom HTTP client for injection. Defaults to None.
+        api_base_url (str, optional): Custom base URL override. Defaults to None.
+        auto_auth (bool, optional): Whether to automatically handle onboarding/auth. Defaults to True.
+        auth_provider (AuthProvider, optional): Custom authentication provider. Defaults to None.
+        signer (Signer, optional): Custom order signer for submit/modify/batch operations. Defaults to None.
 
     Examples:
         >>> from paradex_py import Paradex
@@ -31,56 +39,126 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
     def __init__(
         self,
         env: Environment,
-        logger: Optional[logging.Logger] = None,
+        logger: logging.Logger | None = None,
+        http_client: HttpClient | None = None,
+        api_base_url: str | None = None,
+        auto_auth: bool = True,
+        auth_provider: AuthProvider | None = None,
+        signer: Signer | None = None,
     ):
         self.env = env
         self.logger = logger or logging.getLogger(__name__)
-        super().__init__()
-        self.api_url = f"https://api.{self.env}.paradex.trade/v1"
+
+        # Initialize parent with optional HTTP client injection
+        if http_client is not None:
+            # Extract the underlying httpx.Client if it's wrapped in HttpClient
+            if hasattr(http_client, "client"):
+                # http_client is another HttpClient instance, extract the underlying client
+                underlying_client = http_client.client
+            else:
+                # http_client is already an httpx.Client, cast to ensure type safety
+                underlying_client = cast(httpx.Client, http_client)
+            super().__init__(http_client=underlying_client)
+        else:
+            super().__init__()
+
+        # Use custom base URL if provided, otherwise use default
+        if api_base_url is not None:
+            self.api_url = api_base_url
+        else:
+            self.api_url = f"https://api.{self.env}.paradex.trade/v1"
+
+        # Auth configuration
+        self.auto_auth = auto_auth
+        self.auth_provider = auth_provider
+        self._manual_token: str | None = None
+        self.account: ParadexAccount | None = None
+        self.auth_timestamp = 0
+
+        # Signing configuration
+        self.signer = signer
 
     async def __aexit__(self):
         self.client.close()
 
     def init_account(self, account: ParadexAccount):
         self.account = account
-        with contextlib.suppress(Exception):
-            # Onboarding is not a critical step if the account has already been onboarded.
-            self.onboarding()
-        self.auth()
+        if self.auto_auth:
+            with contextlib.suppress(Exception):
+                # Onboarding is not a critical step if the account has already been onboarded.
+                self.onboarding()
+            self.auth()
 
     def onboarding(self):
+        if self.account is None:
+            raise ValueError("Account not initialized")
         headers = self.account.onboarding_headers()
         payload = {"public_key": hex(self.account.l2_public_key)}
         self.post(api_url=self.api_url, path="onboarding", headers=headers, payload=payload)
 
     def auth(self):
+        if self.account is None:
+            raise ValueError("Account not initialized")
         headers = self.account.auth_headers()
         res = self.post(api_url=self.api_url, path=f"auth/{hex(self.account.l2_public_key)}", headers=headers)
         data = AuthSchema().load(res, unknown="exclude", partial=True)
-        self.auth_timestamp = time.time()
+        self.auth_timestamp = int(time.time())
         self.account.set_jwt_token(data.jwt_token)
         self.client.headers.update({"Authorization": f"Bearer {data.jwt_token}"})
 
+    def set_token(self, jwt: str) -> None:
+        """Inject a JWT token without HTTP calls.
+
+        Useful for simulation and testing scenarios where you want to
+        bypass the normal authentication flow.
+
+        Args:
+            jwt: JWT token string
+        """
+        self._manual_token = jwt
+        self.auth_timestamp = int(time.time())
+        self.client.headers.update({"Authorization": f"Bearer {jwt}"})
+        if self.account:
+            self.account.set_jwt_token(jwt)
+
     def _validate_auth(self):
+        # Skip auth validation if auto_auth is disabled and we have a manual token
+        if not self.auto_auth and self._manual_token:
+            return
+
+        # Use custom auth provider if available
+        if self.auth_provider:
+            token = self.auth_provider.refresh_if_needed()
+            if token:
+                self.client.headers.update({"Authorization": f"Bearer {token}"})
+                return
+
+        # Fall back to standard account-based auth
         if self.account is None:
+            if not self.auto_auth:
+                return  # Skip auth if disabled and no account
             return raise_value_error(f"{self.classname}: Account not found")
+
         # Refresh JWT if it's older than 4 minutes
         if time.time() - self.auth_timestamp > 4 * 60:
-            self.auth()
+            if self.auto_auth:
+                self.auth()
+            else:
+                self.logger.warning(f"{self.classname}: JWT expired but auto_auth disabled")
 
-    def _get(self, path: str, params: Optional[dict] = None) -> dict:
+    def _get(self, path: str, params: dict | None = None) -> dict:
         return self.get(api_url=self.api_url, path=path, params=params)
 
-    def _get_authorized(self, path: str, params: Optional[dict] = None) -> dict:
+    def _get_authorized(self, path: str, params: dict | None = None) -> dict:
         self._validate_auth()
         return self._get(path=path, params=params)
 
     def _post_authorized(
         self,
         path: str,
-        payload: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]] = None,
-        params: Optional[dict] = None,
-        headers: Optional[dict] = None,
+        payload: dict[str, Any] | list[dict[str, Any]] | None = None,
+        params: dict | None = None,
+        headers: dict | None = None,
     ) -> dict:
         self._validate_auth()
         return self.post(api_url=self.api_url, path=path, payload=payload, params=params, headers=headers)
@@ -88,19 +166,19 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
     def _put_authorized(
         self,
         path: str,
-        payload: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]] = None,
-        params: Optional[dict] = None,
-        headers: Optional[dict] = None,
+        payload: dict[str, Any] | list[dict[str, Any]] | None = None,
+        params: dict | None = None,
+        headers: dict | None = None,
     ) -> dict:
         self._validate_auth()
         return self.put(api_url=self.api_url, path=path, payload=payload, params=params, headers=headers)
 
-    def _delete_authorized(self, path: str, params: Optional[dict] = None, payload: Optional[dict] = None) -> dict:
+    def _delete_authorized(self, path: str, params: dict | None = None, payload: dict | None = None) -> dict:
         self._validate_auth()
         return self.delete(api_url=self.api_url, path=path, params=params, payload=payload)
 
     # PRIVATE GET METHODS
-    def fetch_orders(self, params: Optional[Dict] = None) -> Dict:
+    def fetch_orders(self, params: dict | None = None) -> dict:
         """Fetch open orders for the account.
             Private endpoint requires authorization.
 
@@ -113,7 +191,7 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         """
         return self._get_authorized(path="orders", params=params)
 
-    def fetch_orders_history(self, params: Optional[Dict] = None) -> Dict:
+    def fetch_orders_history(self, params: dict | None = None) -> dict:
         """Fetch history of orders for the account.
             Private endpoint requires authorization.
 
@@ -136,7 +214,7 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         """
         return self._get_authorized(path="orders-history", params=params)
 
-    def fetch_order(self, order_id: str) -> Dict:
+    def fetch_order(self, order_id: str) -> dict:
         """Fetch a state of specific order sent from this account.
             Private endpoint requires authorization.
 
@@ -145,7 +223,7 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         """
         return self._get_authorized(path=f"orders/{order_id}")
 
-    def fetch_order_by_client_id(self, client_id: str) -> Dict:
+    def fetch_order_by_client_id(self, client_id: str) -> dict:
         """Fetch a state of specific order sent from this account.
             Private endpoint requires authorization.
 
@@ -154,7 +232,7 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         """
         return self._get_authorized(path=f"orders/by_client_id/{client_id}")
 
-    def fetch_fills(self, params: Optional[Dict] = None) -> Dict:
+    def fetch_fills(self, params: dict | None = None) -> dict:
         """Fetch history of fills for this account.
             Private endpoint requires authorization.
 
@@ -173,7 +251,7 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         """
         return self._get_authorized(path="fills", params=params)
 
-    def fetch_tradebusts(self, params: Optional[Dict] = None) -> Dict:
+    def fetch_tradebusts(self, params: dict | None = None) -> dict:
         """Fetch history of tradebusts for this account.
 
         Args:
@@ -190,7 +268,7 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         """
         return self._get_authorized(path="tradebusts", params=params)
 
-    def fetch_funding_payments(self, params: Optional[Dict] = None) -> Dict:
+    def fetch_funding_payments(self, params: dict | None = None) -> dict:
         """Fetch history of funding payments for this account.
             Private endpoint requires authorization.
 
@@ -209,7 +287,7 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         """
         return self._get_authorized(path="funding/payments", params=params)
 
-    def fetch_funding_data(self, params: Optional[Dict] = None) -> Dict:
+    def fetch_funding_data(self, params: dict | None = None) -> dict:
         """List historical funding data by market
 
         Args:
@@ -227,7 +305,7 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         """
         return self._get(path="funding/data", params=params)
 
-    def fetch_transactions(self, params: Optional[Dict] = None) -> Dict:
+    def fetch_transactions(self, params: dict | None = None) -> dict:
         """Fetch history of transactions initiated by this account.
             Private endpoint requires authorization.
 
@@ -245,7 +323,7 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         """
         return self._get_authorized(path="transactions", params=params)
 
-    def fetch_transfers(self, params: Optional[Dict] = None) -> Dict:
+    def fetch_transfers(self, params: dict | None = None) -> dict:
         """Fetch history of transfers initiated by this account.
             Private endpoint requires authorization.
 
@@ -271,13 +349,13 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         res = self._get_authorized(path="account")
         return AccountSummarySchema().load(res, unknown="exclude", partial=True)
 
-    def fetch_account_profile(self) -> Dict:
+    def fetch_account_profile(self) -> dict:
         """Fetch profile for this account.
         Private endpoint requires authorization.
         """
         return self._get_authorized(path="account/profile")
 
-    def fetch_balances(self) -> Dict:
+    def fetch_balances(self) -> dict:
         """Fetch all coin balances for this account.
             Private endpoint requires authorization.
 
@@ -286,7 +364,7 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         """
         return self._get_authorized(path="balance")
 
-    def fetch_positions(self) -> Dict:
+    def fetch_positions(self) -> dict:
         """Fetch all derivatives positions for this account.
             Private endpoint requires authorization.
 
@@ -297,7 +375,7 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         """
         return self._get_authorized(path="positions")
 
-    def fetch_points_data(self, market: str, program: str) -> Dict:
+    def fetch_points_data(self, market: str, program: str) -> dict:
         """Fetch points program data for specific market.
             Private endpoint requires authorization.
 
@@ -310,7 +388,7 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         """
         return self._get_authorized(path=f"points_data/{market}/{program}")
 
-    def fetch_liquidations(self, params: Optional[Dict] = None) -> Dict:
+    def fetch_liquidations(self, params: dict | None = None) -> dict:
         """Fetch history of liquidations for this account.
             Private endpoint requires authorization.
 
@@ -324,7 +402,7 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         """
         return self._get(path="liquidations", params=params)
 
-    def fetch_trades(self, params: Dict) -> Dict:
+    def fetch_trades(self, params: dict) -> dict:
         """Fetch Paradex exchange trades for specific market.
 
         Args:
@@ -340,57 +418,100 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
             return raise_value_error(f"{self.classname}: Market is required to fetch trades")
         return self._get(path="trades", params=params)
 
-    def fetch_subaccounts(self) -> Dict:
+    def fetch_subaccounts(self) -> dict:
         """Fetch list of sub-accounts for this account.
         Private endpoint requires authorization.
         """
         return self._get_authorized(path="account/subaccounts")
 
-    def fetch_account_info(self) -> Dict:
+    def fetch_account_info(self) -> dict:
         """Fetch profile for this account.
         Private endpoint requires authorization.
         """
         return self._get_authorized(path="account/info")
 
-    def submit_order(self, order: Order) -> Dict:
+    def submit_order(self, order: Order, signer: Signer | None = None) -> dict:
         """Send order to Paradex.
             Private endpoint requires authorization.
 
         Args:
             order: Order containing all required fields.
+            signer: Optional custom signer. Uses instance signer or account signer if None.
         """
-        order.signature = self.account.sign_order(order)
-        order_payload = order.dump_to_dict()
+        # Use provided signer, instance signer, or account signer
+        if signer is not None:
+            order_data = order.dump_to_dict()
+            signed_data = signer.sign_order(order_data)
+            order_payload = signed_data
+        elif self.signer is not None:
+            order_data = order.dump_to_dict()
+            signed_data = self.signer.sign_order(order_data)
+            order_payload = signed_data
+        else:
+            # Fall back to account signing
+            if self.account is None:
+                raise ValueError("Account not initialized and no signer provided")
+            order.signature = self.account.sign_order(order)
+            order_payload = order.dump_to_dict()
+
         return self._post_authorized(path="orders", payload=order_payload)
 
-    def submit_orders_batch(self, orders: list[Order]) -> Dict:
+    def submit_orders_batch(self, orders: list[Order], signer: Signer | None = None) -> dict:
         """Send batch of orders to Paradex.
             Private endpoint requires authorization.
 
         Args:
             orders: List of orders containing all required fields.
+            signer: Optional custom signer. Uses instance signer or account signer if None.
 
         Returns:
             orders (list): List of Orders
             errors (list): List of Errors
         """
-        order_payloads = []
-        for order in orders:
-            order.signature = self.account.sign_order(order)
-            order_payload = order.dump_to_dict()
-            order_payloads.append(order_payload)
+        # Use provided signer, instance signer, or account signer
+        if signer is not None:
+            order_data_list = [order.dump_to_dict() for order in orders]
+            order_payloads = signer.sign_batch(order_data_list)
+        elif self.signer is not None:
+            order_data_list = [order.dump_to_dict() for order in orders]
+            order_payloads = self.signer.sign_batch(order_data_list)
+        else:
+            # Fall back to account signing
+            if self.account is None:
+                raise ValueError("Account not initialized and no signer provided")
+            order_payloads = []
+            for order in orders:
+                order.signature = self.account.sign_order(order)
+                order_payload = order.dump_to_dict()
+                order_payloads.append(order_payload)
+
         return self._post_authorized(path="orders/batch", payload=order_payloads)
 
-    def modify_order(self, order_id: str, order: Order) -> Dict:
+    def modify_order(self, order_id: str, order: Order, signer: Signer | None = None) -> dict:
         """Modify an open order previously sent to Paradex from this account.
             Private endpoint requires authorization.
 
         Args:
             order_id: Order Id
             order: Order update
+            signer: Optional custom signer. Uses instance signer or account signer if None.
         """
-        order.signature = self.account.sign_order(order)
-        order_payload = order.dump_to_dict()
+        # Use provided signer, instance signer, or account signer
+        if signer is not None:
+            order_data = order.dump_to_dict()
+            signed_data = signer.sign_order(order_data)
+            order_payload = signed_data
+        elif self.signer is not None:
+            order_data = order.dump_to_dict()
+            signed_data = self.signer.sign_order(order_data)
+            order_payload = signed_data
+        else:
+            # Fall back to account signing
+            if self.account is None:
+                raise ValueError("Account not initialized and no signer provided")
+            order.signature = self.account.sign_order(order)
+            order_payload = order.dump_to_dict()
+
         return self._put_authorized(path=f"orders/{order_id}", payload=order_payload)
 
     def cancel_order(self, order_id: str) -> None:
@@ -411,7 +532,7 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         """
         self._delete_authorized(path=f"orders/by_client_id/{client_id}")
 
-    def cancel_all_orders(self, params: Optional[Dict] = None) -> None:
+    def cancel_all_orders(self, params: dict | None = None) -> None:
         """Cancel all open orders for specific market or for all markets.
             Private endpoint requires authorization.
 
@@ -422,8 +543,8 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         self._delete_authorized(path="orders", params=params)
 
     def cancel_orders_batch(
-        self, order_ids: Optional[List[str]] = None, client_order_ids: Optional[List[str]] = None
-    ) -> Dict:
+        self, order_ids: list[str] | None = None, client_order_ids: list[str] | None = None
+    ) -> dict:
         """Cancel batch of orders by order IDs or client order IDs.
             Private endpoint requires authorization.
 
@@ -462,7 +583,7 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         self.logger.info(f"{self.classname}: SystemConfig:{config}")
         return config
 
-    def fetch_system_state(self) -> Dict:
+    def fetch_system_state(self) -> dict:
         """Fetch Paradex system status.
 
         Examples:
@@ -471,7 +592,7 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         """
         return self._get(path="system/state")
 
-    def fetch_system_time(self) -> Dict:
+    def fetch_system_time(self) -> dict:
         """Fetch Paradex system time.
 
         Examples:
@@ -483,7 +604,7 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         """
         return self._get(path="system/time")
 
-    def fetch_markets(self, params: Optional[Dict] = None) -> Dict:
+    def fetch_markets(self, params: dict | None = None) -> dict:
         """Fetch all markets information.
 
         Args:
@@ -495,7 +616,7 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         """
         return self._get(path="markets", params=params)
 
-    def fetch_markets_summary(self, params: Optional[Dict] = None) -> Dict:
+    def fetch_markets_summary(self, params: dict | None = None) -> dict:
         """Fetch ticker information for specific market.
 
         Args:
@@ -510,8 +631,8 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         return self._get(path="markets/summary", params=params)
 
     def fetch_klines(
-        self, symbol: str, resolution: str, start_at: int, end_at: int, price_kind: Optional[str] = None
-    ) -> Dict:
+        self, symbol: str, resolution: str, start_at: int, end_at: int, price_kind: str | None = None
+    ) -> dict:
         """Fetch OHLCV candlestick data for a symbol.
 
         Args:
@@ -534,7 +655,7 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
             params["price_kind"] = price_kind
         return self._get(path="markets/klines", params=params)
 
-    def fetch_orderbook(self, market: str, params: Optional[Dict] = None) -> Dict:
+    def fetch_orderbook(self, market: str, params: dict | None = None) -> dict:
         """Fetch order-book for specific market.
 
         Args:
@@ -544,7 +665,7 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         """
         return self._get(path=f"orderbook/{market}", params=params)
 
-    def fetch_bbo(self, market: str) -> Dict:
+    def fetch_bbo(self, market: str) -> dict:
         """Fetch best bid/offer for specific market.
 
         Args:
@@ -552,6 +673,6 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         """
         return self._get(path=f"bbo/{market}")
 
-    def fetch_insurance_fund(self) -> Dict:
+    def fetch_insurance_fund(self) -> dict:
         """Fetch insurance fund information"""
         return self._get(path="insurance")

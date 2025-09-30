@@ -1,7 +1,7 @@
 import dataclasses
 import logging
 import re
-from typing import Callable, List, Optional, Union
+from collections.abc import Callable
 
 import marshmallow_dataclass
 from starknet_py.constants import RPC_CONTRACT_ERROR
@@ -29,9 +29,9 @@ class Account(StarknetAccount):
         *,
         address: AddressRepresentation,
         client: Client,
-        signer: Optional[BaseSigner] = None,
-        key_pair: Optional[KeyPair] = None,
-        chain: Optional[StarknetChainId] = None,
+        signer: BaseSigner | None = None,
+        key_pair: KeyPair | None = None,
+        chain: StarknetChainId | None = None,
     ):
         super().__init__(address=address, client=client, signer=signer, key_pair=key_pair, chain=chain)
 
@@ -41,8 +41,8 @@ class Account(StarknetAccount):
     async def prepare_invoke(
         self,
         calls: Calls,
-        resource_bounds: Optional[ResourceBoundsMapping] = None,
-        nonce: Optional[int] = None,
+        resource_bounds: ResourceBoundsMapping | None = None,
+        nonce: int | None = None,
     ) -> InvokeV3:
         if resource_bounds is None:
             resource_bounds = random_resource_bounds()
@@ -140,14 +140,14 @@ class Account(StarknetAccount):
         print(invoke_schema.dumps(invoke))
         print("---\n")
 
-    def sign_message(self, typed_data: Union[TypedData, TypedDataDict]) -> List[int]:
+    def sign_message(self, typed_data: TypedData | TypedDataDict) -> list[int]:
         msg_hash = typed_data_to_message_hash(typed_data, self.address)
         r, s = message_signature(msg_hash=msg_hash, priv_key=self.signer.key_pair.private_key)  # type: ignore[attr-defined]
         return [r, s]
 
 
 class StarkwareETHProxyCheck(ProxyCheck):
-    async def implementation_address(self, address: Address, client: Client) -> Optional[int]:
+    async def implementation_address(self, address: Address, client: Client) -> int | None:
         return await self.get_implementation(
             address=address,
             client=client,
@@ -155,7 +155,7 @@ class StarkwareETHProxyCheck(ProxyCheck):
             regex_err_msg=r"(is not deployed)",
         )
 
-    async def implementation_hash(self, address: Address, client: Client) -> Optional[int]:
+    async def implementation_hash(self, address: Address, client: Client) -> int | None:
         return await self.get_implementation(
             address=address,
             client=client,
@@ -166,7 +166,7 @@ class StarkwareETHProxyCheck(ProxyCheck):
     @staticmethod
     async def get_implementation(
         address: Address, client: Client, get_class_func: Callable, regex_err_msg: str
-    ) -> Optional[int]:
+    ) -> int | None:
         call = StarkwareETHProxyCheck._get_implementation_call(address=address)
         err_msg = r"(Entry point 0x[0-9a-f]+ not found in contract)|" + regex_err_msg
         try:

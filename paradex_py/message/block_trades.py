@@ -1,5 +1,5 @@
 from decimal import Decimal
-from typing import List, cast
+from typing import cast
 
 from starknet_py.utils.typed_data import TypedDataDict
 
@@ -30,7 +30,7 @@ class BlockTrade:
     def __init__(
         self,
         version: str,
-        trades: List[Trade],
+        trades: list[Trade],
     ) -> None:
         self.version = version
         self.trades = trades

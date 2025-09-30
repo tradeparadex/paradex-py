@@ -8,14 +8,13 @@ name = "paradex_py"
 version = "0.5.0rc0"
 description = "Paradex Python SDK"
 readme = "README.md"
-requires-python = ">=3.9,<3.13"
+requires-python = ">=3.10,<3.13"
 license = { file = "LICENSE" }
 authors = [
     { name = "Paradex", email = "finfo@paradex.trade" },
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -33,7 +32,6 @@ dependencies = [
     "ledgereth>=0.9.1,<0.10.0",
     "pydantic>=2.0.0,<3.0.0",
     "poseidon-py>=0.1.0,<0.2.0",
-    "aiohttp>=3.10.0,<4.0.0",
 ]
 
 [project.urls]
@@ -62,7 +60,7 @@ dev = [
 
 [tool.black]
 line-length = 120
-target-version = ['py37']
+target-version = ['py310']
 preview = true
 
 [tool.mypy]
@@ -87,7 +85,7 @@ testpaths = ["tests"]
 addopts = "--ignore=tests/integration/test_block_trades_workflow.py"
 
 [tool.ruff]
-target-version = "py37"
+target-version = "py310"
 line-length = 120
 fix = true
 select = [

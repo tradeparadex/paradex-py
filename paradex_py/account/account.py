@@ -4,9 +4,8 @@ import time
 import types
 from decimal import Decimal
 from enum import IntEnum
-from typing import Optional
 
-from aiohttp import ClientSession
+from httpx import AsyncClient
 from starknet_py.common import int_from_bytes, int_from_hex
 from starknet_py.hash.address import compute_address
 from starknet_py.hash.selector import get_selector_from_name
@@ -26,6 +25,7 @@ from paradex_py.message.stark_key import build_stark_key_message
 from paradex_py.utils import raise_value_error
 
 FULLNODE_SIGNATURE_VERSION = "1.0.0"
+
 
 # For matching existing chainId type
 class CustomStarknetChainId(IntEnum):
@@ -57,9 +57,9 @@ class ParadexAccount:
         self,
         config: SystemConfig,
         l1_address: str,
-        l1_private_key_from_ledger: Optional[bool] = False,
-        l1_private_key: Optional[str] = None,
-        l2_private_key: Optional[str] = None,
+        l1_private_key_from_ledger: bool | None = False,
+        l1_private_key: str | None = None,
+        l2_private_key: str | None = None,
     ):
         self.config = config
 
@@ -108,7 +108,7 @@ class ParadexAccount:
 
         async def monkey_patched_make_request(
             self,
-            session: ClientSession,
+            session: AsyncClient,
             address: str,
             http_method: HttpMethod,
             params: dict,
@@ -119,11 +119,11 @@ class ParadexAccount:
                 current_self.starknet, current_self.l2_chain_id, json_payload
             )
 
-            async with session.request(
+            response = await session.request(
                 method=http_method.value, url=address, params=params, json=payload, headers=headers
-            ) as request:
-                await self.handle_request_error(request)
-                return await request.json(content_type=None)
+            )
+            await self.handle_request_error(response)
+            return response.json()
 
         client._client._make_request = types.MethodType(monkey_patched_make_request, client._client)
 
