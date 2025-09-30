@@ -1,3 +1,4 @@
+import contextlib
 import logging
 import time
 from typing import Any, cast
@@ -83,7 +84,9 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
     def init_account(self, account: ParadexAccount):
         self.account = account
         if self.auto_auth:
-            self.onboarding()
+            with contextlib.suppress(Exception):
+                # Onboarding is not a critical step if the account has already been onboarded.
+                self.onboarding()
             self.auth()
 
     def onboarding(self):
@@ -97,7 +100,7 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         if self.account is None:
             raise ValueError("Account not initialized")
         headers = self.account.auth_headers()
-        res = self.post(api_url=self.api_url, path="auth", headers=headers)
+        res = self.post(api_url=self.api_url, path=f"auth/{hex(self.account.l2_public_key)}", headers=headers)
         data = AuthSchema().load(res, unknown="exclude", partial=True)
         self.auth_timestamp = int(time.time())
         self.account.set_jwt_token(data.jwt_token)

@@ -93,12 +93,17 @@ class ParadexAccount:
             chain=CustomStarknetChainId(self.l2_chain_id),  # type: ignore[arg-type]
         )
 
-        # Monkey patch of _make_request method of starknet.py client
-        # to inject http headers requested by Paradex full node:
-        # - PARADEX-STARKNET-ACCOUNT: account address signing the request
-        # - PARADEX-STARKNET-SIGNATURE: signature of the request
-        # - PARADEX-STARKNET-SIGNATURE-TIMESTAMP: timestamp of the signature
-        # - PARADEX-STARKNET-SIGNATURE-VERSION: version of the signature
+        # Apply the fullnode headers patch
+        self._apply_fullnode_headers_patch(client)
+
+    # Monkey patch of _make_request method of starknet.py client
+    # to inject http headers requested by Paradex full node:
+    # - PARADEX-STARKNET-ACCOUNT: account address signing the request
+    # - PARADEX-STARKNET-SIGNATURE: signature of the request
+    # - PARADEX-STARKNET-SIGNATURE-TIMESTAMP: timestamp of the signature
+    # - PARADEX-STARKNET-SIGNATURE-VERSION: version of the signature
+    def _apply_fullnode_headers_patch(self, client):
+        """Apply the fullnode headers patch for Paradex-specific headers."""
         current_self = self
 
         async def monkey_patched_make_request(
@@ -120,7 +125,7 @@ class ParadexAccount:
             await self.handle_request_error(response)
             return response.json()
 
-        client._client._make_request = types.MethodType(monkey_patched_make_request, client._client)  # type: ignore[method-assign]
+        client._client._make_request = types.MethodType(monkey_patched_make_request, client._client)
 
     def _account_address(self) -> int:
         calldata = [
