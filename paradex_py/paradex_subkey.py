@@ -1,5 +1,4 @@
 import logging
-from typing import Optional
 
 from paradex_py.account.subkey_account import SubkeyAccount
 from paradex_py.api.api_client import ParadexApiClient
@@ -43,8 +42,8 @@ class ParadexSubkey:
         env: Environment,
         l2_private_key: str,
         l2_address: str,
-        logger: Optional[logging.Logger] = None,
-        ws_timeout: Optional[int] = None,
+        logger: logging.Logger | None = None,
+        ws_timeout: int | None = None,
     ):
         if env is None:
             return raise_value_error("ParadexSubkey: Invalid environment")
