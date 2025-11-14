@@ -69,7 +69,7 @@ def _sign_stark_key_message_ledger(message: SignableMessage, eth_account_address
 
 
 def _get_private_key_from_eth_signature(eth_signature_hex: str) -> int:
-    r = eth_signature_hex[2 : 64 + 2]
+    r = eth_signature_hex[0:64]
     return _grind_key(int_from_hex(r), EC_ORDER)
 
 
