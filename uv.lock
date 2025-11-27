@@ -1638,7 +1638,7 @@ requires-dist = [
     { name = "poseidon-py", specifier = ">=0.1.0,<0.2.0" },
     { name = "pydantic", specifier = ">=2.0.0,<3.0.0" },
     { name = "starknet-crypto-py", specifier = ">=0.2.0,<0.3.0" },
-    { name = "starknet-py", specifier = ">=0.27.0,<0.28.0" },
+    { name = "starknet-py", specifier = ">=0.28.0,<0.29.0" },
     { name = "web3", specifier = ">=6.19.0,<7.0.0" },
     { name = "websockets", specifier = ">=15.0,<16.0" },
 ]
