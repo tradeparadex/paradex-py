@@ -18,8 +18,6 @@ from starknet_py.proxy.contract_abi_resolver import ProxyConfig
 from starknet_py.proxy.proxy_check import ArgentProxyCheck, OpenZeppelinProxyCheck, ProxyCheck
 from starknet_py.utils.typed_data import TypedData, TypedDataDict
 
-from paradex_py.utils import random_resource_bounds
-
 from .utils import message_signature, typed_data_to_message_hash
 
 
@@ -42,11 +40,15 @@ class Account(StarknetAccount):
         self,
         calls: Calls,
         resource_bounds: ResourceBoundsMapping | None = None,
+        auto_estimate: bool = False,
         nonce: int | None = None,
     ) -> InvokeV3:
-        if resource_bounds is None:
-            resource_bounds = random_resource_bounds()
-        return await self._prepare_invoke_v3(calls, resource_bounds=resource_bounds, nonce=nonce)
+        return await self._prepare_invoke_v3(
+            calls,
+            resource_bounds=resource_bounds,
+            auto_estimate=auto_estimate,
+            nonce=nonce,
+        )
 
     async def send_transaction(
         self,
