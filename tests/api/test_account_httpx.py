@@ -50,7 +50,7 @@ class TestAccountHttpxIntegration:
 
         # Mock httpx.AsyncClient response
         mock_response = Mock()
-        mock_response.json.return_value = {"result": "success"}
+        mock_response.json = AsyncMock(return_value={"result": "success"})
 
         # Mock the handle_request_error method to avoid issues
         with patch.object(
@@ -95,7 +95,7 @@ class TestAccountHttpxIntegration:
 
         # Mock httpx response
         mock_response = Mock()
-        mock_response.json.return_value = {"status": "ok"}
+        mock_response.json = AsyncMock(return_value={"status": "ok"})
 
         # Mock the handle_request_error method
         with patch.object(
@@ -225,7 +225,7 @@ class TestAccountHttpxIntegration:
         )
 
         mock_response = Mock()
-        mock_response.json.return_value = {"success": True}
+        mock_response.json = AsyncMock(return_value={"success": True})
 
         # Mock handle_request_error
         with patch.object(
