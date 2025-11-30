@@ -357,6 +357,8 @@ class ParadexWebsocketClient:
 
     async def _receive_and_process_message(self) -> None:
         """Receive and process a single WebSocket message."""
+        if self.ws is None:
+            raise RuntimeError("WebSocket connection must be established before receiving messages")
         response = await asyncio.wait_for(self.ws.recv(), timeout=self.ws_timeout)
         if isinstance(response, bytes):
             response = response.decode("utf-8")
