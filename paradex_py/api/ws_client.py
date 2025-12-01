@@ -182,10 +182,14 @@ class ParadexWebsocketClient:
         if auto_start_reader:
             try:
                 loop = asyncio.get_event_loop()
-                self._reader_task = loop.create_task(self._read_messages())
+                if loop.is_running():
+                    self._reader_task = loop.create_task(self._read_messages())
+                else:
+                    # Event loop exists but not running, don't start task yet
+                    self._reader_task = None
             except RuntimeError:
                 # No event loop running, will start reader when connect() is called
-                pass
+                self._reader_task = None
 
     async def __aexit__(self):
         await self._close_connection()
@@ -252,6 +256,27 @@ class ParadexWebsocketClient:
             is_connected = self.ws.state == State.OPEN if hasattr(self.ws.state, "value") else hasattr(self.ws, "state")
 
         return is_connected
+
+    async def close(self):
+        """Close the WebSocket connection and clean up resources.
+
+        This method should be called when done using the WebSocket client
+        to properly clean up connections and background tasks.
+
+        Examples:
+            >>> import asyncio
+            >>> from paradex_py.api.ws_client import ParadexWebsocketClient
+            >>> from paradex_py.environment import Environment
+            >>> async def main():
+            ...     ws_client = ParadexWebsocketClient(env=Environment.TESTNET)
+            ...     try:
+            ...         await ws_client.connect()
+            ...         # Use websocket client
+            ...     finally:
+            ...         await ws_client.close()
+            >>> asyncio.run(main())
+        """
+        await self._close_connection()
 
     async def _close_connection(self):
         try:
@@ -330,29 +355,47 @@ class ParadexWebsocketClient:
             state_val = getattr(self.ws.state, "value", None) if hasattr(self.ws, "state") else None
             return state_val == "OPEN" or (state_val is None and hasattr(self.ws, "recv"))
 
+    async def _receive_and_process_message(self) -> None:
+        """Receive and process a single WebSocket message."""
+        if self.ws is None:
+            raise RuntimeError("WebSocket connection must be established before receiving messages")
+        response = await asyncio.wait_for(self.ws.recv(), timeout=self.ws_timeout)
+        if isinstance(response, bytes):
+            response = response.decode("utf-8")
+        await self._process_message(response)
+
+    async def _handle_message_receive_error(self, error: Exception) -> None:
+        """Handle errors that occur while receiving messages."""
+        if isinstance(error, (websockets.exceptions.ConnectionClosedError, websockets.exceptions.ConnectionClosedOK)):
+            self.logger.exception(f"{self.classname}: Connection closed traceback:{traceback.format_exc()}")
+            await self._reconnect()
+        elif isinstance(error, asyncio.TimeoutError):
+            pass
+        elif isinstance(error, asyncio.CancelledError):
+            self.logger.info(f"{self.classname}: Reader task cancelled")
+            raise
+        else:
+            self.logger.exception(f"{self.classname}: Connection failed traceback:{traceback.format_exc()}")
+            if self.reader_sleep_on_error > 0:
+                await asyncio.sleep(self.reader_sleep_on_error)
+
     async def _read_messages(self) -> None:
-        while True:
-            if self._is_connection_open() and self.ws is not None:
-                try:
-                    response = await asyncio.wait_for(self.ws.recv(), timeout=self.ws_timeout)
-                    if isinstance(response, bytes):
-                        response = response.decode("utf-8")
-                    await self._process_message(response)
-                except (
-                    websockets.exceptions.ConnectionClosedError,
-                    websockets.exceptions.ConnectionClosedOK,
-                ):
-                    self.logger.exception(f"{self.classname}: Connection closed traceback:{traceback.format_exc()}")
-                    await self._reconnect()
-                except asyncio.TimeoutError:
-                    pass
-                except Exception:
-                    self.logger.exception(f"{self.classname}: Connection failed traceback:{traceback.format_exc()}")
-                    if self.reader_sleep_on_error > 0:
-                        await asyncio.sleep(self.reader_sleep_on_error)
-            else:
-                if self.reader_sleep_on_no_connection > 0:
+        try:
+            while True:
+                if self._is_connection_open() and self.ws is not None:
+                    try:
+                        await self._receive_and_process_message()
+                    except Exception as e:
+                        await self._handle_message_receive_error(e)
+                elif self.reader_sleep_on_no_connection > 0:
                     await asyncio.sleep(self.reader_sleep_on_no_connection)
+        except asyncio.CancelledError:
+            # Re-raise cancellation to allow proper cleanup
+            self.logger.info(f"{self.classname}: Reader task cancelled, cleaning up")
+            raise
+        except Exception:
+            self.logger.exception(f"{self.classname}: Unexpected error in reader task: {traceback.format_exc()}")
+            raise
 
     async def _process_message(self, response: str) -> None:
         """Process a single WebSocket message."""

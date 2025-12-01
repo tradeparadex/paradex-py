@@ -123,7 +123,7 @@ class ParadexAccount:
                 method=http_method.value, url=address, params=params, json=payload, headers=headers
             )
             await self.handle_request_error(response)
-            return response.json()
+            return await response.json()
 
         client._client._make_request = types.MethodType(monkey_patched_make_request, client._client)
 

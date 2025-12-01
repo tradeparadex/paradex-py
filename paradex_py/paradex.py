@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from typing import TYPE_CHECKING
 
@@ -162,3 +163,48 @@ class Paradex:
         )
         self.api_client.init_account(self.account)
         self.ws_client.init_account(self.account)
+
+    async def close(self):
+        """Close all connections and clean up resources.
+
+        This method should be called when done using the Paradex instance
+        to properly clean up websocket connections and background tasks.
+
+        Examples:
+            >>> import asyncio
+            >>> from paradex_py import Paradex
+            >>> from paradex_py.environment import Environment
+            >>> async def main():
+            ...     paradex = Paradex(env=Environment.TESTNET)
+            ...     try:
+            ...         # Use paradex instance
+            ...         pass
+            ...     finally:
+            ...         await paradex.close()
+            >>> asyncio.run(main())
+        """
+        if self.ws_client:
+            await self.ws_client.close()
+
+        if self.api_client and hasattr(self.api_client, "client"):
+            self.api_client.client.close()
+
+    def __del__(self):
+        """Cleanup when Paradex instance is destroyed.
+
+        Attempts to cancel websocket reader task if event loop is still running.
+        """
+        if (
+            hasattr(self, "ws_client")
+            and self.ws_client
+            and hasattr(self.ws_client, "_reader_task")
+            and self.ws_client._reader_task
+        ):
+            # Try to cancel the reader task if it exists and event loop is running
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running() and not self.ws_client._reader_task.done():
+                    self.ws_client._reader_task.cancel()
+            except (RuntimeError, AttributeError):
+                # Event loop not available or already closed, ignore
+                pass
