@@ -45,6 +45,7 @@ class Paradex:
         auto_auth (bool, optional): Whether to automatically handle onboarding/auth. Defaults to True.
         auth_provider (AuthProvider, optional): Custom authentication provider. Defaults to None.
         signer (Signer, optional): Custom order signer for submit/modify/batch operations. Defaults to None.
+        rpc_version (str, optional): RPC version (e.g., "v0_9"). If provided, constructs URL as {base_url}/rpc/{rpc_version}. Defaults to None.
 
     Examples:
         >>> from paradex_py import Paradex
@@ -86,6 +87,8 @@ class Paradex:
         auth_provider: "AuthProvider | None" = None,
         # Signing configuration
         signer: "Signer | None" = None,
+        # RPC configuration
+        rpc_version: str | None = None,
     ):
         if env is None:
             return raise_value_error("Paradex: Invalid environment")
@@ -137,6 +140,7 @@ class Paradex:
                 l1_address=l1_address,
                 l1_private_key=l1_private_key,
                 l2_private_key=l2_private_key,
+                rpc_version=rpc_version,
             )
 
     def init_account(
@@ -144,6 +148,7 @@ class Paradex:
         l1_address: str,
         l1_private_key: str | None = None,
         l2_private_key: str | None = None,
+        rpc_version: str | None = None,
     ):
         """Initialize paradex account with l1 or l2 private keys.
         Cannot be called if account is already initialized.
@@ -152,6 +157,7 @@ class Paradex:
             l1_address (str): L1 address
             l1_private_key (str): L1 private key
             l2_private_key (str): L2 private key
+            rpc_version (str, optional): RPC version (e.g., "v0_9"). If provided, constructs URL as {base_url}/rpc/{rpc_version}. Defaults to None.
         """
         if self.account is not None:
             return raise_value_error("Paradex: Account already initialized")
@@ -160,6 +166,7 @@ class Paradex:
             l1_address=l1_address,
             l1_private_key=l1_private_key,
             l2_private_key=l2_private_key,
+            rpc_version=rpc_version,
         )
         self.api_client.init_account(self.account)
         self.ws_client.init_account(self.account)

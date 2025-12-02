@@ -43,6 +43,7 @@ class ParadexAccount:
         l1_address (str): Ethereum address
         l1_private_key (Optional[str], optional): Ethereum private key. Defaults to None.
         l2_private_key (Optional[str], optional): Paradex private key. Defaults to None.
+        rpc_version (Optional[str], optional): RPC version (e.g., "v0_9"). If provided, constructs URL as {base_url}/rpc/{rpc_version}. Defaults to None.
 
     Examples:
         >>> from paradex_py import Paradex
@@ -60,6 +61,7 @@ class ParadexAccount:
         l1_private_key_from_ledger: bool | None = False,
         l1_private_key: str | None = None,
         l2_private_key: str | None = None,
+        rpc_version: str | None = None,
     ):
         self.config = config
 
@@ -84,7 +86,11 @@ class ParadexAccount:
         self.l2_address = self._account_address()
 
         # Create starknet account
-        client = FullNodeClient(node_url=config.starknet_fullnode_rpc_url)
+        if rpc_version:
+            node_url = f"{config.starknet_fullnode_rpc_base_url}/rpc/{rpc_version}"
+        else:
+            node_url = config.starknet_fullnode_rpc_url
+        client = FullNodeClient(node_url=node_url)
         self.l2_chain_id = int_from_bytes(config.starknet_chain_id.encode())
         self.starknet = StarknetAccount(
             client=client,

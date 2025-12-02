@@ -1,5 +1,6 @@
 import contextlib
 import logging
+import re
 import time
 from typing import Any, cast
 
@@ -579,6 +580,10 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
             url=f"{self.api_url}/system/config",
             http_method=HttpMethod.GET,
         )
+        # Extract base URL from full URL if not provided in response
+        if "starknet_fullnode_rpc_base_url" not in res and "starknet_fullnode_rpc_url" in res:
+            base_url = re.sub(r"/rpc/v\d+[._]\d+.*$", "", res["starknet_fullnode_rpc_url"])
+            res["starknet_fullnode_rpc_base_url"] = base_url
         config = SystemConfigSchema().load(res, unknown="exclude", partial=True)
         self.logger.info(f"{self.classname}: SystemConfig:{config}")
         return config
