@@ -3,6 +3,7 @@ from paradex_py.api.models import SystemConfig, SystemConfigSchema
 MOCK_CONFIG = {
     "starknet_gateway_url": "https://potc-testnet-sepolia.starknet.io",
     "starknet_fullnode_rpc_url": "https://pathfinder.api.testnet.paradex.trade/rpc/v0.5",
+    "starknet_fullnode_rpc_base_url": "https://pathfinder.api.testnet.paradex.trade",
     "starknet_chain_id": "PRIVATE_SN_POTC_SEPOLIA",
     "block_explorer_url": "https://voyager.testnet.paradex.trade/",
     "paraclear_address": "0x286003f7c7bfc3f94e8f0af48b48302e7aee2fb13c23b141479ba00832ef2c6",
@@ -31,3 +32,7 @@ MOCK_CONFIG = {
 class MockApiClient:
     def fetch_system_config(self) -> SystemConfig:
         return SystemConfigSchema().load(MOCK_CONFIG)
+
+    def init_account(self, account):
+        """Mock init_account method for testing."""
+        self.account = account
