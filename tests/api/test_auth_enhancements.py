@@ -110,6 +110,25 @@ class TestAuthenticationEnhancements:
         assert "Bearer refreshed-token-1" in str(client.client.headers.get("Authorization", ""))
 
     @patch.object(ParadexApiClient, "fetch_system_config", return_value=MagicMock())
+    def test_validate_auth_with_auth_provider_syncs_account_token(self, mock_config):
+        """Test that auth_provider token is synced to account.jwt_token for WebSocket compatibility."""
+        auth_provider = MockAuthProvider(token="mock-provider-token", should_refresh=True)  # noqa: S106
+        client = ParadexApiClient(env=TESTNET, auth_provider=auth_provider)
+
+        # Mock account with set_jwt_token method
+        mock_account = MagicMock()
+        mock_account.set_jwt_token = MagicMock()
+        client.account = mock_account
+
+        client._validate_auth()
+
+        # Should have called refresh_if_needed
+        assert auth_provider.refresh_calls == 1
+        # Should have synced token to account
+        mock_account.set_jwt_token.assert_called_once_with("refreshed-token-1")
+        assert "Bearer refreshed-token-1" in str(client.client.headers.get("Authorization", ""))
+
+    @patch.object(ParadexApiClient, "fetch_system_config", return_value=MagicMock())
     def test_validate_auth_without_account_auto_auth_disabled(self, mock_config):
         """Test auth validation without account when auto_auth is disabled."""
         client = ParadexApiClient(env=TESTNET, auto_auth=False)
