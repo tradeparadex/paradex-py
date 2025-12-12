@@ -132,6 +132,8 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
             token = self.auth_provider.refresh_if_needed()
             if token:
                 self.client.headers.update({"Authorization": f"Bearer {token}"})
+                if self.account:
+                    self.account.set_jwt_token(token)
                 return
 
         # Fall back to standard account-based auth
