@@ -4,11 +4,9 @@
 
 # ruff: noqa: F403, A003
 # Import all generated models
-from . import messagesv1
 from .requests import *
 from .responses import *
 
 __all__: list[str] = [
     # Re-export everything from sub-modules
-    "messagesv1",
 ]
