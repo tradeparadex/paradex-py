@@ -1,4 +1,4 @@
-# Generated from Paradex API spec version 1.101.8
+# Generated from Paradex API spec version 1.106.0
 
 from __future__ import annotations
 
@@ -100,6 +100,30 @@ class CreateVault(BaseModel):
     ] = None
 
 
+class CreateXPTransferRequest(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        populate_by_name=True,
+    )
+    amount: Annotated[int, Field(description="Amount of XP to transfer (must be >= 1)", examples=[100], ge=1)]
+    is_private: Annotated[
+        bool | None,
+        Field(
+            description=(
+                "Whether the transfer is private (not shown on public feeds). Defaults to false if not provided."
+            ),
+            examples=[False],
+        ),
+    ] = False
+    recipient: Annotated[
+        str,
+        Field(description="Recipient's Starknet address (hex format)", examples=["0x1234567890abcdef0123456789abcdef"]),
+    ]
+    season: Annotated[
+        str | None, Field(description="Season identifier. Defaults to season2 if not provided.", examples=["season2"])
+    ] = "season2"
+
+
 class ModifyOrderRequest(BaseModel):
     model_config = ConfigDict(
         extra="allow",
@@ -123,6 +147,9 @@ class ModifyOrderRequest(BaseModel):
         int, Field(description="Unix timestamp in milliseconds of order creation, used for signature verification")
     ]
     size: Annotated[str, Field(description="Existing or modified size of the order", examples=["1.213"])]
+    trigger_price: Annotated[
+        str | None, Field(description="Existing or modified trigger price of a TPSL order", examples=["29500.12"])
+    ] = None
     type: Annotated[str, Field(description="Existing type of the order", examples=["LIMIT"])]
 
 
@@ -138,6 +165,39 @@ class UpdateAccountMaxSlippageRequest(BaseModel):
         populate_by_name=True,
     )
     max_slippage: str
+
+
+class UpdateAccountProfileRequest(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        populate_by_name=True,
+    )
+    announcements: Annotated[bool | None, Field(examples=[False])] = None
+    fill_sound: Annotated[bool | None, Field(examples=[True])] = None
+    fills: Annotated[bool | None, Field(examples=[True])] = None
+    is_username_private: Annotated[bool | None, Field(examples=[True])] = None
+    max_slippage: str | None = None
+    orders: Annotated[bool | None, Field(examples=[True])] = None
+    referral_code: Annotated[str | None, Field(examples=["referral_code"])] = None
+    referred_by: Annotated[str | None, Field(examples=["referral_code"])] = None
+    size_currency_display: str | None = None
+    tap_share_rate: Annotated[str | None, Field(examples=["0.2"])] = None
+    trading_value_display: str | None = None
+    transfers: Annotated[bool | None, Field(examples=[True])] = None
+    username: Annotated[str | None, Field(examples=["username"])] = None
+    xp_share_rate: Annotated[str | None, Field(examples=["0.2"])] = None
+
+
+class UpdateNotificationPreferencesRequest(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        populate_by_name=True,
+    )
+    announcements: Annotated[bool | None, Field(examples=[False])] = None
+    fill_sound: Annotated[bool | None, Field(examples=[True])] = None
+    fills: Annotated[bool | None, Field(examples=[True])] = None
+    orders: Annotated[bool | None, Field(examples=[True])] = None
+    transfers: Annotated[bool | None, Field(examples=[True])] = None
 
 
 class UpdateSizeCurrencyDisplayRequest(BaseModel):
@@ -163,6 +223,7 @@ class Utm(BaseModel):
     )
     campaign: Annotated[str | None, Field(description="UTM campaign parameter", examples=["summer2024"])] = None
     source: Annotated[str | None, Field(description="UTM source parameter", examples=["google"])] = None
+    type: Annotated[str | None, Field(description="UTM type parameter", examples=["clickthrough"])] = None
 
 
 class AlgoOrderRequest(BaseModel):
@@ -181,6 +242,13 @@ class AlgoOrderRequest(BaseModel):
         ),
     ]
     market: Annotated[str, Field(description="Market for which order is created", examples=["BTC-USD-PERP"])]
+    on_behalf_of_account: Annotated[
+        str | None,
+        Field(
+            description="ID corresponding to the configured isolated margin account. Only for isolated margin orders",
+            examples=["0x1234567890abcdef"],
+        ),
+    ] = None
     recv_window: Annotated[
         int | None,
         Field(
@@ -283,9 +351,6 @@ class OrderRequest(BaseModel):
     signature_timestamp: Annotated[
         int, Field(description="Unix timestamp in milliseconds of order creation, used for signature verification")
     ]
-    signed_impact_price: Annotated[
-        str | None, Field(description="Optional signed impact price for market orders (base64 encoded)")
-    ] = None
     size: Annotated[str, Field(description="Size of the order", examples=["1.213"])]
     stp: Annotated[
         str | None,
@@ -293,6 +358,10 @@ class OrderRequest(BaseModel):
     ] = None
     trigger_price: Annotated[str | None, Field(description="Trigger price for stop order")] = None
     type: Annotated[responses.OrderType, Field(description="Order type")]
+    vwap_price: Annotated[
+        str | None,
+        Field(description="Optional VWAP price for market orders used for VWAP instruction, bounded by price band"),
+    ] = None
 
 
 class BlockOfferInfo(BaseModel):

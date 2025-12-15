@@ -69,11 +69,6 @@ async def paradex_ws_subscribe(paradex: Paradex) -> None:
         params={"market": "ETH-USD-PERP"},
     )
     await paradex.ws_client.subscribe(
-        ParadexWebsocketChannel.FUNDING_RATE_COMPARISON,
-        callback=callback_general,
-        params={"market": "ETH-USD-PERP"},
-    )
-    await paradex.ws_client.subscribe(
         ParadexWebsocketChannel.MARKETS_SUMMARY,
         callback=callback_general,
         params={"market": "BTC-USD-PERP"},

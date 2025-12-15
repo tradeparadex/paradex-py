@@ -1,4 +1,4 @@
-# Generated from Paradex API spec version 1.101.8
+# Generated from Paradex API spec version 1.106.0
 
 from __future__ import annotations
 
@@ -6,6 +6,8 @@ from enum import Enum
 from typing import Annotated, Any
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from . import messagesv1
 
 
 class APIResults(BaseModel):
@@ -411,6 +413,8 @@ class ErrorCode(str, Enum):
     error_code_string_social_username_in_use = "SOCIAL_USERNAME_IN_USE"
     error_code_string_invalid_o_auth_request = "INVALID_OAUTH_REQUEST"
     error_code_string_rpi_account_not_whitelisted = "RPI_ACCOUNT_NOT_WHITELISTED"
+    error_code_string_system_status_post_only = "SYSTEM_STATUS_POST_ONLY"
+    error_code_string_system_status_cancel_only = "SYSTEM_STATUS_CANCEL_ONLY"
     error_code_string_invalid_marketing_code = "INVALID_MARKETING_CODE"
     error_code_string_invalid_join_waitlist_request = "INVALID_JOIN_WAITLIST_REQUEST"
     error_code_string_transaction_not_found = "TRANSACTION_NOT_FOUND"
@@ -420,8 +424,13 @@ class ErrorCode(str, Enum):
     error_code_string_account_already_referred = "ACCOUNT_ALREADY_REFERRED"
     error_code_string_onboarding_period_expired = "ONBOARDING_PERIOD_EXPIRED"
     error_code_string_onboarding_rate_limited = "ONBOARDING_RATE_LIMITED"
+    error_code_string_subaccounts_limit_exceeded = "SUBACCOUNTS_LIMIT_EXCEEDED"
+    error_code_string_insufficient_min_chain_balance = "INSUFFICIENT_MIN_CHAIN_BALANCE"
+    error_code_string_invalid_subkey = "INVALID_SUBKEY"
     error_code_string_token_limit_reached = "TOKEN_LIMIT_REACHED"
     error_code_string_invalid_token_scope = "INVALID_TOKEN_SCOPE"
+    error_code_string_insufficient_transferrable_xp = "INSUFFICIENT_TRANSFERRABLE_XP"
+    error_code_string_transfer_limit_reached = "TRANSFER_LIMIT_REACHED"
 
 
 class ErrorResponse(BaseModel):
@@ -475,6 +484,7 @@ class Fees(BaseModel):
 class FillFlag(str, Enum):
     fill_flag_interactive = "interactive"
     fill_flag_rpi = "rpi"
+    fill_flag_fast = "fastfill"
 
 
 class FillType(str, Enum):
@@ -495,8 +505,16 @@ class FundingDataResult(BaseModel):
         int | None, Field(description="Timestamp in milliseconds when the funding data was created")
     ] = None
     funding_index: Annotated[str | None, Field(description="Current funding index value as a decimal string")] = None
+    funding_period_hours: Annotated[
+        float | None, Field(description="Actual funding period in hours for this market")
+    ] = None
     funding_premium: Annotated[str | None, Field(description="Current funding premium as a decimal string")] = None
-    funding_rate: Annotated[str | None, Field(description="Current funding rate as a decimal string")] = None
+    funding_rate: Annotated[
+        str | None, Field(description="Raw funding rate for the actual funding period as a decimal string")
+    ] = None
+    funding_rate_8h: Annotated[
+        str | None, Field(description="Normalized 8-hour funding rate as a decimal string")
+    ] = None
     market: Annotated[str | None, Field(description="Market represents the market identifier")] = None
 
 
@@ -539,6 +557,20 @@ class GetAccountMarginConfigsResp(BaseModel):
     ] = None
 
 
+class GetXPBalanceResponseV2(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        populate_by_name=True,
+    )
+    earned_xp: Annotated[
+        int | None, Field(description="XP earned through trading (from leaderboard, immutable)", examples=[1000])
+    ] = None
+    transferrable_xp: Annotated[
+        int | None, Field(description="Maximum XP that can be transferred", examples=[700])
+    ] = None
+    xp_delta: Annotated[int | None, Field(description="Net XP from transfers", examples=[200])] = None
+
+
 class Greeks(BaseModel):
     model_config = ConfigDict(
         extra="allow",
@@ -557,9 +589,6 @@ class ImpactPriceResp(BaseModel):
         extra="allow",
         populate_by_name=True,
     )
-    encoded: Annotated[
-        str | None, Field(description="Opaque signed impact price for attaching to a market order")
-    ] = None
     impact_price: Annotated[str | None, Field(description="The calculated impact price", examples=["30130.15"])] = None
     market: Annotated[str | None, Field(description="Symbol of the market", examples=["BTC-USD-PERP"])] = None
     side: Annotated[str | None, Field(description="Trade side (BUY or SELL)", examples=["BUY"])] = None
@@ -730,6 +759,19 @@ class Nft(BaseModel):
     id: str | None = None
     image_url: str | None = None
     name: str | None = None
+    price: messagesv1.NftPrice | None = None
+
+
+class NotificationPreferencesResp(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        populate_by_name=True,
+    )
+    announcements: Annotated[bool | None, Field(examples=[False])] = None
+    fill_sound: Annotated[bool | None, Field(examples=[True])] = None
+    fills: Annotated[bool | None, Field(examples=[True])] = None
+    orders: Annotated[bool | None, Field(examples=[True])] = None
+    transfers: Annotated[bool | None, Field(examples=[True])] = None
 
 
 class OptionMarginParams(BaseModel):
@@ -757,6 +799,7 @@ class OrderFlag(str, Enum):
     flags_stop_condition_below_trigger = "STOP_CONDITION_BELOW_TRIGGER"
     flags_stop_condition_above_trigger = "STOP_CONDITION_ABOVE_TRIGGER"
     flags_interactive = "INTERACTIVE"
+    flags_target_strategy_vwap = "TARGET_STRATEGY_VWAP"
 
 
 class OrderInstruction(str, Enum):
@@ -989,6 +1032,15 @@ class STPMode(str, Enum):
     stp_mode_expire_both = "EXPIRE_BOTH"
 
 
+class ShareRateResp(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        populate_by_name=True,
+    )
+    last_updated_at: Annotated[int | None, Field(examples=[1715592690488])] = None
+    share_rate: Annotated[str | None, Field(examples=["0.2"])] = None
+
+
 class Strategy(BaseModel):
     model_config = ConfigDict(
         extra="allow",
@@ -1122,11 +1174,18 @@ class SystemConfigResponse(BaseModel):
     starknet_chain_id: Annotated[
         str | None, Field(description="Chain ID for the Starknet Instance", examples=["SN_CHAIN_ID"])
     ] = None
+    starknet_fullnode_rpc_base_url: Annotated[
+        str | None,
+        Field(
+            description="Full node RPC base URL from Starknet",
+            examples=["https://pathfinder.api.testnet.paradex.trade"],
+        ),
+    ] = None
     starknet_fullnode_rpc_url: Annotated[
         str | None,
         Field(
             description="Full node RPC URL from Starknet",
-            examples=["https://pathfinder.api.testnet.paradex.trade/rpc/v0_7"],
+            examples=["https://pathfinder.api.testnet.paradex.trade/rpc/v0_9"],
         ),
     ] = None
     starknet_gateway_url: Annotated[
@@ -1143,6 +1202,7 @@ class SystemStatus(str, Enum):
     system_status_ok = "ok"
     system_status_maintenance = "maintenance"
     system_status_cancel_only = "cancel_only"
+    system_status_post_only = "post_only"
 
 
 class SystemTimeResponse(BaseModel):
@@ -1500,6 +1560,36 @@ class VaultsConfigResponse(BaseModel):
     ] = None
 
 
+class XPTransfer(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        populate_by_name=True,
+    )
+    amount: Annotated[int | None, Field(description="Amount of XP transferred", examples=[100])] = None
+    created_at: Annotated[
+        int | None, Field(description="Creation timestamp (milliseconds since epoch)", examples=[1640995200000])
+    ] = None
+    fee: Annotated[
+        int | None, Field(description="Fee charged for the transfer (deducted from sender's balance)", examples=[1])
+    ] = None
+    id: Annotated[str | None, Field(description="Unique transfer identifier", examples=["transfer_123"])] = None
+    is_private: Annotated[
+        bool | None, Field(description="Whether the transfer is private (not shown on public feeds)", examples=[False])
+    ] = None
+    recipient: Annotated[
+        str | None, Field(description="Address of the recipient (gaining XP)", examples=["0xfedcba0987654321"])
+    ] = None
+    season: Annotated[
+        str | None,
+        Field(
+            description="Season identifier ('season1' for Season 1, 'season2' for Season 2, etc.)", examples=["season2"]
+        ),
+    ] = None
+    sender: Annotated[
+        str | None, Field(description="Address of the sender (losing XP)", examples=["0x1234567890abcdef"])
+    ] = None
+
+
 class AccountInfoResponse(BaseModel):
     model_config = ConfigDict(
         extra="allow",
@@ -1551,13 +1641,17 @@ class AccountProfileResp(BaseModel):
     market_max_slippage: dict[str, str] | None = None
     marketed_by: Annotated[str | None, Field(examples=["maxDegen"])] = None
     nfts: list[Nft] | None = None
+    notifications: NotificationPreferencesResp | None = None
     referral: ReferralConfigResp | None = None
     referral_code: Annotated[str | None, Field(examples=["cryptofox8"])] = None
     referred_by: Annotated[str | None, Field(examples=["maxDegen"])] = None
     size_currency_display: Annotated[str | None, Field(examples=["BASE"])] = None
+    tap_share_rate: ShareRateResp | None = None
+    tap_status: Annotated[str | None, Field(description='TAP affiliate status: "NONE", "ACTIVE", or "INACTIVE"')] = None
     twitter: TwitterProfile | None = None
     twitter_following: dict[str, bool] | None = None
     username: Annotated[str | None, Field(examples=["username"])] = None
+    xp_share_rate: ShareRateResp | None = None
 
 
 class AlgoOrderResp(BaseModel):
@@ -1654,6 +1748,14 @@ class CancelOrderBatchResponse(BaseModel):
     results: Annotated[list[CancelOrderResult] | None, Field(description="List of cancellation results")] = None
 
 
+class CreateTransferResponse(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        populate_by_name=True,
+    )
+    transfer: Annotated[XPTransfer | None, Field(description="The created XP transfer")] = None
+
+
 class FillResult(BaseModel):
     model_config = ConfigDict(
         extra="allow",
@@ -1682,6 +1784,16 @@ class FillResult(BaseModel):
     liquidity: Annotated[TraderRole | None, Field(description="Maker or Taker")] = None
     market: Annotated[str | None, Field(description="Market name", examples=["BTC-USD-PERP"])] = None
     order_id: Annotated[str | None, Field(description="Order ID", examples=["1681462103821101699438490000"])] = None
+    orderbook_seq_no: Annotated[
+        int | None,
+        Field(
+            description=(
+                "Orderbook sequence number after trade execution (post-execution state). Use seqno-1 for pre-execution."
+                " 0 for position transfers (liquidations, settlements)"
+            ),
+            examples=[12345],
+        ),
+    ] = None
     price: Annotated[str | None, Field(description="Price at which order was filled", examples=["30000.12"])] = None
     realized_funding: Annotated[str | None, Field(description="Realized funding of the fill", examples=["7.56"])] = None
     realized_pnl: Annotated[str | None, Field(description="Realized PnL of the fill", examples=["7.56"])] = None
