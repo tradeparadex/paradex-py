@@ -18,6 +18,7 @@ from paradex_py.environment import Environment
 
 # Optional typed message models
 try:
+    from paradex_py.api.ws_message_models import validate_ws_payload
     from paradex_py.api.ws_models import validate_ws_message
 
     TYPED_MODELS_AVAILABLE = True
@@ -25,6 +26,9 @@ except ImportError:
     TYPED_MODELS_AVAILABLE = False
 
     def validate_ws_message(message_data: dict[str, Any]) -> BaseModel | None:
+        return None
+
+    def validate_ws_payload(channel_name: str, payload: dict[str, Any]) -> BaseModel | None:
         return None
 
 
@@ -67,7 +71,6 @@ class ParadexWebsocketChannel(Enum):
         FILLS (str): Private websocket channel to receive details of fills for specific account
         FUNDING_DATA (str): Public websocket channel to receive funding data updates
         FUNDING_PAYMENTS (str): Private websocket channel to receive funding payments of an account
-        FUNDING_RATE_COMPARISON (str): Public websocket channel for funding rate comparisons across exchanges
         MARKETS_SUMMARY (str): Public websocket channel for updates of available markets
         ORDERS (str): Private websocket channel to receive order updates
         ORDER_BOOK (str): Public websocket channel for orderbook snapshot updates at most every 50ms or 100ms, optionally grouped by price tick (production only)
@@ -84,10 +87,9 @@ class ParadexWebsocketChannel(Enum):
     FILLS = "fills.{market}"
     FUNDING_DATA = "funding_data.{market}"
     FUNDING_PAYMENTS = "funding_payments.{market}"
-    FUNDING_RATE_COMPARISON = "funding_rate_comparison.{market}"
-    MARKETS_SUMMARY = "markets_summary.{market}"
+    MARKETS_SUMMARY = "markets_summary"
     ORDERS = "orders.{market}"
-    ORDER_BOOK = "order_book.{market}.{feed_type}@{depth}@{refresh_rate}@{price_tick}"
+    ORDER_BOOK = "order_book.{market}.{feed_type}@15@{refresh_rate}@{price_tick}"
     POSITIONS = "positions"
     TRADES = "trades.{market}"
     TRADEBUSTS = "tradebusts"
@@ -431,6 +433,20 @@ class ParadexWebsocketClient:
                 else:
                     self.logger.warning(f"{self.classname}: WebSocket RPC message validation failed")
 
+                # Validate payload against AsyncAPI models
+                if "params" in message and "data" in message:
+                    channel_name = message["params"].get("channel", "")
+                    payload_data = message["data"]
+                    validated_payload = validate_ws_payload(channel_name, payload_data)
+                    if validated_payload is not None:
+                        # Replace data with validated payload
+                        message["data"] = validated_payload.model_dump()
+                        self.logger.debug(f"{self.classname}: WebSocket payload validated for channel {channel_name}")
+                    else:
+                        self.logger.warning(
+                            f"{self.classname}: WebSocket payload validation failed for channel {channel_name}"
+                        )
+
             if ws_channel is None:
                 self.logger.debug(f"{self.classname}: unregistered channel:{message_channel} message:{message}")
             elif message_channel in self.callbacks:
@@ -528,18 +544,18 @@ class ParadexWebsocketClient:
 
         # Handle ORDER_BOOK channel with optional parameters
         if channel == ParadexWebsocketChannel.ORDER_BOOK:
-            # Set defaults for optional parameters
+            # Set defaults for required parameters
             format_params = params.copy()
             if "feed_type" not in format_params:
                 format_params["feed_type"] = "snapshot"
-            if "depth" not in format_params:
-                format_params["depth"] = 15
+            if "refresh_rate" not in format_params:
+                format_params["refresh_rate"] = "100ms"
+            # price_tick is optional - if not provided or empty, omit it
             if "price_tick" not in format_params or not format_params["price_tick"]:
-                # Remove price_tick if not provided or empty
                 format_params.pop("price_tick", None)
-                base_format = "order_book.{market}.{feed_type}@{depth}@{refresh_rate}"
+                base_format = "order_book.{market}.{feed_type}@15@{refresh_rate}"
             else:
-                base_format = "order_book.{market}.{feed_type}@{depth}@{refresh_rate}@{price_tick}"
+                base_format = "order_book.{market}.{feed_type}@15@{refresh_rate}@{price_tick}"
             channel_name = base_format.format(**format_params)
         else:
             channel_name = channel.value.format(**params)
