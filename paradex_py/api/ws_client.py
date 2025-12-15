@@ -168,6 +168,9 @@ class ParadexWebsocketClient:
         self.auto_start_reader = auto_start_reader
         self._reader_task: asyncio.Task | None = None
 
+        # Lock to synchronize WebSocket recv() calls between background reader and manual pump_once
+        self._recv_lock = asyncio.Lock()
+
         # Configurable sleep durations for simulator-friendly behavior
         self.reader_sleep_on_error = reader_sleep_on_error
         self.reader_sleep_on_no_connection = reader_sleep_on_no_connection
@@ -303,8 +306,10 @@ class ParadexWebsocketClient:
 
         try:
             self.logger.info(f"{self.classname}: Reconnect websocket...")
-            await self._close_connection()
-            await self.connect()
+            # Acquire lock to ensure no concurrent recv() operations during reconnection
+            async with self._recv_lock:
+                await self._close_connection()
+                await self.connect()
             await self._resubscribe()
         except Exception:
             self.logger.exception(f"{self.classname}: Reconnect failed {traceback.format_exc()}")
@@ -359,7 +364,8 @@ class ParadexWebsocketClient:
         """Receive and process a single WebSocket message."""
         if self.ws is None:
             raise RuntimeError("WebSocket connection must be established before receiving messages")
-        response = await asyncio.wait_for(self.ws.recv(), timeout=self.ws_timeout)
+        async with self._recv_lock:
+            response = await asyncio.wait_for(self.ws.recv(), timeout=self.ws_timeout)
         if isinstance(response, bytes):
             response = response.decode("utf-8")
         await self._process_message(response)
@@ -440,7 +446,8 @@ class ParadexWebsocketClient:
 
         try:
             # Try to receive with a very short timeout to avoid blocking
-            response = await asyncio.wait_for(self.ws.recv(), timeout=0.001)
+            async with self._recv_lock:
+                response = await asyncio.wait_for(self.ws.recv(), timeout=0.001)
         except asyncio.TimeoutError:
             return False
         except Exception:
