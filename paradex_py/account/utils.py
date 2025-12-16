@@ -3,6 +3,7 @@ import hashlib
 from collections.abc import Sequence
 from typing import cast
 
+from eth_account import Account
 from eth_account.messages import SignableMessage, encode_typed_data
 from ledgereth.accounts import find_account
 from ledgereth.comms import init_dongle
@@ -14,7 +15,6 @@ from starknet_crypto_py import verify as rs_verify
 from starknet_py.common import int_from_hex
 from starknet_py.constants import EC_ORDER
 from starknet_py.utils.typed_data import TypedData, TypedDataDict
-from web3.auto import w3
 
 from paradex_py.utils import raise_value_error
 
@@ -47,8 +47,11 @@ def _grind_key(key_seed: int, key_value_limit: int) -> int:
 
 def _sign_stark_key_message(stark_key_message, l1_private_key: int) -> str:
     encoded = encode_typed_data(full_message=stark_key_message)
-    signed = w3.eth.account.sign_message(encoded, l1_private_key)
-    return signed.signature.hex()
+    signed = Account.sign_message(encoded, l1_private_key)
+    sig_hex = signed.signature.hex()
+    # Ensure 0x prefix for compatibility with _get_private_key_from_eth_signature
+    # which expects [2:66] to skip "0x" and extract the r value
+    return sig_hex if sig_hex.startswith("0x") else "0x" + sig_hex
 
 
 def _sign_stark_key_message_ledger(message: SignableMessage, eth_account_address: str) -> str:
