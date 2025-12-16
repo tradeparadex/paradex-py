@@ -1555,7 +1555,7 @@ wheels = [
 
 [[package]]
 name = "paradex-py"
-version = "0.5.3-pre"
+version = "0.5.3-pre2"
 source = { editable = "." }
 dependencies = [
     { name = "eth-account" },
