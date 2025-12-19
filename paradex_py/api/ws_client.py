@@ -68,6 +68,7 @@ class ParadexWebsocketChannel(Enum):
         ACCOUNT (str): Private websocket channel for receiving updates of account status
         BALANCE_EVENTS (str): Private websocket channel to receive PnL calculation data
         BBO (str): Public websocket channel for tick updates of orderbook best bid/ask prices and amounts
+        BLOCK_TRADES (str): Private websocket channel to receive block trade updates
         FILLS (str): Private websocket channel to receive details of fills for specific account
         FUNDING_DATA (str): Public websocket channel to receive funding data updates
         FUNDING_PAYMENTS (str): Private websocket channel to receive funding payments of an account
@@ -84,6 +85,7 @@ class ParadexWebsocketChannel(Enum):
     ACCOUNT = "account"
     BALANCE_EVENTS = "balance_events"
     BBO = "bbo.{market}"
+    BLOCK_TRADES = "block_trades"
     FILLS = "fills.{market}"
     FUNDING_DATA = "funding_data.{market}"
     FUNDING_PAYMENTS = "funding_payments.{market}"
