@@ -5,7 +5,7 @@ These models represent the 'data' payload of WebSocket messages and are stricter
 (required fields) than the REST API models to match the AsyncAPI spec.
 """
 
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -78,7 +78,7 @@ def get_ws_payload_model(channel_name: str) -> type[BaseModel] | None:
     """
     # Extract the base channel name (before any parameters)
     base_channel = channel_name.split(".")[0]
-    return WS_PAYLOAD_MODELS.get(base_channel)
+    return cast(type[BaseModel] | None, WS_PAYLOAD_MODELS.get(base_channel))
 
 
 def validate_ws_payload(channel_name: str, payload: dict[str, Any]) -> BaseModel | None:
