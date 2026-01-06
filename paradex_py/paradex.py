@@ -10,6 +10,7 @@ from paradex_py.utils import raise_value_error
 
 if TYPE_CHECKING:
     from paradex_py.api.http_client import HttpClient
+    from paradex_py.api.models import SystemConfig
     from paradex_py.api.protocols import (
         AuthProvider,
         RequestHook,
@@ -46,6 +47,7 @@ class Paradex:
         auth_provider (AuthProvider, optional): Custom authentication provider. Defaults to None.
         signer (Signer, optional): Custom order signer for submit/modify/batch operations. Defaults to None.
         rpc_version (str, optional): RPC version (e.g., "v0_9"). If provided, constructs URL as {base_url}/rpc/{rpc_version}. Defaults to None.
+        config (SystemConfig, optional): System configuration. If provided, uses this config instead of fetching from API. Defaults to None.
 
     Examples:
         >>> from paradex_py import Paradex
@@ -89,6 +91,7 @@ class Paradex:
         signer: "Signer | None" = None,
         # RPC configuration
         rpc_version: str | None = None,
+        config: "SystemConfig | None" = None,
     ):
         if env is None:
             return raise_value_error("Paradex: Invalid environment")
@@ -131,7 +134,10 @@ class Paradex:
             disable_reconnect=disable_reconnect,
         )
 
-        self.config = self.api_client.fetch_system_config()
+        if config is not None:
+            self.config = config
+        else:
+            self.config = self.api_client.fetch_system_config()
         self.account: ParadexAccount | None = None
 
         # Initialize account if private key is provided
