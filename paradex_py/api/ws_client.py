@@ -18,6 +18,7 @@ from paradex_py.environment import Environment
 
 # Optional typed message models
 try:
+    from paradex_py.api.ws_message_models import validate_ws_payload
     from paradex_py.api.ws_models import validate_ws_message
 
     TYPED_MODELS_AVAILABLE = True
@@ -25,6 +26,9 @@ except ImportError:
     TYPED_MODELS_AVAILABLE = False
 
     def validate_ws_message(message_data: dict[str, Any]) -> BaseModel | None:
+        return None
+
+    def validate_ws_payload(channel_name: str, payload: dict[str, Any]) -> BaseModel | None:
         return None
 
 
@@ -67,10 +71,9 @@ class ParadexWebsocketChannel(Enum):
         FILLS (str): Private websocket channel to receive details of fills for specific account
         FUNDING_DATA (str): Public websocket channel to receive funding data updates
         FUNDING_PAYMENTS (str): Private websocket channel to receive funding payments of an account
-        FUNDING_RATE_COMPARISON (str): Public websocket channel for funding rate comparisons across exchanges
         MARKETS_SUMMARY (str): Public websocket channel for updates of available markets
         ORDERS (str): Private websocket channel to receive order updates
-        ORDER_BOOK (str): Public websocket channel for orderbook snapshot updates of depth 15 at most every 50ms or 100ms, optionally grouped by price tick
+        ORDER_BOOK (str): Public websocket channel for orderbook snapshot updates at most every 50ms or 100ms, optionally grouped by price tick (production only)
         POSITIONS (str): Private websocket channel to receive updates when position is changed
         TRADES (str): Public websocket channel to receive updates on trades in particular market
         TRADEBUSTS (str): Private websocket channel to receive fills that are busted by a blockchain
@@ -84,10 +87,9 @@ class ParadexWebsocketChannel(Enum):
     FILLS = "fills.{market}"
     FUNDING_DATA = "funding_data.{market}"
     FUNDING_PAYMENTS = "funding_payments.{market}"
-    FUNDING_RATE_COMPARISON = "funding_rate_comparison.{market}"
-    MARKETS_SUMMARY = "markets_summary.{market}"
+    MARKETS_SUMMARY = "markets_summary"
     ORDERS = "orders.{market}"
-    ORDER_BOOK = "order_book.{market}.snapshot@{depth}@{refresh_rate}@{price_tick}"
+    ORDER_BOOK = "order_book.{market}.{feed_type}@15@{refresh_rate}@{price_tick}"
     POSITIONS = "positions"
     TRADES = "trades.{market}"
     TRADEBUSTS = "tradebusts"
@@ -167,6 +169,9 @@ class ParadexWebsocketClient:
         self.connector = connector
         self.auto_start_reader = auto_start_reader
         self._reader_task: asyncio.Task | None = None
+
+        # Lock to synchronize WebSocket recv() calls between background reader and manual pump_once
+        self._recv_lock = asyncio.Lock()
 
         # Configurable sleep durations for simulator-friendly behavior
         self.reader_sleep_on_error = reader_sleep_on_error
@@ -303,8 +308,10 @@ class ParadexWebsocketClient:
 
         try:
             self.logger.info(f"{self.classname}: Reconnect websocket...")
-            await self._close_connection()
-            await self.connect()
+            # Acquire lock to ensure no concurrent recv() operations during reconnection
+            async with self._recv_lock:
+                await self._close_connection()
+                await self.connect()
             await self._resubscribe()
         except Exception:
             self.logger.exception(f"{self.classname}: Reconnect failed {traceback.format_exc()}")
@@ -337,10 +344,18 @@ class ParadexWebsocketClient:
 
     def _check_subscribed_channel(self, message: dict) -> None:
         if "id" in message:
+            # Check for successful subscription
             channel_subscribed: str | None = message.get("result", {}).get("channel")
             if channel_subscribed:
                 self.logger.info(f"{self.classname}: Subscribed to channel:{channel_subscribed}")
                 self.subscribed_channels[channel_subscribed] = True
+            # Check for subscription error
+            error_info = message.get("error")
+            if error_info:
+                error_code = error_info.get("code", "unknown")
+                error_message = error_info.get("message", "unknown error")
+                self.logger.error(f"{self.classname}: Subscription failed - code:{error_code} message:{error_message}")
+                # Note: We don't mark the channel as subscribed since it failed
 
     def _is_connection_open(self) -> bool:
         """Check if WebSocket connection is open - handle both websockets and custom connections."""
@@ -359,7 +374,8 @@ class ParadexWebsocketClient:
         """Receive and process a single WebSocket message."""
         if self.ws is None:
             raise RuntimeError("WebSocket connection must be established before receiving messages")
-        response = await asyncio.wait_for(self.ws.recv(), timeout=self.ws_timeout)
+        async with self._recv_lock:
+            response = await asyncio.wait_for(self.ws.recv(), timeout=self.ws_timeout)
         if isinstance(response, bytes):
             response = response.decode("utf-8")
         await self._process_message(response)
@@ -417,6 +433,20 @@ class ParadexWebsocketClient:
                 else:
                     self.logger.warning(f"{self.classname}: WebSocket RPC message validation failed")
 
+                # Validate payload against AsyncAPI models
+                if "params" in message and "data" in message:
+                    channel_name = message["params"].get("channel", "")
+                    payload_data = message["data"]
+                    validated_payload = validate_ws_payload(channel_name, payload_data)
+                    if validated_payload is not None:
+                        # Replace data with validated payload
+                        message["data"] = validated_payload.model_dump()
+                        self.logger.debug(f"{self.classname}: WebSocket payload validated for channel {channel_name}")
+                    else:
+                        self.logger.warning(
+                            f"{self.classname}: WebSocket payload validation failed for channel {channel_name}"
+                        )
+
             if ws_channel is None:
                 self.logger.debug(f"{self.classname}: unregistered channel:{message_channel} message:{message}")
             elif message_channel in self.callbacks:
@@ -440,7 +470,8 @@ class ParadexWebsocketClient:
 
         try:
             # Try to receive with a very short timeout to avoid blocking
-            response = await asyncio.wait_for(self.ws.recv(), timeout=0.001)
+            async with self._recv_lock:
+                response = await asyncio.wait_for(self.ws.recv(), timeout=0.001)
         except asyncio.TimeoutError:
             return False
         except Exception:
@@ -510,7 +541,24 @@ class ParadexWebsocketClient:
         # no params were required.
         if channel == ParadexWebsocketChannel.MARKETS_SUMMARY and not params:
             params = {"market": "ALL"}
-        channel_name = channel.value.format(**params)
+
+        # Handle ORDER_BOOK channel with optional parameters
+        if channel == ParadexWebsocketChannel.ORDER_BOOK:
+            # Set defaults for required parameters
+            format_params = params.copy()
+            if "feed_type" not in format_params:
+                format_params["feed_type"] = "snapshot"
+            if "refresh_rate" not in format_params:
+                format_params["refresh_rate"] = "100ms"
+            # price_tick is optional - if not provided or empty, omit it
+            if "price_tick" not in format_params or not format_params["price_tick"]:
+                format_params.pop("price_tick", None)
+                base_format = "order_book.{market}.{feed_type}@15@{refresh_rate}"
+            else:
+                base_format = "order_book.{market}.{feed_type}@15@{refresh_rate}@{price_tick}"
+            channel_name = base_format.format(**format_params)
+        else:
+            channel_name = channel.value.format(**params)
         self.callbacks[channel_name] = callback
         self.logger.info(f"{self.classname}: Subscribe channel:{channel_name} params:{params} callback:{callback}")
         await self._subscribe_to_channel_by_name(channel_name)
