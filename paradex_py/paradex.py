@@ -10,6 +10,7 @@ from paradex_py.utils import raise_value_error
 
 if TYPE_CHECKING:
     from paradex_py.api.http_client import HttpClient
+    from paradex_py.api.models import SystemConfig
     from paradex_py.api.protocols import (
         AuthProvider,
         RequestHook,
