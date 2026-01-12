@@ -171,6 +171,7 @@ class ParadexWebsocketClient:
         self.connector = connector
         self.auto_start_reader = auto_start_reader
         self._reader_task: asyncio.Task | None = None
+        self._is_closing: bool = False  # Flag to prevent reconnection during intentional closure
 
         # Lock to synchronize WebSocket recv() calls between background reader and manual pump_once
         self._recv_lock = asyncio.Lock()
@@ -287,6 +288,9 @@ class ParadexWebsocketClient:
 
     async def _close_connection(self):
         try:
+            # Set flag to prevent reconnection during intentional closure
+            self._is_closing = True
+
             # Cancel reader task if it exists
             if self._reader_task and not self._reader_task.done():
                 self._reader_task.cancel()
@@ -302,6 +306,9 @@ class ParadexWebsocketClient:
                 self.logger.info(f"{self.classname}: No connection to close")
         except Exception:
             self.logger.exception(f"{self.classname}: Error thrown when closing connection {traceback.format_exc()}")
+        finally:
+            # Reset flag after closing is complete
+            self._is_closing = False
 
     async def _reconnect(self):
         if self.disable_reconnect:
@@ -385,6 +392,12 @@ class ParadexWebsocketClient:
     async def _handle_message_receive_error(self, error: Exception) -> None:
         """Handle errors that occur while receiving messages."""
         if isinstance(error, (websockets.exceptions.ConnectionClosedError, websockets.exceptions.ConnectionClosedOK)):
+            # Don't reconnect if we're intentionally closing the connection
+            if self._is_closing:
+                self.logger.info(
+                    f"{self.classname}: Connection closed during intentional closure, skipping reconnection"
+                )
+                return
             self.logger.exception(f"{self.classname}: Connection closed traceback:{traceback.format_exc()}")
             await self._reconnect()
         elif isinstance(error, asyncio.TimeoutError):
