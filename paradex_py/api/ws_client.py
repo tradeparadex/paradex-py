@@ -394,7 +394,9 @@ class ParadexWebsocketClient:
         if isinstance(error, (websockets.exceptions.ConnectionClosedError, websockets.exceptions.ConnectionClosedOK)):
             # Don't reconnect if we're intentionally closing the connection
             if self._is_closing:
-                self.logger.info(f"{self.classname}: Connection closed during intentional closure, skipping reconnection")
+                self.logger.info(
+                    f"{self.classname}: Connection closed during intentional closure, skipping reconnection"
+                )
                 return
             self.logger.exception(f"{self.classname}: Connection closed traceback:{traceback.format_exc()}")
             await self._reconnect()
