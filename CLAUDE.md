@@ -100,7 +100,7 @@ uv run python scripts/generate_models_simple.py
 ### Dependencies
 
 - **starknet-py**: Starknet integration
-- **web3/eth-account**: Ethereum account management
+- **eth-account**: Ethereum account management
 - **httpx**: HTTP client
 - **websockets**: WebSocket support
 - **pydantic**: Data validation and settings
