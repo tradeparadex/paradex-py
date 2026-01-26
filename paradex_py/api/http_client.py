@@ -6,6 +6,7 @@ import httpx
 
 from paradex_py.api.models import ApiErrorSchema
 from paradex_py.api.protocols import RequestHook, RetryStrategy
+from paradex_py.user_agent import get_user_agent
 from paradex_py.utils import raise_value_error
 
 
@@ -35,12 +36,20 @@ class HttpClient:
         """
         if http_client is not None:
             self.client = http_client
+            # Only set headers if not already set in custom client
+            if "Content-Type" not in self.client.headers:
+                self.client.headers.update({"Content-Type": "application/json"})
+            if "User-Agent" not in self.client.headers:
+                self.client.headers.update({"User-Agent": get_user_agent()})
         else:
             self.client = httpx.Client()
-
-        # Only set default headers if they're not already set
-        if "Content-Type" not in self.client.headers:
-            self.client.headers.update({"Content-Type": "application/json"})
+            # Always set our headers for default client (overriding httpx defaults)
+            self.client.headers.update(
+                {
+                    "Content-Type": "application/json",
+                    "User-Agent": get_user_agent(),
+                }
+            )
 
         self.default_timeout = default_timeout
         self.retry_strategy = retry_strategy

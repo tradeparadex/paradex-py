@@ -15,6 +15,7 @@ from websockets import ClientConnection, State
 from paradex_py.account.account import ParadexAccount
 from paradex_py.constants import WS_TIMEOUT
 from paradex_py.environment import Environment
+from paradex_py.user_agent import get_user_agent
 
 # Optional typed message models
 try:
@@ -223,7 +224,7 @@ class ParadexWebsocketClient:
 
         try:
             self.subscribed_channels = {}
-            extra_headers = {}
+            extra_headers = {"User-Agent": get_user_agent()}
             if self.account:
                 extra_headers.update({"Authorization": f"Bearer {self.account.jwt_token}"})
 

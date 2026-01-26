@@ -20,6 +20,8 @@ class TestHttpClient:
         """Test that HttpClient initializes with httpx.Client."""
         assert isinstance(self.http_client.client, httpx.Client)
         assert self.http_client.client.headers["Content-Type"] == "application/json"
+        assert "User-Agent" in self.http_client.client.headers
+        assert self.http_client.client.headers["User-Agent"].startswith("paradex-py/")
 
     @patch("httpx.Client.request")
     def test_request_success(self, mock_request):
@@ -207,3 +209,23 @@ class TestHttpClient:
                 mock_request.assert_called_with(
                     method=method_string, url="https://api.example.com/test", params=None, json=None, headers=None
                 )
+
+    def test_user_agent_set_on_initialization(self):
+        """Test that User-Agent header is set during initialization."""
+        http_client = HttpClient()
+
+        assert "User-Agent" in http_client.client.headers
+        user_agent = http_client.client.headers["User-Agent"]
+        assert user_agent.startswith("paradex-py/")
+        assert "Python" in user_agent
+
+    def test_user_agent_preserved_with_custom_client(self):
+        """Test that User-Agent is not overridden if custom client already has it."""
+        custom_client = httpx.Client()
+        custom_user_agent = "custom-agent/1.0"
+        custom_client.headers["User-Agent"] = custom_user_agent
+
+        http_client = HttpClient(http_client=custom_client)
+
+        # Custom User-Agent should be preserved
+        assert http_client.client.headers["User-Agent"] == custom_user_agent
