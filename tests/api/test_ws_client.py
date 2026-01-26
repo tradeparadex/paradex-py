@@ -40,8 +40,36 @@ async def test_connect_authenticated(
         connected = await ws_client.connect()
 
         assert connected is True
-        expected_headers = {"Authorization": f"Bearer {mock_account.jwt_token}"}
-        mock_connect.assert_called_once_with(ws_client.api_url, additional_headers=expected_headers)
+        # Verify both User-Agent and Authorization headers are included
+        call_args = mock_connect.call_args
+        headers = call_args.kwargs["additional_headers"]
+        assert "User-Agent" in headers
+        assert headers["User-Agent"].startswith("paradex-py/")
+        assert "Authorization" in headers
+        assert headers["Authorization"] == f"Bearer {mock_account.jwt_token}"
 
         mock_send_auth.assert_called_once_with(mock_ws_connection, mock_account.jwt_token)
         assert ws_client.ws.state == State.OPEN
+
+
+@pytest.mark.asyncio
+@patch("websockets.connect", new_callable=AsyncMock)
+async def test_connect_unauthenticated_with_user_agent(mock_connect: AsyncMock) -> None:
+    """Tests that User-Agent is included even in unauthenticated connections."""
+    mock_ws_connection = AsyncMock()
+    mock_ws_connection.state = State.OPEN
+    mock_connect.return_value = mock_ws_connection
+
+    # Create ws_client without account (unauthenticated)
+    ws_client = ParadexWebsocketClient(env=TESTNET)
+
+    connected = await ws_client.connect()
+
+    assert connected is True
+    # Verify User-Agent is still included even without authentication
+    call_args = mock_connect.call_args
+    headers = call_args.kwargs["additional_headers"]
+    assert "User-Agent" in headers
+    assert headers["User-Agent"].startswith("paradex-py/")
+    # No Authorization header in unauthenticated mode
+    assert "Authorization" not in headers
