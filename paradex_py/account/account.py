@@ -265,7 +265,7 @@ class ParadexAccount:
 
             # Prepare and send transaction
             func_name = "transferOnL2"
-            prepared_invoke = await self.starknet.prepare_invoke(calls=calls)
+            prepared_invoke = await self.starknet.prepare_invoke(calls=calls, auto_estimate=True)
             await self.starknet.process_invoke(account_contract, need_multisig, prepared_invoke, func_name)
 
         except Exception as e:
