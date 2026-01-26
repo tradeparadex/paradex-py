@@ -127,6 +127,7 @@ class ParadexWebsocketClient:
         validate_messages (bool, optional): Enable pydantic message validation. Requires pydantic. Defaults to False.
         ping_interval (float, optional): WebSocket ping interval in seconds. None uses websockets default. Defaults to None.
         disable_reconnect (bool, optional): Disable automatic reconnection for tight simulation control. Defaults to False.
+        enable_compression (bool, optional): Enable WebSocket per-message compression (RFC 7692). Defaults to True.
 
     Examples:
         >>> from paradex_py import Paradex
@@ -160,6 +161,7 @@ class ParadexWebsocketClient:
         validate_messages: bool = False,
         ping_interval: float | None = None,
         disable_reconnect: bool = False,
+        enable_compression: bool = True,
     ):
         self.env = env
         self.api_url = ws_url_override or f"wss://ws.api.{self.env}.paradex.trade/v1"
@@ -185,6 +187,9 @@ class ParadexWebsocketClient:
         self.ping_interval = ping_interval
         self.disable_reconnect = disable_reconnect
 
+        # Compression control
+        self.enable_compression = enable_compression
+
         # Optional message validation
         self.validate_messages = validate_messages and TYPED_MODELS_AVAILABLE
 
@@ -205,6 +210,18 @@ class ParadexWebsocketClient:
 
     def init_account(self, account: ParadexAccount) -> None:
         self.account = account
+
+    def _build_connect_kwargs(self, extra_headers: dict[str, str]) -> dict[str, Any]:
+        """Build connection kwargs for websockets.connect()."""
+        connect_kwargs: dict[str, Any] = {
+            "additional_headers": extra_headers,
+        }
+        if self.ping_interval is not None:
+            connect_kwargs["ping_interval"] = int(self.ping_interval)
+        # Configure compression
+        if not self.enable_compression:
+            connect_kwargs["compression"] = None
+        return connect_kwargs
 
     async def connect(self) -> bool:
         """Connect to Paradex WebSocket API.
@@ -232,12 +249,7 @@ class ParadexWebsocketClient:
             if self.connector is not None:
                 self.ws = await self.connector(self.api_url, extra_headers)
             else:
-                connect_kwargs: dict[str, Any] = {
-                    "additional_headers": extra_headers,
-                }
-                if self.ping_interval is not None:
-                    connect_kwargs["ping_interval"] = int(self.ping_interval)
-
+                connect_kwargs = self._build_connect_kwargs(extra_headers)
                 self.ws = await websockets.connect(self.api_url, **connect_kwargs)
 
             self.logger.info(f"{self.classname}: Connected to {self.api_url}")

@@ -35,6 +35,7 @@ class Paradex:
         default_timeout (float, optional): Default HTTP request timeout in seconds. Defaults to None.
         retry_strategy (RetryStrategy, optional): Custom retry/backoff strategy. Defaults to None.
         request_hook (RequestHook, optional): Hook for request/response observability. Defaults to None.
+        enable_http_compression (bool, optional): Enable HTTP compression (gzip, deflate, br). Defaults to True.
         auto_start_ws_reader (bool, optional): Whether to automatically start WS message reader. Defaults to True.
         ws_connector (WebSocketConnector, optional): Custom WebSocket connector for injection. Defaults to None.
         ws_url_override (str, optional): Custom WebSocket URL override. Defaults to None.
@@ -43,6 +44,7 @@ class Paradex:
         validate_ws_messages (bool, optional): Enable JSON-RPC message validation. Defaults to False.
         ping_interval (float, optional): WebSocket ping interval in seconds. Defaults to None.
         disable_reconnect (bool, optional): Disable automatic WebSocket reconnection. Defaults to False.
+        enable_ws_compression (bool, optional): Enable WebSocket per-message compression (RFC 7692). Defaults to True.
         auto_auth (bool, optional): Whether to automatically handle onboarding/auth. Defaults to True.
         auth_provider (AuthProvider, optional): Custom authentication provider. Defaults to None.
         signer (Signer, optional): Custom order signer for submit/modify/batch operations. Defaults to None.
@@ -75,6 +77,7 @@ class Paradex:
         default_timeout: float | None = None,
         retry_strategy: "RetryStrategy | None" = None,
         request_hook: "RequestHook | None" = None,
+        enable_http_compression: bool = True,
         # WebSocket client injection and configuration
         auto_start_ws_reader: bool = True,
         ws_connector: "WebSocketConnector | None" = None,
@@ -84,6 +87,7 @@ class Paradex:
         validate_ws_messages: bool = False,
         ping_interval: float | None = None,
         disable_reconnect: bool = False,
+        enable_ws_compression: bool = True,
         # Auth configuration
         auto_auth: bool = True,
         auth_provider: "AuthProvider | None" = None,
@@ -99,13 +103,14 @@ class Paradex:
         self.logger: logging.Logger = logger or logging.getLogger(__name__)
 
         # Create enhanced HTTP client if needed
-        if http_client is None and (default_timeout or retry_strategy or request_hook):
+        if http_client is None and (default_timeout or retry_strategy or request_hook or not enable_http_compression):
             from paradex_py.api.http_client import HttpClient
 
             http_client = HttpClient(
                 default_timeout=default_timeout,
                 retry_strategy=retry_strategy,
                 request_hook=request_hook,
+                enable_compression=enable_http_compression,
             )
 
         # Load api client and system config with all optional injection
@@ -132,6 +137,7 @@ class Paradex:
             validate_messages=validate_ws_messages,
             ping_interval=ping_interval,
             disable_reconnect=disable_reconnect,
+            enable_compression=enable_ws_compression,
         )
 
         if config is not None:

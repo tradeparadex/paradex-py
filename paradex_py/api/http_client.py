@@ -24,6 +24,7 @@ class HttpClient:
         default_timeout: float | None = None,
         retry_strategy: RetryStrategy | None = None,
         request_hook: RequestHook | None = None,
+        enable_compression: bool = True,
     ):
         """Initialize HTTP client with optional injection.
 
@@ -33,6 +34,7 @@ class HttpClient:
             default_timeout: Default timeout for requests in seconds.
             retry_strategy: Strategy for retrying failed requests.
             request_hook: Hook for request/response observability.
+            enable_compression: Enable HTTP compression (gzip, deflate, br). Defaults to True.
         """
         if http_client is not None:
             self.client = http_client
@@ -41,15 +43,21 @@ class HttpClient:
                 self.client.headers.update({"Content-Type": "application/json"})
             if "User-Agent" not in self.client.headers:
                 self.client.headers.update({"User-Agent": get_user_agent()})
+            # Disable compression if requested (for injected clients)
+            # Override any existing Accept-Encoding header to disable compression
+            if not enable_compression:
+                self.client.headers.update({"Accept-Encoding": "identity"})
         else:
             self.client = httpx.Client()
             # Always set our headers for default client (overriding httpx defaults)
-            self.client.headers.update(
-                {
-                    "Content-Type": "application/json",
-                    "User-Agent": get_user_agent(),
-                }
-            )
+            headers = {
+                "Content-Type": "application/json",
+                "User-Agent": get_user_agent(),
+            }
+            # Disable compression if requested
+            if not enable_compression:
+                headers["Accept-Encoding"] = "identity"
+            self.client.headers.update(headers)
 
         self.default_timeout = default_timeout
         self.retry_strategy = retry_strategy
