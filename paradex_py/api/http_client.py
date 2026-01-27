@@ -97,11 +97,15 @@ class HttpClient:
             error = ApiErrorSchema().loads(res.text)
             return raise_value_error(str(error))
 
+        # Handle 204 No Content - expected to have no body
+        if res.status_code == 204:
+            return None
+
         # Return successful response
         try:
             return res.json()
         except ValueError:
-            self.logger.warning(f"HttpClient: No response request({url}, {http_method.value})")
+            self.logger.warning(f"HttpClient: Invalid JSON in response request({url}, {http_method.value})")
             return None
 
     def request(
