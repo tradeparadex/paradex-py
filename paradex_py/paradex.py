@@ -125,6 +125,7 @@ class Paradex:
         )
 
         # Initialize WebSocket client with all optional injection
+        # Pass api_client reference to enable automatic JWT token refresh
         self.ws_client = ParadexWebsocketClient(
             env=env,
             logger=logger,
@@ -138,6 +139,7 @@ class Paradex:
             ping_interval=ping_interval,
             disable_reconnect=disable_reconnect,
             enable_compression=enable_ws_compression,
+            api_client=self.api_client,
         )
 
         if config is not None:
