@@ -1,3 +1,4 @@
+import logging
 import time
 from enum import Enum
 from typing import Any
@@ -25,6 +26,7 @@ class HttpClient:
         retry_strategy: RetryStrategy | None = None,
         request_hook: RequestHook | None = None,
         enable_compression: bool = True,
+        logger: logging.Logger | None = None,
     ):
         """Initialize HTTP client with optional injection.
 
@@ -35,6 +37,7 @@ class HttpClient:
             retry_strategy: Strategy for retrying failed requests.
             request_hook: Hook for request/response observability.
             enable_compression: Enable HTTP compression (gzip, deflate, br). Defaults to True.
+            logger: Optional logger instance for logging.
         """
         if http_client is not None:
             self.client = http_client
@@ -62,6 +65,7 @@ class HttpClient:
         self.default_timeout = default_timeout
         self.retry_strategy = retry_strategy
         self.request_hook = request_hook
+        self.logger = logger if logger is not None else logging.getLogger(__name__)
 
     def _prepare_request_kwargs(
         self,
@@ -97,7 +101,7 @@ class HttpClient:
         try:
             return res.json()
         except ValueError:
-            print(f"HttpClient: No response request({url}, {http_method.value})")
+            self.logger.warning(f"HttpClient: No response request({url}, {http_method.value})")
             return None
 
     def request(

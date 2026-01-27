@@ -72,7 +72,7 @@ class TestHttpClient:
             self.http_client.request(url="https://api.example.com/test", http_method=HttpMethod.POST)
 
     @patch("httpx.Client.request")
-    def test_request_json_parse_error(self, mock_request, capsys):
+    def test_request_json_parse_error(self, mock_request, caplog):
         """Test handling of JSON parse errors."""
         mock_response = Mock()
         mock_response.status_code = 200
@@ -82,8 +82,7 @@ class TestHttpClient:
         result = self.http_client.request(url="https://api.example.com/test", http_method=HttpMethod.GET)
 
         assert result is None
-        captured = capsys.readouterr()
-        assert "HttpClient: No response request(https://api.example.com/test, GET)" in captured.out
+        assert "HttpClient: No response request(https://api.example.com/test, GET)" in caplog.text
 
     def test_get_method(self):
         """Test GET method wrapper."""
