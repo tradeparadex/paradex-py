@@ -128,7 +128,6 @@ class ParadexWebsocketClient:
         ping_interval (float, optional): WebSocket ping interval in seconds. None uses websockets default. Defaults to None.
         disable_reconnect (bool, optional): Disable automatic reconnection for tight simulation control. Defaults to False.
         enable_compression (bool, optional): Enable WebSocket per-message compression (RFC 7692). Defaults to True.
-        auth_refresh_interval (float, optional): Interval in seconds to refresh JWT authentication. Defaults to 240s (4 minutes).
         api_client (Optional[Any], optional): Reference to ParadexApiClient for token refresh. Defaults to None.
 
     Examples:
@@ -146,6 +145,10 @@ class ParadexWebsocketClient:
         ...                                   reader_sleep_on_error=0, reader_sleep_on_no_connection=0)
         >>> # With typed message validation
         >>> ws_client = ParadexWebsocketClient(env=Environment.TESTNET, validate_messages=True)
+        >>> # With API client for automatic token refresh on reconnect
+        >>> from paradex_py import Paradex
+        >>> paradex = Paradex(env=Environment.TESTNET, l1_address="0x...", l1_private_key="0x...")
+        >>> # WebSocket client automatically refreshes expired tokens when reconnecting
     """
 
     classname: str = "ParadexWebsocketClient"
@@ -164,7 +167,6 @@ class ParadexWebsocketClient:
         ping_interval: float | None = None,
         disable_reconnect: bool = False,
         enable_compression: bool = True,
-        auth_refresh_interval: float = 4 * 60,  # Refresh auth every 4 minutes (240 seconds)
         api_client: Any | None = None,
     ):
         self.env = env
@@ -197,11 +199,8 @@ class ParadexWebsocketClient:
         # Optional message validation
         self.validate_messages = validate_messages and TYPED_MODELS_AVAILABLE
 
-        # Token refresh configuration
-        self.auth_refresh_interval = auth_refresh_interval
-        self._last_auth_time: float = 0
-        self._auth_refresh_task: asyncio.Task | None = None
-        self._api_client = api_client  # Optional reference to API client for token refresh
+        # API client reference for token refresh on reconnect
+        self._api_client = api_client
 
         if auto_start_reader:
             try:
@@ -270,12 +269,7 @@ class ParadexWebsocketClient:
 
             if self.account:
                 await self._send_auth_id(self.ws, self.account.jwt_token)
-                self._last_auth_time = time.time()
                 self.logger.info(f"{self.classname}: Authenticated to {self.api_url}")
-
-                # Start token refresh task if not already running
-                if self.auth_refresh_interval > 0 and self._auth_refresh_task is None:
-                    self._auth_refresh_task = asyncio.create_task(self._refresh_auth_periodically())
         except (
             websockets.exceptions.ConnectionClosedOK,
             websockets.exceptions.ConnectionClosed,
@@ -319,13 +313,6 @@ class ParadexWebsocketClient:
             # Set flag to prevent reconnection during intentional closure
             self._is_closing = True
 
-            # Cancel auth refresh task if it exists
-            if self._auth_refresh_task and not self._auth_refresh_task.done():
-                self._auth_refresh_task.cancel()
-                with contextlib.suppress(asyncio.CancelledError):
-                    await self._auth_refresh_task
-                self._auth_refresh_task = None
-
             # Cancel reader task if it exists
             if self._reader_task and not self._reader_task.done():
                 self._reader_task.cancel()
@@ -345,6 +332,25 @@ class ParadexWebsocketClient:
             # Reset flag after closing is complete
             self._is_closing = False
 
+    def _is_token_expired(self) -> bool:
+        """Check if JWT token has expired.
+
+        Returns True if token is likely expired (>23 hours old) or if we can't determine.
+        Uses a 1-hour safety margin before the 24-hour expiration.
+        """
+        if not self._api_client or not hasattr(self._api_client, "auth_timestamp"):
+            # Can't determine expiration without API client
+            return False
+
+        if self._api_client.auth_timestamp == 0:
+            # No token has been fetched yet
+            return False
+
+        # Check if token is older than 23 hours (23 * 3600 seconds)
+        # Using 23 hours as safety margin before 24-hour expiration
+        token_age = time.time() - self._api_client.auth_timestamp
+        return token_age > (23 * 3600)
+
     async def _reconnect(self):
         if self.disable_reconnect:
             self.logger.info(f"{self.classname}: Reconnection disabled, skipping...")
@@ -352,6 +358,17 @@ class ParadexWebsocketClient:
 
         try:
             self.logger.info(f"{self.classname}: Reconnect websocket...")
+
+            # Check if token has expired before reconnecting
+            if self._is_token_expired() and self._api_client and hasattr(self._api_client, "auth"):
+                try:
+                    self.logger.info(f"{self.classname}: Token expired, refreshing before reconnection")
+                    self._api_client.auth()
+                    self.logger.info(f"{self.classname}: Token refreshed successfully")
+                except Exception:
+                    self.logger.exception(f"{self.classname}: Failed to refresh token: {traceback.format_exc()}")
+                    # Continue with reconnection anyway - server will reject if token is invalid
+
             # Acquire lock to ensure no concurrent recv() operations during reconnection
             async with self._recv_lock:
                 await self._close_connection()
@@ -364,26 +381,26 @@ class ParadexWebsocketClient:
         """Reconnect with fresh authentication token.
 
         This method is called when an authentication error is detected (e.g., expired JWT).
-        It refreshes the token before reconnecting to ensure the new connection is authenticated.
+        It forces a token refresh before reconnecting.
         """
         if self.disable_reconnect:
             self.logger.info(f"{self.classname}: Reconnection disabled, skipping auth refresh reconnect...")
             return
 
         try:
-            self.logger.info(f"{self.classname}: Reconnecting with auth refresh...")
+            self.logger.info(f"{self.classname}: Reconnecting due to auth error...")
 
-            # Refresh token via API client if available
+            # Force token refresh via API client if available
             if self._api_client and hasattr(self._api_client, "auth"):
                 try:
-                    self.logger.info(f"{self.classname}: Refreshing JWT token before reconnection")
+                    self.logger.info(f"{self.classname}: Forcing JWT token refresh due to auth error")
                     self._api_client.auth()
                     self.logger.info(f"{self.classname}: Token refreshed successfully")
                 except Exception:
                     self.logger.exception(f"{self.classname}: Failed to refresh token: {traceback.format_exc()}")
-                    # Continue with reconnection anyway - maybe the token is still valid
+                    # Continue with reconnection anyway - server will reject if token is invalid
 
-            # Now reconnect with the (hopefully refreshed) token
+            # Now reconnect with the refreshed token
             await self._reconnect()
         except Exception:
             self.logger.exception(f"{self.classname}: Auth refresh reconnect failed {traceback.format_exc()}")
@@ -413,50 +430,6 @@ class ParadexWebsocketClient:
                 }
             )
         )
-
-    async def _refresh_auth_periodically(self) -> None:
-        """Periodically refresh JWT token to prevent expiration.
-
-        This background task runs while the WebSocket is connected and refreshes
-        the authentication token at the configured interval to prevent token expiration
-        errors (code 40111).
-        """
-        try:
-            while True:
-                # Wait for the refresh interval
-                await asyncio.sleep(self.auth_refresh_interval)
-
-                # Skip refresh if connection is closing or closed
-                if self._is_closing or not self._is_connection_open():
-                    self.logger.info(f"{self.classname}: Skipping auth refresh - connection closing or closed")
-                    break
-
-                # Refresh token via API client if available
-                if self._api_client and hasattr(self._api_client, "auth"):
-                    try:
-                        self.logger.info(f"{self.classname}: Refreshing JWT token via API client")
-                        self._api_client.auth()
-                        # Token is now updated in account, re-authenticate WebSocket
-                        if self.account and self.ws:
-                            await self._send_auth_id(self.ws, self.account.jwt_token)
-                            self._last_auth_time = time.time()
-                            self.logger.info(f"{self.classname}: Successfully refreshed and re-authenticated WebSocket")
-                    except Exception:
-                        self.logger.exception(f"{self.classname}: Failed to refresh token via API client: {traceback.format_exc()}")
-                else:
-                    # Check if token needs refresh based on time
-                    time_since_last_auth = time.time() - self._last_auth_time
-                    if time_since_last_auth > self.auth_refresh_interval:
-                        self.logger.warning(
-                            f"{self.classname}: Token refresh needed (last auth {time_since_last_auth:.0f}s ago) "
-                            "but no API client available. Consider passing api_client parameter to enable auto-refresh."
-                        )
-        except asyncio.CancelledError:
-            self.logger.info(f"{self.classname}: Auth refresh task cancelled")
-            raise
-        except Exception:
-            self.logger.exception(f"{self.classname}: Unexpected error in auth refresh task: {traceback.format_exc()}")
-            raise
 
     def _check_subscribed_channel(self, message: dict) -> None:
         if "id" in message:

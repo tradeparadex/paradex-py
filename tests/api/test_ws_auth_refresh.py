@@ -5,7 +5,6 @@ websocket keepalive ping timeouts due to expired bearer tokens.
 """
 
 import asyncio
-import json
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -39,56 +38,121 @@ class TestWebSocketAuthRefresh:
     """Test WebSocket JWT token refresh functionality."""
 
     @pytest.mark.asyncio
-    async def test_auth_refresh_task_starts_on_connect(self):
-        """Test that auth refresh task starts automatically when connected with an account."""
+    async def test_token_not_expired_check(self):
+        """Test that _is_token_expired returns False for fresh tokens."""
         mock_connection = MockWebSocketConnection()
 
         async def mock_connector(url: str, headers: dict):
             return mock_connection
 
-        # Create mock API client
+        # Create mock API client with recent auth timestamp
+        mock_api_client = MagicMock()
+        mock_api_client.auth = MagicMock()
+        mock_api_client.auth_timestamp = time.time()  # Fresh token
+
+        mock_account = MagicMock()
+        mock_account.jwt_token = "test_token"
+
+        client = ParadexWebsocketClient(
+            env=TESTNET,
+            auto_start_reader=False,
+            connector=mock_connector,
+            api_client=mock_api_client,
+        )
+        client.init_account(mock_account)
+
+        try:
+            await client.connect()
+
+            # Token should not be expired
+            assert not client._is_token_expired()
+        finally:
+            await client.close()
+
+    @pytest.mark.asyncio
+    async def test_token_expired_check(self):
+        """Test that _is_token_expired returns True for old tokens."""
+        mock_connection = MockWebSocketConnection()
+
+        async def mock_connector(url: str, headers: dict):
+            return mock_connection
+
+        # Create mock API client with old auth timestamp (24 hours ago)
+        mock_api_client = MagicMock()
+        mock_api_client.auth = MagicMock()
+        mock_api_client.auth_timestamp = time.time() - (24 * 3600)  # 24 hours old
+
+        mock_account = MagicMock()
+        mock_account.jwt_token = "test_token"
+
+        client = ParadexWebsocketClient(
+            env=TESTNET,
+            auto_start_reader=False,
+            connector=mock_connector,
+            api_client=mock_api_client,
+        )
+        client.init_account(mock_account)
+
+        try:
+            await client.connect()
+
+            # Token should be expired
+            assert client._is_token_expired()
+        finally:
+            await client.close()
+
+    @pytest.mark.asyncio
+    async def test_token_expiry_threshold(self):
+        """Test that token expiry uses 23-hour threshold for safety margin."""
+        mock_connection = MockWebSocketConnection()
+
+        async def mock_connector(url: str, headers: dict):
+            return mock_connection
+
         mock_api_client = MagicMock()
         mock_api_client.auth = MagicMock()
 
-        # Create mock account with JWT token
         mock_account = MagicMock()
         mock_account.jwt_token = "test_token"
 
-        # Create WebSocket client with short refresh interval for testing
         client = ParadexWebsocketClient(
             env=TESTNET,
             auto_start_reader=False,
             connector=mock_connector,
-            auth_refresh_interval=0.1,  # Refresh every 100ms for testing
             api_client=mock_api_client,
         )
         client.init_account(mock_account)
 
         try:
-            # Connect
             await client.connect()
 
-            # Verify auth refresh task was created
-            assert client._auth_refresh_task is not None
-            assert not client._auth_refresh_task.done()
+            # Test 22 hours old - should NOT be expired
+            mock_api_client.auth_timestamp = time.time() - (22 * 3600)
+            assert not client._is_token_expired()
 
-            # Wait a bit to let the refresh task attempt to run
-            await asyncio.sleep(0.2)
+            # Test 23 hours old - should be expired (at threshold)
+            mock_api_client.auth_timestamp = time.time() - (23 * 3600)
+            assert client._is_token_expired()
 
-            # Verify last_auth_time was set
-            assert client._last_auth_time > 0
+            # Test 24 hours old - should be expired
+            mock_api_client.auth_timestamp = time.time() - (24 * 3600)
+            assert client._is_token_expired()
         finally:
             await client.close()
 
     @pytest.mark.asyncio
-    async def test_auth_refresh_task_cancelled_on_close(self):
-        """Test that auth refresh task is cancelled when connection is closed."""
+    async def test_reconnect_refreshes_expired_token(self):
+        """Test that reconnect refreshes token if it has expired."""
         mock_connection = MockWebSocketConnection()
 
         async def mock_connector(url: str, headers: dict):
-            return mock_connection
+            return MockWebSocketConnection()
 
+        # Create mock API client with expired token
         mock_api_client = MagicMock()
+        mock_api_client.auth = MagicMock()
+        mock_api_client.auth_timestamp = time.time() - (24 * 3600)  # Expired
+
         mock_account = MagicMock()
         mock_account.jwt_token = "test_token"
 
@@ -96,29 +160,33 @@ class TestWebSocketAuthRefresh:
             env=TESTNET,
             auto_start_reader=False,
             connector=mock_connector,
-            auth_refresh_interval=10.0,  # Long interval
             api_client=mock_api_client,
+            disable_reconnect=False,
         )
         client.init_account(mock_account)
 
-        # Connect
         await client.connect()
-        assert client._auth_refresh_task is not None
 
-        # Close
+        # Call reconnect
+        await client._reconnect()
+
+        # Verify that api_client.auth() was called to refresh token
+        mock_api_client.auth.assert_called()
+
         await client.close()
 
-        # Verify task was cancelled
-        assert client._auth_refresh_task.done()
-        assert client._auth_refresh_task.cancelled()
-
     @pytest.mark.asyncio
-    async def test_auth_refresh_disabled_when_interval_zero(self):
-        """Test that auth refresh is disabled when interval is set to 0."""
+    async def test_reconnect_skips_refresh_for_fresh_token(self):
+        """Test that reconnect skips token refresh if token is still fresh."""
         mock_connection = MockWebSocketConnection()
 
         async def mock_connector(url: str, headers: dict):
-            return mock_connection
+            return MockWebSocketConnection()
+
+        # Create mock API client with fresh token
+        mock_api_client = MagicMock()
+        mock_api_client.auth = MagicMock()
+        mock_api_client.auth_timestamp = time.time()  # Fresh token
 
         mock_account = MagicMock()
         mock_account.jwt_token = "test_token"
@@ -127,18 +195,23 @@ class TestWebSocketAuthRefresh:
             env=TESTNET,
             auto_start_reader=False,
             connector=mock_connector,
-            auth_refresh_interval=0,  # Disabled
+            api_client=mock_api_client,
+            disable_reconnect=False,
         )
         client.init_account(mock_account)
 
-        try:
-            # Connect
-            await client.connect()
+        await client.connect()
 
-            # Verify auth refresh task was NOT created
-            assert client._auth_refresh_task is None
-        finally:
-            await client.close()
+        # Reset call count
+        mock_api_client.auth.reset_mock()
+
+        # Call reconnect
+        await client._reconnect()
+
+        # Verify that api_client.auth() was NOT called (token still fresh)
+        mock_api_client.auth.assert_not_called()
+
+        await client.close()
 
     @pytest.mark.asyncio
     async def test_auth_error_triggers_reconnect_with_refresh(self):
@@ -150,6 +223,7 @@ class TestWebSocketAuthRefresh:
 
         mock_api_client = MagicMock()
         mock_api_client.auth = MagicMock()
+        mock_api_client.auth_timestamp = time.time()
 
         mock_account = MagicMock()
         mock_account.jwt_token = "test_token"
@@ -185,15 +259,17 @@ class TestWebSocketAuthRefresh:
         await client.close()
 
     @pytest.mark.asyncio
-    async def test_reconnect_with_auth_refresh_calls_api_client(self):
-        """Test that _reconnect_with_auth_refresh calls api_client.auth() before reconnecting."""
+    async def test_reconnect_with_auth_refresh_forces_refresh(self):
+        """Test that _reconnect_with_auth_refresh always forces token refresh."""
         mock_connection = MockWebSocketConnection()
 
         async def mock_connector(url: str, headers: dict):
-            return mock_connection
+            return MockWebSocketConnection()
 
+        # Create mock API client with fresh token
         mock_api_client = MagicMock()
         mock_api_client.auth = MagicMock()
+        mock_api_client.auth_timestamp = time.time()  # Fresh token
 
         mock_account = MagicMock()
         mock_account.jwt_token = "test_token"
@@ -209,22 +285,49 @@ class TestWebSocketAuthRefresh:
 
         await client.connect()
 
-        # Mock the _reconnect method to avoid actual reconnection
-        with patch.object(client, "_reconnect", new_callable=AsyncMock) as mock_reconnect:
-            # Call reconnect with auth refresh
-            await client._reconnect_with_auth_refresh()
+        # Reset call count
+        mock_api_client.auth.reset_mock()
 
-            # Verify that api_client.auth() was called
-            mock_api_client.auth.assert_called_once()
+        # Call reconnect with auth refresh (this should force refresh even if token is fresh)
+        await client._reconnect_with_auth_refresh()
 
-            # Verify that _reconnect was called after auth refresh
-            mock_reconnect.assert_called_once()
+        # Verify that api_client.auth() was called to force refresh
+        mock_api_client.auth.assert_called()
 
         await client.close()
 
     @pytest.mark.asyncio
-    async def test_auth_refresh_without_api_client_logs_warning(self):
-        """Test that auth refresh without api_client logs a warning."""
+    async def test_reconnect_without_api_client(self):
+        """Test that reconnect works without api_client (no token refresh)."""
+        mock_connection = MockWebSocketConnection()
+
+        async def mock_connector(url: str, headers: dict):
+            return MockWebSocketConnection()
+
+        mock_account = MagicMock()
+        mock_account.jwt_token = "test_token"
+
+        # Create client WITHOUT api_client
+        client = ParadexWebsocketClient(
+            env=TESTNET,
+            auto_start_reader=False,
+            connector=mock_connector,
+            api_client=None,
+            disable_reconnect=False,
+        )
+        client.init_account(mock_account)
+
+        await client.connect()
+
+        # Call reconnect - should not raise exception
+        await client._reconnect()
+
+        # Test passes if no exception is raised
+        await client.close()
+
+    @pytest.mark.asyncio
+    async def test_is_token_expired_without_api_client(self):
+        """Test that _is_token_expired returns False when no api_client is available."""
         mock_connection = MockWebSocketConnection()
 
         async def mock_connector(url: str, headers: dict):
@@ -238,32 +341,21 @@ class TestWebSocketAuthRefresh:
             env=TESTNET,
             auto_start_reader=False,
             connector=mock_connector,
-            auth_refresh_interval=0.1,  # Short interval for testing
-            api_client=None,  # No API client
+            api_client=None,
         )
         client.init_account(mock_account)
 
         try:
             await client.connect()
 
-            # Wait for auth refresh to attempt
-            await asyncio.sleep(0.2)
-
-            # The test passes if no exception is raised
-            # The warning should be logged (not tested here)
+            # Should return False (can't determine expiration)
+            assert not client._is_token_expired()
         finally:
             await client.close()
 
-    def test_auth_refresh_interval_default_value(self):
-        """Test that auth_refresh_interval has correct default value."""
-        client = ParadexWebsocketClient(env=TESTNET, auto_start_reader=False)
-
-        # Should default to 4 minutes (240 seconds)
-        assert client.auth_refresh_interval == 240
-
     @pytest.mark.asyncio
-    async def test_auth_refresh_updates_last_auth_time(self):
-        """Test that successful auth refresh updates _last_auth_time."""
+    async def test_is_token_expired_with_zero_timestamp(self):
+        """Test that _is_token_expired returns False when auth_timestamp is 0."""
         mock_connection = MockWebSocketConnection()
 
         async def mock_connector(url: str, headers: dict):
@@ -271,27 +363,23 @@ class TestWebSocketAuthRefresh:
 
         mock_api_client = MagicMock()
         mock_api_client.auth = MagicMock()
+        mock_api_client.auth_timestamp = 0  # No token fetched yet
 
         mock_account = MagicMock()
-        mock_account.jwt_token = "test_token_old"
+        mock_account.jwt_token = "test_token"
 
         client = ParadexWebsocketClient(
             env=TESTNET,
             auto_start_reader=False,
             connector=mock_connector,
-            auth_refresh_interval=0.1,
             api_client=mock_api_client,
         )
         client.init_account(mock_account)
 
         try:
             await client.connect()
-            initial_auth_time = client._last_auth_time
 
-            # Wait for auth refresh
-            await asyncio.sleep(0.2)
-
-            # Last auth time should be updated
-            assert client._last_auth_time >= initial_auth_time
+            # Should return False (no token has been fetched)
+            assert not client._is_token_expired()
         finally:
             await client.close()
