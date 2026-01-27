@@ -5,6 +5,8 @@ websocket keepalive ping timeouts due to expired bearer tokens.
 """
 
 import asyncio
+import base64
+import json
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -13,6 +15,29 @@ from websockets import State
 
 from paradex_py.api.ws_client import ParadexWebsocketClient
 from paradex_py.environment import TESTNET
+
+
+def create_jwt_token(exp_timestamp: float) -> str:
+    """Create a mock JWT token with specified expiration timestamp.
+
+    Args:
+        exp_timestamp: Unix timestamp when token expires
+
+    Returns:
+        JWT token string (not cryptographically valid, but decodable)
+    """
+    # Create header
+    header = {"alg": "HS256", "typ": "JWT"}
+    header_encoded = base64.urlsafe_b64encode(json.dumps(header).encode()).decode().rstrip("=")
+
+    # Create payload with expiration
+    payload = {"exp": int(exp_timestamp), "sub": "test_user"}
+    payload_encoded = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode().rstrip("=")
+
+    # Create dummy signature (not validated in our code)
+    signature = "dummy_signature"
+
+    return f"{header_encoded}.{payload_encoded}.{signature}"
 
 
 class MockWebSocketConnection:
@@ -45,13 +70,15 @@ class TestWebSocketAuthRefresh:
         async def mock_connector(url: str, headers: dict):
             return mock_connection
 
-        # Create mock API client with recent auth timestamp
+        # Create token that expires in 1 hour
+        exp_time = time.time() + 3600
+        fresh_token = create_jwt_token(exp_time)
+
         mock_api_client = MagicMock()
         mock_api_client.auth = MagicMock()
-        mock_api_client.auth_timestamp = time.time()  # Fresh token
 
         mock_account = MagicMock()
-        mock_account.jwt_token = "test_token"
+        mock_account.jwt_token = fresh_token
 
         client = ParadexWebsocketClient(
             env=TESTNET,
@@ -71,19 +98,21 @@ class TestWebSocketAuthRefresh:
 
     @pytest.mark.asyncio
     async def test_token_expired_check(self):
-        """Test that _is_token_expired returns True for old tokens."""
+        """Test that _is_token_expired returns True for expired tokens."""
         mock_connection = MockWebSocketConnection()
 
         async def mock_connector(url: str, headers: dict):
             return mock_connection
 
-        # Create mock API client with old auth timestamp (24 hours ago)
+        # Create token that expired 1 hour ago
+        exp_time = time.time() - 3600
+        expired_token = create_jwt_token(exp_time)
+
         mock_api_client = MagicMock()
         mock_api_client.auth = MagicMock()
-        mock_api_client.auth_timestamp = time.time() - (24 * 3600)  # 24 hours old
 
         mock_account = MagicMock()
-        mock_account.jwt_token = "test_token"
+        mock_account.jwt_token = expired_token
 
         client = ParadexWebsocketClient(
             env=TESTNET,
@@ -103,7 +132,7 @@ class TestWebSocketAuthRefresh:
 
     @pytest.mark.asyncio
     async def test_token_expiry_threshold(self):
-        """Test that token expiry uses 23-hour threshold for safety margin."""
+        """Test that token expiry uses 60-second safety margin."""
         mock_connection = MockWebSocketConnection()
 
         async def mock_connector(url: str, headers: dict):
@@ -112,30 +141,33 @@ class TestWebSocketAuthRefresh:
         mock_api_client = MagicMock()
         mock_api_client.auth = MagicMock()
 
-        mock_account = MagicMock()
-        mock_account.jwt_token = "test_token"
-
         client = ParadexWebsocketClient(
             env=TESTNET,
             auto_start_reader=False,
             connector=mock_connector,
             api_client=mock_api_client,
         )
-        client.init_account(mock_account)
 
         try:
+            # Test token expiring in 120 seconds - should NOT be expired
+            exp_time = time.time() + 120
+            token_120s = create_jwt_token(exp_time)
+            mock_account = MagicMock()
+            mock_account.jwt_token = token_120s
+            client.init_account(mock_account)
             await client.connect()
-
-            # Test 22 hours old - should NOT be expired
-            mock_api_client.auth_timestamp = time.time() - (22 * 3600)
             assert not client._is_token_expired()
 
-            # Test 23 hours old - should be expired (at threshold)
-            mock_api_client.auth_timestamp = time.time() - (23 * 3600)
+            # Test token expiring in 30 seconds - should be expired (within 60s safety margin)
+            exp_time = time.time() + 30
+            token_30s = create_jwt_token(exp_time)
+            mock_account.jwt_token = token_30s
             assert client._is_token_expired()
 
-            # Test 24 hours old - should be expired
-            mock_api_client.auth_timestamp = time.time() - (24 * 3600)
+            # Test token expiring in exactly 60 seconds - should be expired (at threshold)
+            exp_time = time.time() + 60
+            token_60s = create_jwt_token(exp_time)
+            mock_account.jwt_token = token_60s
             assert client._is_token_expired()
         finally:
             await client.close()
@@ -148,13 +180,15 @@ class TestWebSocketAuthRefresh:
         async def mock_connector(url: str, headers: dict):
             return MockWebSocketConnection()
 
-        # Create mock API client with expired token
+        # Create expired token
+        exp_time = time.time() - 3600
+        expired_token = create_jwt_token(exp_time)
+
         mock_api_client = MagicMock()
         mock_api_client.auth = MagicMock()
-        mock_api_client.auth_timestamp = time.time() - (24 * 3600)  # Expired
 
         mock_account = MagicMock()
-        mock_account.jwt_token = "test_token"
+        mock_account.jwt_token = expired_token
 
         client = ParadexWebsocketClient(
             env=TESTNET,
@@ -183,13 +217,15 @@ class TestWebSocketAuthRefresh:
         async def mock_connector(url: str, headers: dict):
             return MockWebSocketConnection()
 
-        # Create mock API client with fresh token
+        # Create fresh token that expires in 1 hour
+        exp_time = time.time() + 3600
+        fresh_token = create_jwt_token(exp_time)
+
         mock_api_client = MagicMock()
         mock_api_client.auth = MagicMock()
-        mock_api_client.auth_timestamp = time.time()  # Fresh token
 
         mock_account = MagicMock()
-        mock_account.jwt_token = "test_token"
+        mock_account.jwt_token = fresh_token
 
         client = ParadexWebsocketClient(
             env=TESTNET,
@@ -266,13 +302,15 @@ class TestWebSocketAuthRefresh:
         async def mock_connector(url: str, headers: dict):
             return MockWebSocketConnection()
 
-        # Create mock API client with fresh token
+        # Create fresh token that expires in 1 hour
+        exp_time = time.time() + 3600
+        fresh_token = create_jwt_token(exp_time)
+
         mock_api_client = MagicMock()
         mock_api_client.auth = MagicMock()
-        mock_api_client.auth_timestamp = time.time()  # Fresh token
 
         mock_account = MagicMock()
-        mock_account.jwt_token = "test_token"
+        mock_account.jwt_token = fresh_token
 
         client = ParadexWebsocketClient(
             env=TESTNET,
@@ -354,8 +392,8 @@ class TestWebSocketAuthRefresh:
             await client.close()
 
     @pytest.mark.asyncio
-    async def test_is_token_expired_with_zero_timestamp(self):
-        """Test that _is_token_expired returns False when auth_timestamp is 0."""
+    async def test_is_token_expired_with_invalid_token(self):
+        """Test that _is_token_expired returns False for invalid/malformed tokens."""
         mock_connection = MockWebSocketConnection()
 
         async def mock_connector(url: str, headers: dict):
@@ -363,10 +401,9 @@ class TestWebSocketAuthRefresh:
 
         mock_api_client = MagicMock()
         mock_api_client.auth = MagicMock()
-        mock_api_client.auth_timestamp = 0  # No token fetched yet
 
         mock_account = MagicMock()
-        mock_account.jwt_token = "test_token"
+        mock_account.jwt_token = "invalid_token_format"  # Malformed token
 
         client = ParadexWebsocketClient(
             env=TESTNET,
@@ -379,7 +416,76 @@ class TestWebSocketAuthRefresh:
         try:
             await client.connect()
 
-            # Should return False (no token has been fetched)
+            # Should return False (can't decode token)
+            assert not client._is_token_expired()
+        finally:
+            await client.close()
+
+    @pytest.mark.asyncio
+    async def test_decode_jwt_payload(self):
+        """Test JWT token payload decoding."""
+        mock_connection = MockWebSocketConnection()
+
+        async def mock_connector(url: str, headers: dict):
+            return mock_connection
+
+        client = ParadexWebsocketClient(
+            env=TESTNET,
+            auto_start_reader=False,
+            connector=mock_connector,
+        )
+
+        # Test valid token
+        exp_time = time.time() + 3600
+        valid_token = create_jwt_token(exp_time)
+        payload = client._decode_jwt_payload(valid_token)
+        assert payload is not None
+        assert "exp" in payload
+        assert payload["exp"] == int(exp_time)
+
+        # Test invalid token
+        invalid_payload = client._decode_jwt_payload("not.a.valid.token")
+        assert invalid_payload is None
+
+        # Test token with only 2 parts
+        invalid_payload = client._decode_jwt_payload("header.payload")
+        assert invalid_payload is None
+
+        await client.close()
+
+    @pytest.mark.asyncio
+    async def test_token_without_exp_claim(self):
+        """Test that tokens without exp claim are treated as not expired."""
+        mock_connection = MockWebSocketConnection()
+
+        async def mock_connector(url: str, headers: dict):
+            return mock_connection
+
+        # Create token without exp claim
+        header = {"alg": "HS256", "typ": "JWT"}
+        header_encoded = base64.urlsafe_b64encode(json.dumps(header).encode()).decode().rstrip("=")
+        payload = {"sub": "test_user"}  # No exp claim
+        payload_encoded = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode().rstrip("=")
+        token_no_exp = f"{header_encoded}.{payload_encoded}.dummy_signature"
+
+        mock_api_client = MagicMock()
+        mock_api_client.auth = MagicMock()
+
+        mock_account = MagicMock()
+        mock_account.jwt_token = token_no_exp
+
+        client = ParadexWebsocketClient(
+            env=TESTNET,
+            auto_start_reader=False,
+            connector=mock_connector,
+            api_client=mock_api_client,
+        )
+        client.init_account(mock_account)
+
+        try:
+            await client.connect()
+
+            # Should return False (can't determine expiration)
             assert not client._is_token_expired()
         finally:
             await client.close()

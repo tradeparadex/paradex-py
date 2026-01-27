@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import contextlib
 import json
 import logging
@@ -332,24 +333,54 @@ class ParadexWebsocketClient:
             # Reset flag after closing is complete
             self._is_closing = False
 
-    def _is_token_expired(self) -> bool:
-        """Check if JWT token has expired.
+    def _decode_jwt_payload(self, token: str) -> dict[str, Any] | None:
+        """Decode JWT token payload without signature verification.
 
-        Returns True if token is likely expired (>23 hours old) or if we can't determine.
-        Uses a 1-hour safety margin before the 24-hour expiration.
+        Args:
+            token: JWT token string
+
+        Returns:
+            Decoded payload dict, or None if decoding fails
         """
-        if not self._api_client or not hasattr(self._api_client, "auth_timestamp"):
-            # Can't determine expiration without API client
+        try:
+            # JWT format: header.payload.signature
+            parts = token.split(".")
+            if len(parts) != 3:
+                return None
+
+            # Decode the payload (second part)
+            payload = parts[1]
+            # Add padding if needed for base64 decoding
+            padding = 4 - len(payload) % 4
+            if padding != 4:
+                payload += "=" * padding
+
+            # Decode from base64url to JSON
+            decoded_bytes = base64.urlsafe_b64decode(payload)
+            return json.loads(decoded_bytes)
+        except Exception as e:
+            self.logger.warning(f"{self.classname}: Failed to decode JWT token: {e}")
+            return None
+
+    def _is_token_expired(self) -> bool:
+        """Check if JWT token has expired by decoding the token and checking exp claim.
+
+        Returns True if token has expired or will expire soon (within 60 seconds safety margin).
+        Returns False if we can't determine expiration.
+        """
+        if not self.account or not self.account.jwt_token:
+            # No token available
             return False
 
-        if self._api_client.auth_timestamp == 0:
-            # No token has been fetched yet
+        payload = self._decode_jwt_payload(self.account.jwt_token)
+        if not payload or "exp" not in payload:
+            # Can't determine expiration from token
             return False
 
-        # Check if token is older than 23 hours (23 * 3600 seconds)
-        # Using 23 hours as safety margin before 24-hour expiration
-        token_age = time.time() - self._api_client.auth_timestamp
-        return token_age > (23 * 3600)
+        # Check if token has expired or will expire within 60 seconds (safety margin)
+        exp_time = payload["exp"]
+        current_time = time.time()
+        return current_time >= (exp_time - 60)
 
     async def _reconnect(self):
         if self.disable_reconnect:
