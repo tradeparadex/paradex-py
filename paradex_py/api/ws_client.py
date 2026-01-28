@@ -181,6 +181,7 @@ class ParadexWebsocketClient:
         self.connector = connector
         self.auto_start_reader = auto_start_reader
         self._reader_task: asyncio.Task | None = None
+        self._pending_reconnect_task: asyncio.Task | None = None  # Track pending reconnect tasks
         self._is_closing: bool = False  # Flag to prevent reconnection during intentional closure
 
         # Lock to synchronize WebSocket recv() calls between background reader and manual pump_once
@@ -467,7 +468,7 @@ class ParadexWebsocketClient:
                     self.logger.error(f"{self.classname}: Authentication error detected - JWT token may be expired")
                     # Trigger reconnection with fresh token
                     if not self.disable_reconnect:
-                        asyncio.create_task(self._reconnect_with_auth_refresh())
+                        self._pending_reconnect_task = asyncio.create_task(self._reconnect_with_auth_refresh())
 
                 # Note: We don't mark the channel as subscribed since it failed
 
@@ -487,7 +488,7 @@ class ParadexWebsocketClient:
     async def _receive_and_process_message(self) -> None:
         """Receive and process a single WebSocket message."""
         if self.ws is None:
-            raise RuntimeError("WebSocket connection must be established before receiving messages")
+            raise RuntimeError("WebSocket not connected")
         async with self._recv_lock:
             response = await asyncio.wait_for(self.ws.recv(), timeout=self.ws_timeout)
         if isinstance(response, bytes):
@@ -496,7 +497,7 @@ class ParadexWebsocketClient:
 
     async def _handle_message_receive_error(self, error: Exception) -> None:
         """Handle errors that occur while receiving messages."""
-        if isinstance(error, (websockets.exceptions.ConnectionClosedError, websockets.exceptions.ConnectionClosedOK)):
+        if isinstance(error, websockets.exceptions.ConnectionClosedError | websockets.exceptions.ConnectionClosedOK):
             # Don't reconnect if we're intentionally closing the connection
             if self._is_closing:
                 self.logger.info(
