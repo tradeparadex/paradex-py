@@ -175,7 +175,7 @@ class TestWebSocketAuthRefresh:
     @pytest.mark.asyncio
     async def test_reconnect_refreshes_expired_token(self):
         """Test that reconnect refreshes token if it has expired."""
-        mock_connection = MockWebSocketConnection()
+        MockWebSocketConnection()
 
         async def mock_connector(url: str, headers: dict):
             return MockWebSocketConnection()
@@ -212,7 +212,7 @@ class TestWebSocketAuthRefresh:
     @pytest.mark.asyncio
     async def test_reconnect_skips_refresh_for_fresh_token(self):
         """Test that reconnect skips token refresh if token is still fresh."""
-        mock_connection = MockWebSocketConnection()
+        MockWebSocketConnection()
 
         async def mock_connector(url: str, headers: dict):
             return MockWebSocketConnection()
@@ -262,7 +262,7 @@ class TestWebSocketAuthRefresh:
         mock_api_client.auth_timestamp = time.time()
 
         mock_account = MagicMock()
-        mock_account.jwt_token = "test_token"
+        mock_account.jwt_token = "test_token"  # noqa: S105
 
         client = ParadexWebsocketClient(
             env=TESTNET,
@@ -297,7 +297,7 @@ class TestWebSocketAuthRefresh:
     @pytest.mark.asyncio
     async def test_reconnect_with_auth_refresh_forces_refresh(self):
         """Test that _reconnect_with_auth_refresh always forces token refresh."""
-        mock_connection = MockWebSocketConnection()
+        MockWebSocketConnection()
 
         async def mock_connector(url: str, headers: dict):
             return MockWebSocketConnection()
@@ -337,13 +337,13 @@ class TestWebSocketAuthRefresh:
     @pytest.mark.asyncio
     async def test_reconnect_without_api_client(self):
         """Test that reconnect works without api_client (no token refresh)."""
-        mock_connection = MockWebSocketConnection()
+        MockWebSocketConnection()
 
         async def mock_connector(url: str, headers: dict):
             return MockWebSocketConnection()
 
         mock_account = MagicMock()
-        mock_account.jwt_token = "test_token"
+        mock_account.jwt_token = "test_token"  # noqa: S105
 
         # Create client WITHOUT api_client
         client = ParadexWebsocketClient(
@@ -372,7 +372,7 @@ class TestWebSocketAuthRefresh:
             return mock_connection
 
         mock_account = MagicMock()
-        mock_account.jwt_token = "test_token"
+        mock_account.jwt_token = "test_token"  # noqa: S105
 
         # Create client WITHOUT api_client
         client = ParadexWebsocketClient(
@@ -403,7 +403,7 @@ class TestWebSocketAuthRefresh:
         mock_api_client.auth = MagicMock()
 
         mock_account = MagicMock()
-        mock_account.jwt_token = "invalid_token_format"  # Malformed token
+        mock_account.jwt_token = "invalid_token_format"  # noqa: S105
 
         client = ParadexWebsocketClient(
             env=TESTNET,

@@ -357,10 +357,11 @@ class ParadexWebsocketClient:
 
             # Decode from base64url to JSON
             decoded_bytes = base64.urlsafe_b64decode(payload)
-            return json.loads(decoded_bytes)
         except Exception as e:
             self.logger.warning(f"{self.classname}: Failed to decode JWT token: {e}")
             return None
+        else:
+            return json.loads(decoded_bytes)
 
     def _is_token_expired(self) -> bool:
         """Check if JWT token has expired by decoding the token and checking exp claim.
