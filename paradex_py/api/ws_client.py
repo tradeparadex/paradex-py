@@ -1,5 +1,4 @@
 import asyncio
-import base64
 import contextlib
 import json
 import logging
@@ -9,6 +8,7 @@ from collections.abc import Callable
 from enum import Enum
 from typing import Any, Protocol
 
+import jwt
 import websockets
 from pydantic import BaseModel
 from websockets import ClientConnection, State
@@ -343,25 +343,10 @@ class ParadexWebsocketClient:
             Decoded payload dict, or None if decoding fails
         """
         try:
-            # JWT format: header.payload.signature
-            parts = token.split(".")
-            if len(parts) != 3:
-                return None
-
-            # Decode the payload (second part)
-            payload = parts[1]
-            # Add padding if needed for base64 decoding
-            padding = 4 - len(payload) % 4
-            if padding != 4:
-                payload += "=" * padding
-
-            # Decode from base64url to JSON
-            decoded_bytes = base64.urlsafe_b64decode(payload)
-        except Exception as e:
+            return jwt.decode(token, options={"verify_signature": False})
+        except jwt.exceptions.DecodeError as e:
             self.logger.warning(f"{self.classname}: Failed to decode JWT token: {e}")
             return None
-        else:
-            return json.loads(decoded_bytes)
 
     def _is_token_expired(self) -> bool:
         """Check if JWT token has expired by decoding the token and checking exp claim.
