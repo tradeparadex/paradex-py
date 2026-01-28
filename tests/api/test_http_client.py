@@ -72,8 +72,21 @@ class TestHttpClient:
             self.http_client.request(url="https://api.example.com/test", http_method=HttpMethod.POST)
 
     @patch("httpx.Client.request")
-    def test_request_json_parse_error(self, mock_request, capsys):
-        """Test handling of JSON parse errors."""
+    def test_request_204_no_content(self, mock_request, caplog):
+        """Test handling of 204 No Content responses (no warning expected)."""
+        mock_response = Mock()
+        mock_response.status_code = 204
+        mock_request.return_value = mock_response
+
+        result = self.http_client.request(url="https://api.example.com/test", http_method=HttpMethod.DELETE)
+
+        assert result is None
+        # No warning should be logged for 204 No Content
+        assert "Invalid JSON" not in caplog.text
+
+    @patch("httpx.Client.request")
+    def test_request_json_parse_error(self, mock_request, caplog):
+        """Test handling of JSON parse errors (warning expected)."""
         mock_response = Mock()
         mock_response.status_code = 200
         mock_response.json.side_effect = ValueError("Invalid JSON")
@@ -82,8 +95,7 @@ class TestHttpClient:
         result = self.http_client.request(url="https://api.example.com/test", http_method=HttpMethod.GET)
 
         assert result is None
-        captured = capsys.readouterr()
-        assert "HttpClient: No response request(https://api.example.com/test, GET)" in captured.out
+        assert "HttpClient: Invalid JSON in response request(https://api.example.com/test, GET)" in caplog.text
 
     def test_get_method(self):
         """Test GET method wrapper."""
