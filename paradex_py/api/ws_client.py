@@ -8,6 +8,7 @@ from collections.abc import Callable
 from enum import Enum
 from typing import Any, Protocol
 
+import jwt
 import websockets
 from pydantic import BaseModel
 from websockets import ClientConnection, State
@@ -128,6 +129,7 @@ class ParadexWebsocketClient:
         ping_interval (float, optional): WebSocket ping interval in seconds. None uses websockets default. Defaults to None.
         disable_reconnect (bool, optional): Disable automatic reconnection for tight simulation control. Defaults to False.
         enable_compression (bool, optional): Enable WebSocket per-message compression (RFC 7692). Defaults to True.
+        api_client (Optional[Any], optional): Reference to ParadexApiClient for token refresh. Defaults to None.
 
     Examples:
         >>> from paradex_py import Paradex
@@ -144,6 +146,10 @@ class ParadexWebsocketClient:
         ...                                   reader_sleep_on_error=0, reader_sleep_on_no_connection=0)
         >>> # With typed message validation
         >>> ws_client = ParadexWebsocketClient(env=Environment.TESTNET, validate_messages=True)
+        >>> # With API client for automatic token refresh on reconnect
+        >>> from paradex_py import Paradex
+        >>> paradex = Paradex(env=Environment.TESTNET, l1_address="0x...", l1_private_key="0x...")
+        >>> # WebSocket client automatically refreshes expired tokens when reconnecting
     """
 
     classname: str = "ParadexWebsocketClient"
@@ -162,6 +168,7 @@ class ParadexWebsocketClient:
         ping_interval: float | None = None,
         disable_reconnect: bool = False,
         enable_compression: bool = True,
+        api_client: Any | None = None,
     ):
         self.env = env
         self.api_url = ws_url_override or f"wss://ws.api.{self.env}.paradex.trade/v1"
@@ -174,6 +181,7 @@ class ParadexWebsocketClient:
         self.connector = connector
         self.auto_start_reader = auto_start_reader
         self._reader_task: asyncio.Task | None = None
+        self._pending_reconnect_task: asyncio.Task | None = None  # Track pending reconnect tasks
         self._is_closing: bool = False  # Flag to prevent reconnection during intentional closure
 
         # Lock to synchronize WebSocket recv() calls between background reader and manual pump_once
@@ -192,6 +200,9 @@ class ParadexWebsocketClient:
 
         # Optional message validation
         self.validate_messages = validate_messages and TYPED_MODELS_AVAILABLE
+
+        # API client reference for token refresh on reconnect
+        self._api_client = api_client
 
         if auto_start_reader:
             try:
@@ -323,6 +334,41 @@ class ParadexWebsocketClient:
             # Reset flag after closing is complete
             self._is_closing = False
 
+    def _decode_jwt_payload(self, token: str) -> dict[str, Any] | None:
+        """Decode JWT token payload without signature verification.
+
+        Args:
+            token: JWT token string
+
+        Returns:
+            Decoded payload dict, or None if decoding fails
+        """
+        try:
+            return jwt.decode(token, options={"verify_signature": False})
+        except jwt.exceptions.DecodeError as e:
+            self.logger.warning(f"{self.classname}: Failed to decode JWT token: {e}")
+            return None
+
+    def _is_token_expired(self) -> bool:
+        """Check if JWT token has expired by decoding the token and checking exp claim.
+
+        Returns True if token has expired or will expire soon (within 60 seconds safety margin).
+        Returns False if we can't determine expiration.
+        """
+        if not self.account or not self.account.jwt_token:
+            # No token available
+            return False
+
+        payload = self._decode_jwt_payload(self.account.jwt_token)
+        if not payload or "exp" not in payload:
+            # Can't determine expiration from token
+            return False
+
+        # Check if token has expired or will expire within 60 seconds (safety margin)
+        exp_time = payload["exp"]
+        current_time = time.time()
+        return current_time >= (exp_time - 60)
+
     async def _reconnect(self):
         if self.disable_reconnect:
             self.logger.info(f"{self.classname}: Reconnection disabled, skipping...")
@@ -330,6 +376,17 @@ class ParadexWebsocketClient:
 
         try:
             self.logger.info(f"{self.classname}: Reconnect websocket...")
+
+            # Check if token has expired before reconnecting
+            if self._is_token_expired() and self._api_client and hasattr(self._api_client, "auth"):
+                try:
+                    self.logger.info(f"{self.classname}: Token expired, refreshing before reconnection")
+                    self._api_client.auth()
+                    self.logger.info(f"{self.classname}: Token refreshed successfully")
+                except Exception:
+                    self.logger.exception(f"{self.classname}: Failed to refresh token: {traceback.format_exc()}")
+                    # Continue with reconnection anyway - server will reject if token is invalid
+
             # Acquire lock to ensure no concurrent recv() operations during reconnection
             async with self._recv_lock:
                 await self._close_connection()
@@ -337,6 +394,34 @@ class ParadexWebsocketClient:
             await self._resubscribe()
         except Exception:
             self.logger.exception(f"{self.classname}: Reconnect failed {traceback.format_exc()}")
+
+    async def _reconnect_with_auth_refresh(self):
+        """Reconnect with fresh authentication token.
+
+        This method is called when an authentication error is detected (e.g., expired JWT).
+        It forces a token refresh before reconnecting.
+        """
+        if self.disable_reconnect:
+            self.logger.info(f"{self.classname}: Reconnection disabled, skipping auth refresh reconnect...")
+            return
+
+        try:
+            self.logger.info(f"{self.classname}: Reconnecting due to auth error...")
+
+            # Force token refresh via API client if available
+            if self._api_client and hasattr(self._api_client, "auth"):
+                try:
+                    self.logger.info(f"{self.classname}: Forcing JWT token refresh due to auth error")
+                    self._api_client.auth()
+                    self.logger.info(f"{self.classname}: Token refreshed successfully")
+                except Exception:
+                    self.logger.exception(f"{self.classname}: Failed to refresh token: {traceback.format_exc()}")
+                    # Continue with reconnection anyway - server will reject if token is invalid
+
+            # Now reconnect with the refreshed token
+            await self._reconnect()
+        except Exception:
+            self.logger.exception(f"{self.classname}: Auth refresh reconnect failed {traceback.format_exc()}")
 
     async def _resubscribe(self):
         if self.ws and self.ws.state == State.OPEN:
@@ -377,6 +462,14 @@ class ParadexWebsocketClient:
                 error_code = error_info.get("code", "unknown")
                 error_message = error_info.get("message", "unknown error")
                 self.logger.error(f"{self.classname}: Subscription failed - code:{error_code} message:{error_message}")
+
+                # Check for auth-related errors (invalid bearer token)
+                if error_code == 40111 or "bearer token" in str(error_message).lower():
+                    self.logger.error(f"{self.classname}: Authentication error detected - JWT token may be expired")
+                    # Trigger reconnection with fresh token
+                    if not self.disable_reconnect:
+                        self._pending_reconnect_task = asyncio.create_task(self._reconnect_with_auth_refresh())
+
                 # Note: We don't mark the channel as subscribed since it failed
 
     def _is_connection_open(self) -> bool:
@@ -395,7 +488,7 @@ class ParadexWebsocketClient:
     async def _receive_and_process_message(self) -> None:
         """Receive and process a single WebSocket message."""
         if self.ws is None:
-            raise RuntimeError("WebSocket connection must be established before receiving messages")
+            raise RuntimeError("WebSocket not connected")
         async with self._recv_lock:
             response = await asyncio.wait_for(self.ws.recv(), timeout=self.ws_timeout)
         if isinstance(response, bytes):
@@ -404,7 +497,7 @@ class ParadexWebsocketClient:
 
     async def _handle_message_receive_error(self, error: Exception) -> None:
         """Handle errors that occur while receiving messages."""
-        if isinstance(error, (websockets.exceptions.ConnectionClosedError, websockets.exceptions.ConnectionClosedOK)):
+        if isinstance(error, websockets.exceptions.ConnectionClosedError | websockets.exceptions.ConnectionClosedOK):
             # Don't reconnect if we're intentionally closing the connection
             if self._is_closing:
                 self.logger.info(
