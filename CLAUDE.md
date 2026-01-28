@@ -104,3 +104,7 @@ uv run python scripts/generate_models_simple.py
 - **httpx**: HTTP client
 - **websockets**: WebSocket support
 - **pydantic**: Data validation and settings
+
+## Git Commit Guidelines
+
+- Do not add Co-Authored-By trailers to commits
