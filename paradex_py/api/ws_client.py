@@ -568,15 +568,15 @@ class ParadexWebsocketClient:
                             f"{self.classname}: WebSocket payload validation failed for channel {channel_name}"
                         )
 
-            if ws_channel is None:
-                self.logger.debug(f"{self.classname}: unregistered channel:{message_channel} message:{message}")
-            elif message_channel in self.callbacks:
+            if message_channel in self.callbacks:
                 self.logger.debug(
                     f"{self.classname}: channel:{message_channel}"
                     f" callback:{self.callbacks[message_channel]}"
                     f" message:{message}"
                 )
                 await self.callbacks[message_channel](ws_channel, message)
+            elif ws_channel is None:
+                self.logger.debug(f"{self.classname}: unregistered channel:{message_channel} message:{message}")
             else:
                 self.logger.info(f"{self.classname}: Non-callback channel:{message_channel}")
 
