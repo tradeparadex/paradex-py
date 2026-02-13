@@ -20,6 +20,10 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
     """Class to interact with Paradex REST API.
         Initialized along with `Paradex` class.
 
+    After any REST call, rate limit info from the last response is available as
+    :attr:`last_rate_limit` (limit, remaining, reset, window from x-ratelimit-*
+    headers). Use it to back off before hitting 429 or to wait after one.
+
     Args:
         env (Environment): Environment
         logger (logging.Logger, optional): Logger. Defaults to None.

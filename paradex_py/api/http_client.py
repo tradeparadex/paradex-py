@@ -5,10 +5,31 @@ from typing import Any
 
 import httpx
 
-from paradex_py.api.models import ApiErrorSchema
+from paradex_py.api.models import ApiErrorSchema, RateLimitInfo
 from paradex_py.api.protocols import RequestHook, RetryStrategy
 from paradex_py.user_agent import get_user_agent
 from paradex_py.utils import raise_value_error
+
+def _parse_rate_limit(response: httpx.Response) -> RateLimitInfo:
+    """Parse x-ratelimit-* headers from response into RateLimitInfo."""
+    headers = response.headers
+    limit = remaining = reset = window = None
+    for name in ("x-ratelimit-limit", "x-ratelimit-remaining", "x-ratelimit-reset", "x-ratelimit-window"):
+        raw = headers.get(name)
+        if isinstance(raw, str):
+            try:
+                val = int(raw)
+                if name == "x-ratelimit-limit":
+                    limit = val
+                elif name == "x-ratelimit-remaining":
+                    remaining = val
+                elif name == "x-ratelimit-reset":
+                    reset = val
+                else:
+                    window = val
+            except ValueError:
+                pass
+    return RateLimitInfo(limit=limit, remaining=remaining, reset=reset, window=window)
 
 
 class HttpMethod(Enum):
@@ -66,6 +87,7 @@ class HttpClient:
         self.retry_strategy = retry_strategy
         self.request_hook = request_hook
         self.logger = logger if logger is not None else logging.getLogger(__name__)
+        self.last_rate_limit: RateLimitInfo | None = None  # Set after each request from x-ratelimit-* headers
 
     def _prepare_request_kwargs(
         self,
@@ -158,8 +180,9 @@ class HttpClient:
                     time.sleep(delay)
                     attempt += 1
                     continue
-                else:
-                    return self._handle_response(res, url, http_method)
+                # Expose rate-limit headers to caller (set before _handle_response so it's available on 429)
+                self.last_rate_limit = _parse_rate_limit(res)
+                return self._handle_response(res, url, http_method)
 
             except Exception as e:
                 # Check if we should retry on exception
