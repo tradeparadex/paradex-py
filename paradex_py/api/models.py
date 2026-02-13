@@ -60,6 +60,23 @@ class Auth:
     jwt_token: str
 
 
+@dataclass
+class RateLimitInfo:
+    """Rate limit info parsed from response headers (x-ratelimit-*).
+
+    All fields are None when the server does not send the header.
+    - limit: Max requests allowed in the window.
+    - remaining: Requests left in the current window.
+    - reset: Unix timestamp (seconds) when the current window resets.
+    - window: Window duration in seconds (e.g. 1 = per-second limit).
+    """
+
+    limit: int | None
+    remaining: int | None
+    reset: int | None
+    window: int | None
+
+
 ApiErrorSchema = marshmallow_dataclass.class_schema(ApiError)
 SystemConfigSchema = marshmallow_dataclass.class_schema(SystemConfig)
 AuthSchema = marshmallow_dataclass.class_schema(Auth)
