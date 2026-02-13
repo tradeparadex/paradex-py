@@ -352,9 +352,7 @@ class TestRateLimitInfo:
         client.request(url="https://api.example.com/test", http_method=HttpMethod.GET)
 
         assert client.last_rate_limit is not None
-        assert client.last_rate_limit == RateLimitInfo(
-            limit=None, remaining=None, reset=None, window=None
-        )
+        assert client.last_rate_limit == RateLimitInfo(limit=None, remaining=None, reset=None, window=None)
 
     @patch("httpx.Client.request")
     def test_last_rate_limit_overwritten_by_next_request(self, mock_request):

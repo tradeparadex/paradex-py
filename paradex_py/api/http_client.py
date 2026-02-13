@@ -10,6 +10,7 @@ from paradex_py.api.protocols import RequestHook, RetryStrategy
 from paradex_py.user_agent import get_user_agent
 from paradex_py.utils import raise_value_error
 
+
 def _parse_rate_limit(response: httpx.Response) -> RateLimitInfo:
     """Parse x-ratelimit-* headers from response into RateLimitInfo."""
     headers = response.headers
@@ -180,10 +181,6 @@ class HttpClient:
                     time.sleep(delay)
                     attempt += 1
                     continue
-                # Expose rate-limit headers to caller (set before _handle_response so it's available on 429)
-                self.last_rate_limit = _parse_rate_limit(res)
-                return self._handle_response(res, url, http_method)
-
             except Exception as e:
                 # Check if we should retry on exception
                 if self.retry_strategy and self.retry_strategy.should_retry(attempt, None, e):
@@ -194,6 +191,10 @@ class HttpClient:
                 else:
                     # Re-raise if no more retries
                     raise
+            else:
+                # Expose rate-limit headers to caller (set before _handle_response so it's available on 429)
+                self.last_rate_limit = _parse_rate_limit(res)
+                return self._handle_response(res, url, http_method)
 
     def _redact_headers(self, headers: dict[str, Any]) -> dict[str, Any]:
         """Redact sensitive information from headers for logging."""
