@@ -5,6 +5,8 @@ This module exports all the protocols that define injection points
 for custom implementations in simulation, testing, and production environments.
 """
 
+import random
+import time
 from typing import Any, Protocol
 
 import httpx
@@ -90,11 +92,12 @@ class RetryStrategy(Protocol):
         """
         ...
 
-    def get_delay(self, attempt: int) -> float:
+    def get_delay(self, attempt: int, response: httpx.Response | None = None) -> float:
         """Get delay before next retry attempt.
 
         Args:
             attempt: Current attempt number (0-based)
+            response: HTTP response if available (used to read x-ratelimit-reset on 429)
 
         Returns:
             Delay in seconds
@@ -176,7 +179,14 @@ class Signer(Protocol):
 
 # Default implementations
 class DefaultRetryStrategy:
-    """Default exponential backoff retry strategy."""
+    """Rate-limit-aware retry strategy with full-jitter exponential backoff.
+
+    On 429 responses with an ``x-ratelimit-reset`` header the delay waits until
+    the server's reset timestamp (plus a small random jitter to spread thundering
+    herd load).  For all other retriable responses (5xx, network errors, or 429
+    without a reset header) the delay uses full-jitter exponential backoff:
+    ``uniform(0, min(base * 2^attempt, max_delay))``.
+    """
 
     def __init__(self, max_retries: int = 3, base_delay: float = 1.0, max_delay: float = 60.0):
         self.max_retries = max_retries
@@ -197,9 +207,21 @@ class DefaultRetryStrategy:
 
         return False
 
-    def get_delay(self, attempt: int) -> float:
-        delay = self.base_delay * (2**attempt)
-        return min(delay, self.max_delay)
+    def get_delay(self, attempt: int, response: httpx.Response | None = None) -> float:
+        if response is not None and response.status_code == 429:
+            raw = response.headers.get("x-ratelimit-reset")
+            if raw is not None:
+                try:
+                    reset = int(raw)
+                except (ValueError, TypeError):
+                    pass
+                else:
+                    wait = reset - time.time()
+                    # Small jitter (0-100 ms) spreads thundering-herd retries
+                    return max(0.0, min(wait + random.uniform(0.0, 0.1), self.max_delay))
+        # Full-jitter exponential backoff (AWS recommended for thundering herd)
+        cap = min(self.base_delay * (2**attempt), self.max_delay)
+        return random.uniform(0.0, cap)
 
 
 class NoOpSigner:

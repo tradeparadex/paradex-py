@@ -13,24 +13,22 @@ from paradex_py.utils import raise_value_error
 
 def _parse_rate_limit(response: httpx.Response) -> RateLimitInfo:
     """Parse x-ratelimit-* headers from response into RateLimitInfo."""
-    headers = response.headers
-    limit = remaining = reset = window = None
-    for name in ("x-ratelimit-limit", "x-ratelimit-remaining", "x-ratelimit-reset", "x-ratelimit-window"):
-        raw = headers.get(name)
-        if isinstance(raw, str):
-            try:
-                val = int(raw)
-                if name == "x-ratelimit-limit":
-                    limit = val
-                elif name == "x-ratelimit-remaining":
-                    remaining = val
-                elif name == "x-ratelimit-reset":
-                    reset = val
-                else:
-                    window = val
-            except ValueError:
-                pass
-    return RateLimitInfo(limit=limit, remaining=remaining, reset=reset, window=window)
+
+    def get_int(name: str) -> int | None:
+        raw = response.headers.get(name)
+        if raw is None:
+            return None
+        try:
+            return int(raw)
+        except (ValueError, TypeError):
+            return None
+
+    return RateLimitInfo(
+        limit=get_int("x-ratelimit-limit"),
+        remaining=get_int("x-ratelimit-remaining"),
+        reset=get_int("x-ratelimit-reset"),
+        window=get_int("x-ratelimit-window"),
+    )
 
 
 class HttpMethod(Enum):
@@ -177,7 +175,7 @@ class HttpClient:
 
                 # Check if we should retry
                 if self.retry_strategy and self.retry_strategy.should_retry(attempt, res, None):
-                    delay = self.retry_strategy.get_delay(attempt)
+                    delay = self.retry_strategy.get_delay(attempt, res)
                     time.sleep(delay)
                     attempt += 1
                     continue

@@ -1,5 +1,6 @@
 """Tests for HTTP client enhancements: retry strategies, request hooks, timeouts, etc."""
 
+import time
 from unittest.mock import patch
 
 import httpx
@@ -25,7 +26,7 @@ class MockRetryStrategy:
             return True
         return exception and any(isinstance(exception, exc_type) for exc_type in self.should_retry_exceptions)
 
-    def get_delay(self, attempt):
+    def get_delay(self, attempt, response=None):
         delay = 0.01 * (2**attempt)  # Very short delays for testing
         self.delays.append(delay)
         return delay
@@ -266,15 +267,15 @@ class TestDefaultRetryStrategy:
         assert strategy.should_retry(0, None, Exception("Generic error")) is True
 
     def test_default_retry_strategy_exponential_backoff(self):
-        """Test default retry strategy exponential backoff."""
+        """Test default retry strategy uses full-jitter exponential backoff."""
         strategy = DefaultRetryStrategy(base_delay=1.0, max_delay=10.0)
 
-        # Should implement exponential backoff
-        assert strategy.get_delay(0) == 1.0  # 1.0 * 2^0
-        assert strategy.get_delay(1) == 2.0  # 1.0 * 2^1
-        assert strategy.get_delay(2) == 4.0  # 1.0 * 2^2
-        assert strategy.get_delay(3) == 8.0  # 1.0 * 2^3
-        assert strategy.get_delay(4) == 10.0  # Capped at max_delay
+        # Full jitter: uniform(0, min(base * 2^attempt, max_delay))
+        assert 0.0 <= strategy.get_delay(0) <= 1.0  # cap = 1.0
+        assert 0.0 <= strategy.get_delay(1) <= 2.0  # cap = 2.0
+        assert 0.0 <= strategy.get_delay(2) <= 4.0  # cap = 4.0
+        assert 0.0 <= strategy.get_delay(3) <= 8.0  # cap = 8.0
+        assert 0.0 <= strategy.get_delay(4) <= 10.0  # capped at max_delay
 
     def test_default_retry_strategy_custom_parameters(self):
         """Test default retry strategy with custom parameters."""
@@ -284,10 +285,72 @@ class TestDefaultRetryStrategy:
         assert strategy.base_delay == 0.5
         assert strategy.max_delay == 30.0
 
-        # Test delay calculation with custom base
-        assert strategy.get_delay(0) == 0.5
-        assert strategy.get_delay(1) == 1.0
-        assert strategy.get_delay(2) == 2.0
+        # Full-jitter ranges with custom base
+        assert 0.0 <= strategy.get_delay(0) <= 0.5
+        assert 0.0 <= strategy.get_delay(1) <= 1.0
+        assert 0.0 <= strategy.get_delay(2) <= 2.0
+
+    def test_default_retry_strategy_429_uses_reset_header(self):
+        """On 429 with x-ratelimit-reset, delay waits until reset + jitter."""
+        strategy = DefaultRetryStrategy(base_delay=1.0, max_delay=60.0)
+        fixed_now = 1_000_000.0
+        future_reset = int(fixed_now) + 5
+        response = httpx.Response(429, headers={"x-ratelimit-reset": str(future_reset)})
+
+        with patch("paradex_py.api.protocols.time.time", return_value=fixed_now):
+            delay = strategy.get_delay(0, response)
+
+        # Should be ~5s + 0-0.1s jitter, not exponential backoff (which would be 0-1s)
+        assert 5.0 <= delay <= 5.1
+
+    def test_default_retry_strategy_429_expired_reset_returns_jitter_only(self):
+        """On 429 with already-expired reset timestamp, delay is just the jitter."""
+        strategy = DefaultRetryStrategy(base_delay=1.0, max_delay=60.0)
+        fixed_now = 1_000_000.0
+        past_reset = int(fixed_now) - 10
+        response = httpx.Response(429, headers={"x-ratelimit-reset": str(past_reset)})
+
+        with patch("paradex_py.api.protocols.time.time", return_value=fixed_now):
+            delay = strategy.get_delay(0, response)
+
+        assert 0.0 <= delay <= 0.1
+
+    def test_default_retry_strategy_429_without_reset_header_uses_jitter_backoff(self):
+        """On 429 without reset header, falls back to full-jitter exponential backoff."""
+        strategy = DefaultRetryStrategy(base_delay=1.0, max_delay=60.0)
+        response = httpx.Response(429)
+
+        delay = strategy.get_delay(0, response)
+
+        assert 0.0 <= delay <= 1.0  # full jitter within cap for attempt 0
+
+    def test_default_retry_strategy_passes_response_to_get_delay(self):
+        """HttpClient passes the 429 response to get_delay so reset header is used."""
+        future_reset = int(time.time()) + 5
+        call_args = {}
+
+        class CapturingRetryStrategy:
+            def should_retry(self, attempt, response, exception):
+                return attempt < 1 and response is not None and response.status_code == 429
+
+            def get_delay(self, attempt, response=None):
+                call_args["response"] = response
+                return 0.0
+
+        client = HttpClient(retry_strategy=CapturingRetryStrategy())
+
+        with patch("httpx.Client.request") as mock_request:
+            mock_request.side_effect = [
+                httpx.Response(
+                    429,
+                    headers={"x-ratelimit-reset": str(future_reset)},
+                ),
+                httpx.Response(200, json={"ok": True}),
+            ]
+            client.request(url="https://example.com/test", http_method=HttpMethod.GET)
+
+        assert call_args.get("response") is not None
+        assert call_args["response"].status_code == 429
 
 
 class TestNoOpSigner:

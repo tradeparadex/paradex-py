@@ -10,7 +10,7 @@ from paradex_py.account.account import ParadexAccount
 from paradex_py.api.block_trades_api import BlockTradesMixin
 from paradex_py.api.http_client import HttpClient, HttpMethod
 from paradex_py.api.models import AccountSummary, AccountSummarySchema, AuthSchema, SystemConfig, SystemConfigSchema
-from paradex_py.api.protocols import AuthProvider, Signer
+from paradex_py.api.protocols import AuthProvider, DefaultRetryStrategy, RetryStrategy, Signer
 from paradex_py.common.order import Order
 from paradex_py.environment import Environment
 from paradex_py.utils import raise_value_error
@@ -50,9 +50,13 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         auto_auth: bool = True,
         auth_provider: AuthProvider | None = None,
         signer: Signer | None = None,
+        retry_strategy: RetryStrategy | None = None,
     ):
         self.env = env
         self.logger = logger or logging.getLogger(__name__)
+
+        # Default to rate-limit-aware retry strategy when not explicitly provided
+        effective_retry = retry_strategy if retry_strategy is not None else DefaultRetryStrategy()
 
         # Initialize parent with optional HTTP client injection
         if http_client is not None:
@@ -63,9 +67,9 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
             else:
                 # http_client is already an httpx.Client, cast to ensure type safety
                 underlying_client = cast(httpx.Client, http_client)
-            super().__init__(http_client=underlying_client)
+            super().__init__(http_client=underlying_client, retry_strategy=effective_retry)
         else:
-            super().__init__()
+            super().__init__(retry_strategy=effective_retry)
 
         # Use custom base URL if provided, otherwise use default
         if api_base_url is not None:
