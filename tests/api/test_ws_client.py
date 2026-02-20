@@ -3,7 +3,8 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from websockets import State
 
-from paradex_py import Paradex, ParadexAccount
+from paradex_py import Paradex
+from paradex_py.account.account import ParadexAccount
 from paradex_py.api.ws_client import ParadexWebsocketClient
 from paradex_py.environment import TESTNET
 

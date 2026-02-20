@@ -1,7 +1,10 @@
+import base64
 import contextlib
+import json
 import logging
 import re
 import time
+from collections.abc import Callable
 from typing import Any, cast
 
 import httpx
@@ -14,6 +17,21 @@ from paradex_py.api.protocols import AuthProvider, RetryStrategy, Signer
 from paradex_py.common.order import Order
 from paradex_py.environment import Environment
 from paradex_py.utils import raise_value_error
+
+_REFRESH_BUFFER_SECONDS = 30  # refresh 30s before JWT expiry to avoid race conditions
+
+
+def _jwt_exp(token: str) -> float | None:
+    """Decode JWT payload and return the ``exp`` claim, or ``None`` if unavailable."""
+    try:
+        payload_b64 = token.split(".")[1]
+        payload_b64 += "=" * (4 - len(payload_b64) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(payload_b64))
+    except Exception:
+        return None
+    else:
+        exp = payload.get("exp")
+        return float(exp) if exp is not None else None
 
 
 class ParadexApiClient(BlockTradesMixin, HttpClient):
@@ -32,6 +50,10 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         auto_auth (bool, optional): Whether to automatically handle onboarding/auth. Defaults to True.
         auth_provider (AuthProvider, optional): Custom authentication provider. Defaults to None.
         signer (Signer, optional): Custom order signer for submit/modify/batch operations. Defaults to None.
+        on_token_expired (Callable[[], str | None], optional): Called when a manually-injected token
+            (set via ``set_token()``) expires. Expiry is detected from the JWT ``exp`` claim when
+            present; falls back to a 4-minute window for opaque tokens. Should return a fresh token
+            string, or None if unavailable. Only meaningful when ``auto_auth=False``. Defaults to None.
 
     Examples:
         >>> from paradex_py import Paradex
@@ -51,6 +73,7 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         auth_provider: AuthProvider | None = None,
         signer: Signer | None = None,
         retry_strategy: RetryStrategy | None = None,
+        on_token_expired: Callable[[], str | None] | None = None,
     ):
         self.env = env
         self.logger = logger or logging.getLogger(__name__)
@@ -78,14 +101,13 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         self.auto_auth = auto_auth
         self.auth_provider = auth_provider
         self._manual_token: str | None = None
+        self._token_exp: float | None = None
+        self.on_token_expired: Callable[[], str | None] | None = on_token_expired
         self.account: ParadexAccount | None = None
         self.auth_timestamp = 0
 
         # Signing configuration
         self.signer = signer
-
-    async def __aexit__(self):
-        self.client.close()
 
     def init_account(self, account: ParadexAccount):
         self.account = account
@@ -109,46 +131,76 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         res = self.post(api_url=self.api_url, path=f"auth/{hex(self.account.l2_public_key)}", headers=headers)
         data = AuthSchema().load(res, unknown="exclude", partial=True)
         self.auth_timestamp = int(time.time())
+        self._token_exp = _jwt_exp(data.jwt_token)
         self.account.set_jwt_token(data.jwt_token)
         self.client.headers.update({"Authorization": f"Bearer {data.jwt_token}"})
 
     def set_token(self, jwt: str) -> None:
-        """Inject a JWT token without HTTP calls.
+        """Inject a JWT token directly, bypassing the standard onboarding/auth flow.
 
-        Useful for simulation and testing scenarios where you want to
-        bypass the normal authentication flow.
+        Used by ``ParadexApiKey`` to supply a pre-generated token, and also useful
+        for testing/simulation scenarios.
 
         Args:
             jwt: JWT token string
         """
         self._manual_token = jwt
         self.auth_timestamp = int(time.time())
+        self._token_exp = _jwt_exp(jwt)
         self.client.headers.update({"Authorization": f"Bearer {jwt}"})
         if self.account:
             self.account.set_jwt_token(jwt)
 
+    def _is_token_expired(self) -> bool:
+        """Return True if the current token should be refreshed."""
+        exp = self._token_exp
+        if exp is not None:
+            return time.time() > exp - _REFRESH_BUFFER_SECONDS
+        # 4-minute assumed lifetime for opaque (non-JWT) tokens that have no exp claim
+        return time.time() - self.auth_timestamp > 4 * 60
+
+    def _refresh_manual_token(self) -> None:
+        """Refresh a manually-injected token via the on_token_expired callback if expired."""
+        if self.on_token_expired and self._is_token_expired():
+            new_token = self.on_token_expired()
+            if new_token:
+                self.set_token(new_token)
+            else:
+                self.logger.warning(f"{self.classname}: on_token_expired callback returned None; reusing expired token")
+
+    def _apply_provider_token(self, token: str) -> None:
+        """Apply a token obtained from the auth provider to the HTTP client and account."""
+        self.client.headers.update({"Authorization": f"Bearer {token}"})
+        if self.account:
+            self.account.set_jwt_token(token)
+
     def _validate_auth(self):
-        # Skip auth validation if auto_auth is disabled and we have a manual token
+        # Precedence: manual token > auth_provider > account-based auth.
+        # If both _manual_token and auth_provider are set, auth_provider is bypassed with a warning.
+        # For manually-injected tokens (auto_auth disabled): check expiry and refresh via callback
         if not self.auto_auth and self._manual_token:
+            if self.auth_provider:
+                self.logger.warning(
+                    f"{self.classname}: both _manual_token and auth_provider are set; auth_provider is ignored"
+                )
+            self._refresh_manual_token()
             return
 
         # Use custom auth provider if available
         if self.auth_provider:
             token = self.auth_provider.refresh_if_needed()
             if token:
-                self.client.headers.update({"Authorization": f"Bearer {token}"})
-                if self.account:
-                    self.account.set_jwt_token(token)
+                self._apply_provider_token(token)
                 return
 
         # Fall back to standard account-based auth
         if self.account is None:
             if not self.auto_auth:
                 return  # Skip auth if disabled and no account
-            return raise_value_error(f"{self.classname}: Account not found")
+            raise_value_error(f"{self.classname}: Account not found")
 
-        # Refresh JWT if it's older than 4 minutes
-        if time.time() - self.auth_timestamp > 4 * 60:
+        # Refresh JWT if expired
+        if self._is_token_expired():
             if self.auto_auth:
                 self.auth()
             else:
@@ -423,7 +475,7 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
             results (list): List of Trades
         """
         if "market" not in params:
-            return raise_value_error(f"{self.classname}: Market is required to fetch trades")
+            raise_value_error(f"{self.classname}: Market is required to fetch trades")
         return self._get(path="trades", params=params)
 
     def fetch_subaccounts(self) -> dict:
@@ -564,7 +616,7 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
             results (list): List of cancellation results for each order
         """
         if not order_ids and not client_order_ids:
-            return raise_value_error(f"{self.classname}: Must provide either order_ids or client_order_ids")
+            raise_value_error(f"{self.classname}: Must provide either order_ids or client_order_ids")
 
         payload = {}
         if order_ids:

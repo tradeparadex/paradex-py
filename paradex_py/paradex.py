@@ -1,13 +1,16 @@
-import asyncio
 import logging
 from typing import TYPE_CHECKING
 
+from paradex_py._client_base import _ClientBase
 from paradex_py.account.account import ParadexAccount
 from paradex_py.api.api_client import ParadexApiClient
 from paradex_py.api.protocols import DefaultRetryStrategy
 from paradex_py.api.ws_client import ParadexWebsocketClient
-from paradex_py.environment import Environment
+from paradex_py.auth_level import AuthLevel
+from paradex_py.environment import Environment, _validate_env
 from paradex_py.utils import raise_value_error
+
+__all__ = ["Paradex"]
 
 if TYPE_CHECKING:
     from paradex_py.api.http_client import HttpClient
@@ -23,7 +26,7 @@ if TYPE_CHECKING:
 _UNSET: "RetryStrategy | None" = object()  # type: ignore[assignment]
 
 
-class Paradex:
+class Paradex(_ClientBase):
     """Paradex class to interact with Paradex REST API.
 
     Args:
@@ -101,8 +104,7 @@ class Paradex:
         rpc_version: str | None = None,
         config: "SystemConfig | None" = None,
     ):
-        if env is None:
-            return raise_value_error("Paradex: Invalid environment")
+        _validate_env(env, "Paradex")
         self.env = env
         self.logger: logging.Logger = logger or logging.getLogger(__name__)
 
@@ -180,7 +182,7 @@ class Paradex:
             rpc_version (str, optional): RPC version (e.g., "v0_9"). If provided, constructs URL as {base_url}/rpc/{rpc_version}. Defaults to None.
         """
         if self.account is not None:
-            return raise_value_error("Paradex: Account already initialized")
+            raise_value_error("Paradex: Account already initialized")
         self.account = ParadexAccount(
             config=self.config,
             l1_address=l1_address,
@@ -189,49 +191,38 @@ class Paradex:
             rpc_version=rpc_version,
         )
         self.api_client.init_account(self.account)
-        self.ws_client.init_account(self.account)
+        if self.ws_client is not None:
+            self.ws_client.init_account(self.account)
 
-    async def close(self):
-        """Close all connections and clean up resources.
+    @property
+    def auth_level(self) -> AuthLevel:
+        """Reflects the current authentication state.
 
-        This method should be called when done using the Paradex instance
-        to properly clean up websocket connections and background tasks.
+        Returns ``AuthLevel.FULL`` when an account is initialized, ``AuthLevel.AUTHENTICATED``
+        when only an ``auth_provider`` is set (token present, no signing key), or
+        ``AuthLevel.UNAUTHENTICATED`` when neither is available.
 
-        Examples:
-            >>> import asyncio
-            >>> from paradex_py import Paradex
-            >>> from paradex_py.environment import Environment
-            >>> async def main():
-            ...     paradex = Paradex(env=Environment.TESTNET)
-            ...     try:
-            ...         # Use paradex instance
-            ...         pass
-            ...     finally:
-            ...         await paradex.close()
-            >>> asyncio.run(main())
+        ``Paradex`` can be constructed without keys and initialized later via
+        ``init_account()``, so this property reflects the current state.
         """
-        if self.ws_client:
-            await self.ws_client.close()
+        if self.account is not None:
+            return AuthLevel.FULL
+        if self.api_client.auth_provider is not None:
+            return AuthLevel.AUTHENTICATED
+        return AuthLevel.UNAUTHENTICATED
 
-        if self.api_client and hasattr(self.api_client, "client"):
-            self.api_client.client.close()
+    @property
+    def is_authenticated(self) -> bool:
+        """``True`` when an account is initialized or an ``auth_provider`` is set."""
+        return self.account is not None or self.api_client.auth_provider is not None
 
-    def __del__(self):
-        """Cleanup when Paradex instance is destroyed.
+    @property
+    def can_trade(self) -> bool:
+        """``True`` when account is initialized — L2 key is available for signing."""
+        return self.account is not None
 
-        Attempts to cancel websocket reader task if event loop is still running.
-        """
-        if (
-            hasattr(self, "ws_client")
-            and self.ws_client
-            and hasattr(self.ws_client, "_reader_task")
-            and self.ws_client._reader_task
-        ):
-            # Try to cancel the reader task if it exists and event loop is running
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running() and not self.ws_client._reader_task.done():
-                    self.ws_client._reader_task.cancel()
-            except (RuntimeError, AttributeError):
-                # Event loop not available or already closed, ignore
-                pass
+    @property
+    def can_withdraw(self) -> bool:
+        """``True`` when account is initialized — full account key, all on-chain operations
+        available (deposit, withdraw, transfer)."""
+        return self.account is not None

@@ -66,7 +66,7 @@ class ParadexAccount:
         self.config = config
 
         if l1_address is None:
-            return raise_value_error("Paradex: Provide Ethereum address")
+            raise_value_error("Paradex: Provide Ethereum address")
         self.l1_address = l1_address
 
         if l1_private_key is not None:
@@ -79,7 +79,7 @@ class ParadexAccount:
         elif l2_private_key is not None:
             self.l2_private_key = int_from_hex(l2_private_key)
         else:
-            return raise_value_error("Paradex: Provide Ethereum or Paradex private key")
+            raise_value_error("Paradex: Provide Ethereum or Paradex private key")
 
         key_pair = KeyPair.from_private_key(self.l2_private_key)
         self.l2_public_key = key_pair.public_key
@@ -154,7 +154,7 @@ class ParadexAccount:
 
     def onboarding_signature(self) -> str:
         if self.config is None:
-            return raise_value_error("Paradex: System config not loaded")
+            raise_value_error("Paradex: System config not loaded")
         message = build_onboarding_message(self.l2_chain_id)
         sig = self.starknet.sign_message(message)
         return flatten_signature(sig)
