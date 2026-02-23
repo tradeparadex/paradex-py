@@ -15,6 +15,8 @@ from paradex_py.common.order import Order
 from paradex_py.environment import Environment
 from paradex_py.utils import raise_value_error
 
+_UNSET: RetryStrategy | None = object()  # type: ignore[assignment]
+
 
 class ParadexApiClient(BlockTradesMixin, HttpClient):
     """Class to interact with Paradex REST API.
@@ -50,13 +52,12 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         auto_auth: bool = True,
         auth_provider: AuthProvider | None = None,
         signer: Signer | None = None,
-        retry_strategy: RetryStrategy | None = None,
+        retry_strategy: RetryStrategy | None = _UNSET,
     ):
         self.env = env
         self.logger = logger or logging.getLogger(__name__)
 
-        # Default to rate-limit-aware retry strategy when not explicitly provided
-        effective_retry = retry_strategy if retry_strategy is not None else DefaultRetryStrategy()
+        effective_retry = DefaultRetryStrategy() if retry_strategy is _UNSET else retry_strategy
 
         # Initialize parent with optional HTTP client injection
         if http_client is not None:

@@ -33,7 +33,8 @@ class Paradex:
         http_client (HttpClient, optional): Custom HTTP client for injection. Defaults to None.
         api_base_url (str, optional): Custom API base URL override. Defaults to None.
         default_timeout (float, optional): Default HTTP request timeout in seconds. Defaults to None.
-        retry_strategy (RetryStrategy, optional): Custom retry/backoff strategy. Defaults to None.
+        retry_strategy (RetryStrategy, optional): Custom retry/backoff strategy.
+            Defaults to DefaultRetryStrategy (rate-limit-aware retries). Pass None to disable retries.
         request_hook (RequestHook, optional): Hook for request/response observability. Defaults to None.
         enable_http_compression (bool, optional): Enable HTTP compression (gzip, deflate, br). Defaults to True.
         auto_start_ws_reader (bool, optional): Whether to automatically start WS message reader. Defaults to True.
@@ -102,13 +103,12 @@ class Paradex:
         self.env = env
         self.logger: logging.Logger = logger or logging.getLogger(__name__)
 
-        # Create enhanced HTTP client if needed
-        if http_client is None and (default_timeout or retry_strategy or request_hook or not enable_http_compression):
+        # Create enhanced HTTP client if needed (retry_strategy is handled by ParadexApiClient directly)
+        if http_client is None and (default_timeout or request_hook or not enable_http_compression):
             from paradex_py.api.http_client import HttpClient
 
             http_client = HttpClient(
                 default_timeout=default_timeout,
-                retry_strategy=retry_strategy,
                 request_hook=request_hook,
                 enable_compression=enable_http_compression,
             )
@@ -122,6 +122,7 @@ class Paradex:
             auto_auth=auto_auth,
             auth_provider=auth_provider,
             signer=signer,
+            retry_strategy=retry_strategy,
         )
 
         # Initialize WebSocket client with all optional injection

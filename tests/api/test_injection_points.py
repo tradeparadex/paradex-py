@@ -8,6 +8,7 @@ import pytest
 
 from paradex_py.api.api_client import ParadexApiClient
 from paradex_py.api.http_client import HttpClient
+from paradex_py.api.protocols import DefaultRetryStrategy
 from paradex_py.api.ws_client import ParadexWebsocketChannel, ParadexWebsocketClient
 from paradex_py.environment import TESTNET
 from paradex_py.paradex import Paradex
@@ -112,6 +113,104 @@ class TestApiClientInjection:
             client = ParadexApiClient(env=TESTNET, http_client=custom_http_client, api_base_url=custom_url)
             assert client.api_url == custom_url
             assert client.client is not None
+
+
+class MockRetryStrategy:
+    """Minimal retry strategy for wiring tests."""
+
+    def should_retry(self, attempt, response, exception):
+        return False
+
+    def get_delay(self, attempt, response=None):
+        return 0.0
+
+
+class TestRetryStrategyWiring:
+    """Test retry strategy is correctly wired through the client hierarchy."""
+
+    # ── ParadexApiClient ──────────────────────────────────────────────────────
+
+    def test_api_client_no_retry_by_default(self):
+        """ParadexApiClient() without a strategy has no retry (None)."""
+        client = ParadexApiClient(env=TESTNET)
+        assert client.retry_strategy is None
+
+    def test_api_client_explicit_none_means_no_retry(self):
+        """ParadexApiClient(retry_strategy=None) has no retry."""
+        client = ParadexApiClient(env=TESTNET, retry_strategy=None)
+        assert client.retry_strategy is None
+
+    def test_api_client_explicit_strategy_is_used(self):
+        """ParadexApiClient(retry_strategy=...) stores the given strategy."""
+        strategy = MockRetryStrategy()
+        client = ParadexApiClient(env=TESTNET, retry_strategy=strategy)
+        assert client.retry_strategy is strategy
+
+    def test_api_client_default_retry_strategy_explicit_opt_in(self):
+        """ParadexApiClient(retry_strategy=DefaultRetryStrategy()) uses it."""
+        strategy = DefaultRetryStrategy()
+        client = ParadexApiClient(env=TESTNET, retry_strategy=strategy)
+        assert isinstance(client.retry_strategy, DefaultRetryStrategy)
+
+    def test_api_client_http_injection_does_not_override_strategy(self):
+        """Injecting an HttpClient does not override the retry_strategy passed directly."""
+        http_client = HttpClient(http_client=httpx.Client())
+        strategy = MockRetryStrategy()
+        client = ParadexApiClient(env=TESTNET, http_client=http_client, retry_strategy=strategy)
+        assert client.retry_strategy is strategy
+
+    def test_api_client_no_retry_does_not_retry_on_error(self):
+        """ParadexApiClient without retry strategy raises on first error, no retries."""
+        client = ParadexApiClient(env=TESTNET)
+
+        with patch("httpx.Client.request") as mock_request:
+            mock_request.return_value = httpx.Response(
+                500, json={"error": "INTERNAL_ERROR", "message": "server error", "data": None}
+            )
+            with pytest.raises(ValueError, match="server error"):
+                from paradex_py.api.http_client import HttpMethod
+
+                client.request(url="https://example.com/test", http_method=HttpMethod.GET)
+
+        # Called exactly once — no retries
+        assert mock_request.call_count == 1
+
+    # ── Paradex facade ────────────────────────────────────────────────────────
+
+    @patch.object(ParadexApiClient, "fetch_system_config", return_value=MagicMock())
+    def test_paradex_default_has_default_retry_strategy(self, _mock):
+        """Paradex() defaults to DefaultRetryStrategy for backward compat."""
+        paradex = Paradex(env=TESTNET)
+        assert isinstance(paradex.api_client.retry_strategy, DefaultRetryStrategy)
+
+    @patch.object(ParadexApiClient, "fetch_system_config", return_value=MagicMock())
+    def test_paradex_explicit_none_disables_retries(self, _mock):
+        """Paradex(retry_strategy=None) passes None to the API client."""
+        paradex = Paradex(env=TESTNET, retry_strategy=None)
+        assert paradex.api_client.retry_strategy is None
+
+    @patch.object(ParadexApiClient, "fetch_system_config", return_value=MagicMock())
+    def test_paradex_custom_strategy_is_forwarded(self, _mock):
+        """Paradex(retry_strategy=custom) forwards the strategy to ParadexApiClient."""
+        strategy = MockRetryStrategy()
+        paradex = Paradex(env=TESTNET, retry_strategy=strategy)
+        assert paradex.api_client.retry_strategy is strategy
+
+    @patch.object(ParadexApiClient, "fetch_system_config", return_value=MagicMock())
+    def test_paradex_retry_strategy_not_silently_discarded(self, _mock):
+        """retry_strategy passed to Paradex is not discarded (regression for the wiring bug)."""
+        strategy = MockRetryStrategy()
+        paradex = Paradex(env=TESTNET, retry_strategy=strategy)
+        # Must be the exact object, not a freshly-created DefaultRetryStrategy
+        assert paradex.api_client.retry_strategy is strategy
+
+    @patch.object(ParadexApiClient, "fetch_system_config", return_value=MagicMock())
+    def test_paradex_http_client_injection_does_not_override_strategy(self, _mock):
+        """Injecting a custom HttpClient alongside retry_strategy still wires the strategy."""
+        http_client = HttpClient(http_client=httpx.Client())
+        strategy = MockRetryStrategy()
+        paradex = Paradex(env=TESTNET, http_client=http_client, retry_strategy=strategy)
+        assert paradex.api_client.retry_strategy is strategy
 
 
 class MockWebSocketConnection:
