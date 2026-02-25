@@ -13,6 +13,7 @@ from paradex_py.api.models import AccountSummary, AccountSummarySchema, AuthSche
 from paradex_py.api.protocols import AuthProvider, Signer
 from paradex_py.common.order import Order
 from paradex_py.environment import Environment
+from paradex_py.user_agent import get_user_agent
 from paradex_py.utils import raise_value_error
 
 
@@ -52,14 +53,20 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
 
         # Initialize parent with optional HTTP client injection
         if http_client is not None:
-            # Extract the underlying httpx.Client if it's wrapped in HttpClient
-            if hasattr(http_client, "client"):
-                # http_client is another HttpClient instance, extract the underlying client
-                underlying_client = http_client.client
+            if isinstance(http_client, HttpClient):
+                # Preserve the injected HttpClient's configuration (request_hook, retry_strategy, etc.)
+                self.client = http_client.client
+                self.default_timeout = http_client.default_timeout
+                self.retry_strategy = http_client.retry_strategy
+                self.request_hook = http_client.request_hook
+                if "Content-Type" not in self.client.headers:
+                    self.client.headers.update({"Content-Type": "application/json"})
+                if "User-Agent" not in self.client.headers:
+                    self.client.headers.update({"User-Agent": get_user_agent()})
             else:
-                # http_client is already an httpx.Client, cast to ensure type safety
+                # http_client is an httpx.Client (or duck-type), pass through
                 underlying_client = cast(httpx.Client, http_client)
-            super().__init__(http_client=underlying_client)
+                super().__init__(http_client=underlying_client)
         else:
             super().__init__()
 

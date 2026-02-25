@@ -113,6 +113,23 @@ class TestApiClientInjection:
             assert client.api_url == custom_url
             assert client.client is not None
 
+    def test_api_client_preserves_injected_http_client_options(self):
+        """ParadexApiClient must preserve request_hook, retry_strategy, default_timeout from injected HttpClient."""
+        hook = MagicMock()
+        retry = MagicMock()
+        custom_http_client = HttpClient(
+            http_client=httpx.Client(),
+            request_hook=hook,
+            retry_strategy=retry,
+            default_timeout=60.0,
+        )
+        with patch.object(ParadexApiClient, "fetch_system_config", return_value=MagicMock()):
+            client = ParadexApiClient(env=TESTNET, http_client=custom_http_client)
+        assert client.request_hook is hook
+        assert client.retry_strategy is retry
+        assert client.default_timeout == 60.0
+        assert client.client is custom_http_client.client
+
 
 class MockWebSocketConnection:
     """Mock WebSocket connection for testing."""

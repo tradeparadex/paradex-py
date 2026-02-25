@@ -1,8 +1,10 @@
+from decimal import Decimal
 from unittest.mock import Mock, patch
 
 import pytest
 
 from paradex_py.api.api_client import ParadexApiClient
+from paradex_py.common.order import Order, OrderSide, OrderType
 from paradex_py.environment import TESTNET
 
 
@@ -145,3 +147,91 @@ class TestParadexApiClient:
             # Verify price_kind is not in params when not provided
             called_params = mock_get.call_args[1]["params"]
             assert "price_kind" not in called_params
+
+    def _make_order(self, market: str = "BTC-USD-PERP", client_id: str = "client-1") -> Order:
+        """Helper to create a minimal Order for tests."""
+        return Order(
+            market=market,
+            order_type=OrderType.Limit,
+            order_side=OrderSide.Buy,
+            size=Decimal("0.1"),
+            limit_price=Decimal("50000"),
+            client_id=client_id,
+        )
+
+    def test_submit_orders_batch_with_signer(self):
+        """Test submit_orders_batch uses provided signer and posts to orders/batch."""
+        orders = [self._make_order(client_id="c1"), self._make_order(client_id="c2")]
+        signed_payloads = [{"signed": "payload1"}, {"signed": "payload2"}]
+        mock_signer = Mock()
+        mock_signer.sign_batch.return_value = signed_payloads
+
+        with patch.object(self.api_client, "post") as mock_post:
+            mock_post.return_value = {"orders": [], "errors": []}
+
+            result = self.api_client.submit_orders_batch(orders, signer=mock_signer)
+
+            order_data_list = [o.dump_to_dict() for o in orders]
+            mock_signer.sign_batch.assert_called_once_with(order_data_list)
+            mock_post.assert_called_once_with(
+                api_url=self.api_client.api_url,
+                path="orders/batch",
+                payload=signed_payloads,
+                params=None,
+                headers=None,
+            )
+            self.api_client._validate_auth.assert_called_once()
+            assert result == {"orders": [], "errors": []}
+
+    def test_submit_orders_batch_with_instance_signer(self):
+        """Test submit_orders_batch uses instance signer when no signer provided."""
+        self.api_client.signer = Mock()
+        orders = [self._make_order()]
+        signed_payloads = [{"signed": "payload"}]
+        self.api_client.signer.sign_batch.return_value = signed_payloads
+
+        with patch.object(self.api_client, "post") as mock_post:
+            mock_post.return_value = {"orders": [], "errors": []}
+
+            self.api_client.submit_orders_batch(orders)
+
+            self.api_client.signer.sign_batch.assert_called_once()
+            mock_post.assert_called_once_with(
+                api_url=self.api_client.api_url,
+                path="orders/batch",
+                payload=signed_payloads,
+                params=None,
+                headers=None,
+            )
+
+    def test_submit_orders_batch_with_account(self):
+        """Test submit_orders_batch uses account signing when no signer provided."""
+        self.api_client.signer = None
+        orders = [self._make_order(client_id="c1"), self._make_order(client_id="c2")]
+
+        with patch.object(self.api_client, "post") as mock_post:
+            mock_post.return_value = {"orders": [], "errors": []}
+
+            self.api_client.submit_orders_batch(orders)
+
+            assert self.api_client.account.sign_order.call_count == 2
+            call_payload = mock_post.call_args[1]["payload"]
+            assert len(call_payload) == 2
+            assert call_payload[0]["client_id"] == "c1"
+            assert call_payload[1]["client_id"] == "c2"
+            mock_post.assert_called_once_with(
+                api_url=self.api_client.api_url,
+                path="orders/batch",
+                payload=call_payload,
+                params=None,
+                headers=None,
+            )
+
+    def test_submit_orders_batch_no_signer_no_account_raises(self):
+        """Test submit_orders_batch raises when no signer and no account."""
+        self.api_client.signer = None
+        self.api_client.account = None
+        orders = [self._make_order()]
+
+        with pytest.raises(ValueError, match="Account not initialized and no signer provided"):
+            self.api_client.submit_orders_batch(orders)
