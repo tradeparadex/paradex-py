@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 
 from paradex_py.account.account import ParadexAccount
 from paradex_py.api.api_client import ParadexApiClient
+from paradex_py.api.protocols import DefaultRetryStrategy
 from paradex_py.api.ws_client import ParadexWebsocketClient
 from paradex_py.environment import Environment
 from paradex_py.utils import raise_value_error
@@ -18,6 +19,8 @@ if TYPE_CHECKING:
         Signer,
         WebSocketConnector,
     )
+
+_UNSET: "RetryStrategy | None" = object()  # type: ignore[assignment]
 
 
 class Paradex:
@@ -76,7 +79,7 @@ class Paradex:
         http_client: "HttpClient | None" = None,
         api_base_url: str | None = None,
         default_timeout: float | None = None,
-        retry_strategy: "RetryStrategy | None" = None,
+        retry_strategy: "RetryStrategy | None" = _UNSET,
         request_hook: "RequestHook | None" = None,
         enable_http_compression: bool = True,
         # WebSocket client injection and configuration
@@ -113,6 +116,8 @@ class Paradex:
                 enable_compression=enable_http_compression,
             )
 
+        effective_retry = DefaultRetryStrategy() if retry_strategy is _UNSET else retry_strategy
+
         # Load api client and system config with all optional injection
         self.api_client = ParadexApiClient(
             env=env,
@@ -122,7 +127,7 @@ class Paradex:
             auto_auth=auto_auth,
             auth_provider=auth_provider,
             signer=signer,
-            retry_strategy=retry_strategy,
+            retry_strategy=effective_retry,
         )
 
         # Initialize WebSocket client with all optional injection
