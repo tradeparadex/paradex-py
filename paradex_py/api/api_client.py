@@ -10,7 +10,7 @@ from paradex_py.account.account import ParadexAccount
 from paradex_py.api.block_trades_api import BlockTradesMixin
 from paradex_py.api.http_client import HttpClient, HttpMethod
 from paradex_py.api.models import AccountSummary, AccountSummarySchema, AuthSchema, SystemConfig, SystemConfigSchema
-from paradex_py.api.protocols import AuthProvider, Signer
+from paradex_py.api.protocols import AuthProvider, RetryStrategy, Signer
 from paradex_py.common.order import Order
 from paradex_py.environment import Environment
 from paradex_py.utils import raise_value_error
@@ -19,6 +19,10 @@ from paradex_py.utils import raise_value_error
 class ParadexApiClient(BlockTradesMixin, HttpClient):
     """Class to interact with Paradex REST API.
         Initialized along with `Paradex` class.
+
+    After any REST call, rate limit info from the last response is available as
+    :attr:`last_rate_limit` (limit, remaining, reset, window from x-ratelimit-*
+    headers). Use it to back off before hitting 429 or to wait after one.
 
     Args:
         env (Environment): Environment
@@ -46,6 +50,7 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         auto_auth: bool = True,
         auth_provider: AuthProvider | None = None,
         signer: Signer | None = None,
+        retry_strategy: RetryStrategy | None = None,
     ):
         self.env = env
         self.logger = logger or logging.getLogger(__name__)
@@ -59,9 +64,9 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
             else:
                 # http_client is already an httpx.Client, cast to ensure type safety
                 underlying_client = cast(httpx.Client, http_client)
-            super().__init__(http_client=underlying_client)
+            super().__init__(http_client=underlying_client, retry_strategy=retry_strategy)
         else:
-            super().__init__()
+            super().__init__(retry_strategy=retry_strategy)
 
         # Use custom base URL if provided, otherwise use default
         if api_base_url is not None:

@@ -5,8 +5,8 @@ from unittest.mock import Mock, patch
 import httpx
 import pytest
 
-from paradex_py.api.http_client import HttpClient, HttpMethod
-from paradex_py.api.models import ApiErrorSchema
+from paradex_py.api.http_client import HttpClient, HttpMethod, _parse_rate_limit
+from paradex_py.api.models import ApiErrorSchema, RateLimitInfo
 
 
 class TestHttpClient:
@@ -241,3 +241,148 @@ class TestHttpClient:
 
         # Custom User-Agent should be preserved
         assert http_client.client.headers["User-Agent"] == custom_user_agent
+
+
+class TestRateLimitInfo:
+    """Tests for RateLimitInfo parsing and last_rate_limit on HttpClient."""
+
+    def test_parse_rate_limit_full_headers(self):
+        """_parse_rate_limit returns RateLimitInfo when all x-ratelimit-* headers present."""
+        res = Mock(spec=httpx.Response)
+        res.headers = {
+            "x-ratelimit-limit": "20",
+            "x-ratelimit-remaining": "19",
+            "x-ratelimit-reset": "1770947024",
+            "x-ratelimit-window": "1",
+        }
+        info = _parse_rate_limit(res)
+        assert info == RateLimitInfo(limit=20, remaining=19, reset=1770947024, window=1)
+
+    def test_parse_rate_limit_partial_headers(self):
+        """_parse_rate_limit sets only present headers; others are None."""
+        res = Mock(spec=httpx.Response)
+        res.headers = {"x-ratelimit-limit": "10", "x-ratelimit-remaining": "5"}
+        info = _parse_rate_limit(res)
+        assert info.limit == 10
+        assert info.remaining == 5
+        assert info.reset is None
+        assert info.window is None
+
+    def test_parse_rate_limit_no_headers(self):
+        """_parse_rate_limit returns all None when no rate limit headers."""
+        res = Mock(spec=httpx.Response)
+        res.headers = {}
+        info = _parse_rate_limit(res)
+        assert info == RateLimitInfo(limit=None, remaining=None, reset=None, window=None)
+
+    def test_parse_rate_limit_invalid_integer_skipped(self):
+        """_parse_rate_limit skips headers that do not parse as int."""
+        res = Mock(spec=httpx.Response)
+        res.headers = {
+            "x-ratelimit-limit": "20",
+            "x-ratelimit-remaining": "not-a-number",
+            "x-ratelimit-reset": "1770947024",
+            "x-ratelimit-window": "1",
+        }
+        info = _parse_rate_limit(res)
+        assert info.limit == 20
+        assert info.remaining is None
+        assert info.reset == 1770947024
+        assert info.window == 1
+
+    def test_last_rate_limit_initially_none(self):
+        """last_rate_limit is None before any request."""
+        client = HttpClient()
+        assert client.last_rate_limit is None
+
+    @patch("httpx.Client.request")
+    def test_last_rate_limit_set_after_success(self, mock_request):
+        """last_rate_limit is set from x-ratelimit-* headers after successful request."""
+        client = HttpClient()
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"status": "ok"}
+        mock_response.headers = {
+            "x-ratelimit-limit": "20",
+            "x-ratelimit-remaining": "18",
+            "x-ratelimit-reset": "1770947025",
+            "x-ratelimit-window": "1",
+        }
+        mock_request.return_value = mock_response
+
+        client.request(url="https://api.example.com/test", http_method=HttpMethod.GET)
+
+        assert client.last_rate_limit is not None
+        assert client.last_rate_limit.limit == 20
+        assert client.last_rate_limit.remaining == 18
+        assert client.last_rate_limit.reset == 1770947025
+        assert client.last_rate_limit.window == 1
+
+    @patch("httpx.Client.request")
+    def test_last_rate_limit_set_after_429(self, mock_request):
+        """last_rate_limit is set from 429 response so caller can read reset time."""
+        client = HttpClient()
+        mock_response = Mock()
+        mock_response.status_code = 429
+        mock_response.headers = {
+            "x-ratelimit-limit": "20",
+            "x-ratelimit-remaining": "0",
+            "x-ratelimit-reset": "1770947030",
+            "x-ratelimit-window": "1",
+        }
+        mock_request.return_value = mock_response
+
+        with pytest.raises(Exception, match="Rate limit exceeded"):
+            client.request(url="https://api.example.com/test", http_method=HttpMethod.GET)
+
+        assert client.last_rate_limit is not None
+        assert client.last_rate_limit.remaining == 0
+        assert client.last_rate_limit.reset == 1770947030
+
+    @patch("httpx.Client.request")
+    def test_last_rate_limit_all_none_when_no_headers(self, mock_request):
+        """last_rate_limit has all-None fields when response has no rate limit headers."""
+        client = HttpClient()
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"data": "ok"}
+        mock_response.headers = {}
+        mock_request.return_value = mock_response
+
+        client.request(url="https://api.example.com/test", http_method=HttpMethod.GET)
+
+        assert client.last_rate_limit is not None
+        assert client.last_rate_limit == RateLimitInfo(limit=None, remaining=None, reset=None, window=None)
+
+    @patch("httpx.Client.request")
+    def test_last_rate_limit_overwritten_by_next_request(self, mock_request):
+        """last_rate_limit reflects the most recent response."""
+        client = HttpClient()
+        mock_request.return_value = Mock(
+            status_code=200,
+            json=Mock(return_value={"a": 1}),
+            headers={
+                "x-ratelimit-limit": "20",
+                "x-ratelimit-remaining": "10",
+                "x-ratelimit-reset": "100",
+                "x-ratelimit-window": "1",
+            },
+        )
+
+        client.request(url="https://api.example.com/first", http_method=HttpMethod.GET)
+        first = client.last_rate_limit
+        assert first is not None and first.remaining == 10
+
+        mock_request.return_value = Mock(
+            status_code=200,
+            json=Mock(return_value={"b": 2}),
+            headers={
+                "x-ratelimit-limit": "20",
+                "x-ratelimit-remaining": "9",
+                "x-ratelimit-reset": "101",
+                "x-ratelimit-window": "1",
+            },
+        )
+        client.request(url="https://api.example.com/second", http_method=HttpMethod.GET)
+        second = client.last_rate_limit
+        assert second is not None and second.remaining == 9

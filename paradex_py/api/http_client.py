@@ -5,10 +5,30 @@ from typing import Any
 
 import httpx
 
-from paradex_py.api.models import ApiErrorSchema
+from paradex_py.api.models import ApiErrorSchema, RateLimitInfo
 from paradex_py.api.protocols import RequestHook, RetryStrategy
 from paradex_py.user_agent import get_user_agent
 from paradex_py.utils import raise_value_error
+
+
+def _parse_rate_limit(response: httpx.Response) -> RateLimitInfo:
+    """Parse x-ratelimit-* headers from response into RateLimitInfo."""
+
+    def get_int(name: str) -> int | None:
+        raw = response.headers.get(name)
+        if raw is None:
+            return None
+        try:
+            return int(raw)
+        except (ValueError, TypeError):
+            return None
+
+    return RateLimitInfo(
+        limit=get_int("x-ratelimit-limit"),
+        remaining=get_int("x-ratelimit-remaining"),
+        reset=get_int("x-ratelimit-reset"),
+        window=get_int("x-ratelimit-window"),
+    )
 
 
 class HttpMethod(Enum):
@@ -66,6 +86,7 @@ class HttpClient:
         self.retry_strategy = retry_strategy
         self.request_hook = request_hook
         self.logger = logger if logger is not None else logging.getLogger(__name__)
+        self.last_rate_limit: RateLimitInfo | None = None  # Set after each request from x-ratelimit-* headers
 
     def _prepare_request_kwargs(
         self,
@@ -154,13 +175,10 @@ class HttpClient:
 
                 # Check if we should retry
                 if self.retry_strategy and self.retry_strategy.should_retry(attempt, res, None):
-                    delay = self.retry_strategy.get_delay(attempt)
+                    delay = self.retry_strategy.get_delay(attempt, res)
                     time.sleep(delay)
                     attempt += 1
                     continue
-                else:
-                    return self._handle_response(res, url, http_method)
-
             except Exception as e:
                 # Check if we should retry on exception
                 if self.retry_strategy and self.retry_strategy.should_retry(attempt, None, e):
@@ -171,6 +189,10 @@ class HttpClient:
                 else:
                     # Re-raise if no more retries
                     raise
+            else:
+                # Expose rate-limit headers to caller (set before _handle_response so it's available on 429)
+                self.last_rate_limit = _parse_rate_limit(res)
+                return self._handle_response(res, url, http_method)
 
     def _redact_headers(self, headers: dict[str, Any]) -> dict[str, Any]:
         """Redact sensitive information from headers for logging."""
