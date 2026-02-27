@@ -33,6 +33,7 @@ class Paradex(_ClientBase):
         env (Environment): Environment
         l1_address (str, optional): L1 address. Defaults to None.
         l1_private_key (str, optional): L1 private key. Defaults to None.
+        l1_private_key_from_ledger (bool, optional): Derive L2 key from Ledger hardware wallet. Defaults to False.
         l2_private_key (str, optional): L2 private key. Defaults to None.
         logger (logging.Logger, optional): Logger. Defaults to None.
         ws_timeout (int, optional): WebSocket read timeout in seconds. Defaults to None (uses default).
@@ -75,6 +76,7 @@ class Paradex(_ClientBase):
         env: Environment,
         l1_address: str | None = None,
         l1_private_key: str | None = None,
+        l1_private_key_from_ledger: bool = False,
         l2_private_key: str | None = None,
         logger: logging.Logger | None = None,
         ws_timeout: int | None = None,
@@ -157,10 +159,11 @@ class Paradex(_ClientBase):
         self.account: ParadexAccount | None = None
 
         # Initialize account if private key is provided
-        if l1_address and (l2_private_key is not None or l1_private_key is not None):
+        if l1_address and (l2_private_key is not None or l1_private_key is not None or l1_private_key_from_ledger):
             self.init_account(
                 l1_address=l1_address,
                 l1_private_key=l1_private_key,
+                l1_private_key_from_ledger=l1_private_key_from_ledger,
                 l2_private_key=l2_private_key,
                 rpc_version=rpc_version,
             )
@@ -169,6 +172,7 @@ class Paradex(_ClientBase):
         self,
         l1_address: str,
         l1_private_key: str | None = None,
+        l1_private_key_from_ledger: bool = False,
         l2_private_key: str | None = None,
         rpc_version: str | None = None,
     ):
@@ -178,6 +182,7 @@ class Paradex(_ClientBase):
         Args:
             l1_address (str): L1 address
             l1_private_key (str): L1 private key
+            l1_private_key_from_ledger (bool, optional): Derive L2 key from Ledger hardware wallet. Defaults to False.
             l2_private_key (str): L2 private key
             rpc_version (str, optional): RPC version (e.g., "v0_9"). If provided, constructs URL as {base_url}/rpc/{rpc_version}. Defaults to None.
         """
@@ -187,6 +192,7 @@ class Paradex(_ClientBase):
             config=self.config,
             l1_address=l1_address,
             l1_private_key=l1_private_key,
+            l1_private_key_from_ledger=l1_private_key_from_ledger,
             l2_private_key=l2_private_key,
             rpc_version=rpc_version,
         )

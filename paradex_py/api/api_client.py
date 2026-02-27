@@ -19,6 +19,7 @@ from paradex_py.environment import Environment
 from paradex_py.utils import raise_value_error
 
 _REFRESH_BUFFER_SECONDS = 30  # refresh 30s before JWT expiry to avoid race conditions
+_OPAQUE_TOKEN_LIFETIME_SECONDS = 4 * 60  # assumed lifetime for tokens without an exp claim
 
 
 def _jwt_exp(token: str) -> float | None:
@@ -156,8 +157,8 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         exp = self._token_exp
         if exp is not None:
             return time.time() > exp - _REFRESH_BUFFER_SECONDS
-        # 4-minute assumed lifetime for opaque (non-JWT) tokens that have no exp claim
-        return time.time() - self.auth_timestamp > 4 * 60
+        # assumed lifetime for opaque (non-JWT) tokens that have no exp claim
+        return time.time() - self.auth_timestamp > _OPAQUE_TOKEN_LIFETIME_SECONDS
 
     def _refresh_manual_token(self) -> None:
         """Refresh a manually-injected token via the on_token_expired callback if expired."""
