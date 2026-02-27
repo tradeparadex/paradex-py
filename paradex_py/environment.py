@@ -1,6 +1,6 @@
 from typing import Literal
 
-from paradex_py.utils import raise_value_error
+from .utils import raise_value_error
 
 __all__ = ["Environment", "PROD", "TESTNET", "NIGHTLY"]
 

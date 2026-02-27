@@ -18,3 +18,22 @@ Choose the right client class for your use-case:
 |                  | API token        |         |           |        | server-side apps |
 +------------------+------------------+---------+-----------+--------+------------------+
 """
+
+from .auth_level import AuthLevel
+from .environment import NIGHTLY, PROD, TESTNET, Environment
+from .paradex import Paradex
+from .paradex_api_key import ParadexApiKey
+from .paradex_l2 import ParadexL2
+from .paradex_subkey import ParadexSubkey
+
+__all__ = [
+    "AuthLevel",
+    "Environment",
+    "NIGHTLY",
+    "PROD",
+    "TESTNET",
+    "Paradex",
+    "ParadexApiKey",
+    "ParadexL2",
+    "ParadexSubkey",
+]
