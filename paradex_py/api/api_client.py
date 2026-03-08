@@ -741,3 +741,83 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
     def fetch_insurance_fund(self) -> dict:
         """Fetch insurance fund information"""
         return self._get(path="insurance")
+
+    # ALGO ORDERS
+    def submit_algo_order(
+        self,
+        order: Order,
+        algo_type: str,
+        duration_seconds: int,
+        frequency: int | None = None,
+        signer: Signer | None = None,
+    ) -> dict:
+        """Submit an algo order (e.g. TWAP) to Paradex.
+            Private endpoint requires authorization.
+
+        Args:
+            order: Order with type=MARKET, price=0, containing market/side/size.
+            algo_type: Algo type (e.g. "TWAP").
+            duration_seconds: Duration in seconds (30-86400, multiple of 30).
+            frequency: Interval in seconds between child orders (default: 30).
+            signer: Optional custom signer. Uses instance signer or account signer if None.
+
+        Returns:
+            Algo order response dict.
+        """
+        # Sign the order
+        if signer is not None:
+            order_data = order.dump_to_dict()
+            signed_data = signer.sign_order(order_data)
+            signature = signed_data["signature"]
+            signature_timestamp = signed_data["signature_timestamp"]
+        elif self.signer is not None:
+            order_data = order.dump_to_dict()
+            signed_data = self.signer.sign_order(order_data)
+            signature = signed_data["signature"]
+            signature_timestamp = signed_data["signature_timestamp"]
+        else:
+            if self.account is None:
+                raise ValueError("Account not initialized and no signer provided")
+            order.signature = self.account.sign_order(order)
+            signature = order.signature
+            signature_timestamp = order.signature_timestamp
+
+        payload: dict[str, Any] = {
+            "market": order.market,
+            "side": order.order_side.value,
+            "type": order.order_type.value,
+            "size": str(order.size),
+            "algo_type": algo_type,
+            "duration_seconds": duration_seconds,
+            "signature": signature,
+            "signature_timestamp": signature_timestamp,
+        }
+        if frequency is not None:
+            payload["frequency"] = frequency
+        if order.recv_window is not None:
+            payload["recv_window"] = order.recv_window
+
+        return self._post_authorized(path="algo/orders", payload=payload)
+
+    def fetch_algo_orders(self, params: dict | None = None) -> dict:
+        """Fetch algo orders for the account.
+            Private endpoint requires authorization.
+
+        Args:
+            params:
+                `market`: Market name\n
+                `status`: Algo order status\n
+
+        Returns:
+            results (list): List of algo orders
+        """
+        return self._get_authorized(path="algo/orders", params=params)
+
+    def cancel_algo_order(self, algo_order_id: str) -> None:
+        """Cancel an algo order.
+            Private endpoint requires authorization.
+
+        Args:
+            algo_order_id: Algo order ID
+        """
+        self._delete_authorized(path=f"algo/orders/{algo_order_id}")
