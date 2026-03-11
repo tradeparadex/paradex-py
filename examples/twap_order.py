@@ -169,14 +169,18 @@ def main() -> None:
         print(f"Error: calculated size is 0 (notional={notional}, price={mid_price})")
         sys.exit(1)
 
-    if max_order_size > 0 and size > max_order_size:
-        print(f"Error: size {size} exceeds max_order_size {max_order_size}")
-        sys.exit(1)
-
     estimated_notional = size * mid_price
     num_children = duration_seconds // frequency
     child_size = size / num_children
+
+    if max_order_size > 0 and child_size > max_order_size:
+        print(f"Error: child size {child_size} exceeds max_order_size {max_order_size}")
+        sys.exit(1)
     child_notional = child_size * mid_price
+
+    if min_notional > 0 and child_notional < min_notional:
+        print(f"Error: child notional ${child_notional:.2f} is below min_notional ${min_notional}")
+        sys.exit(1)
 
     print("\nOrder to submit:")
     print(f"  market:           {args.market}")
@@ -189,9 +193,6 @@ def main() -> None:
     print(f"  frequency:        {frequency}s ({frequency / 60:.1f}min)")
     print(f"  child orders:     {num_children}")
     print(f"  per child:        {child_size:.4f} (~${child_notional:.2f})")
-
-    if min_notional > 0 and estimated_notional < min_notional:
-        print(f"\nWarning: total notional ${estimated_notional:.2f} is below min_notional ${min_notional}")
 
     # Build and submit the order
     order_side = OrderSide.Buy if args.side == "BUY" else OrderSide.Sell
