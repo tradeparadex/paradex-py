@@ -1,5 +1,4 @@
 import base64
-import contextlib
 import json
 import logging
 import re
@@ -113,10 +112,14 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
     def init_account(self, account: ParadexAccount):
         self.account = account
         if self.auto_auth:
-            with contextlib.suppress(Exception):
-                # Onboarding is not a critical step if the account has already been onboarded.
-                self.onboarding()
-            self.auth()
+            try:
+                self.auth()
+            except ValueError as e:
+                if "NOT_ONBOARDED" in str(e):
+                    self.onboarding()
+                    self.auth()
+                else:
+                    raise
 
     def onboarding(self):
         if self.account is None:
