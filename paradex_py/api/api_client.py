@@ -1,5 +1,4 @@
 import base64
-import contextlib
 import json
 import logging
 import re
@@ -55,6 +54,9 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
             (set via ``set_token()``) expires. Expiry is detected from the JWT ``exp`` claim when
             present; falls back to a 4-minute window for opaque tokens. Should return a fresh token
             string, or None if unavailable. Only meaningful when ``auto_auth=False``. Defaults to None.
+        auth_params (dict, optional): Extra query parameters sent with every ``/auth`` request
+            (initial and refresh). For example, ``{"token_usage": "interactive"}`` to obtain a
+            0-fee JWT token. Defaults to None.
 
     Examples:
         >>> from paradex_py import Paradex
@@ -75,6 +77,7 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         signer: Signer | None = None,
         retry_strategy: RetryStrategy | None = None,
         on_token_expired: Callable[[], str | None] | None = None,
+        auth_params: dict | None = None,
     ):
         self.env = env
         self.logger = logger or logging.getLogger(__name__)
@@ -101,6 +104,7 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         # Auth configuration
         self.auto_auth = auto_auth
         self.auth_provider = auth_provider
+        self.auth_params = auth_params
         self._manual_token: str | None = None
         self._token_exp: float | None = None
         self.on_token_expired: Callable[[], str | None] | None = on_token_expired
@@ -113,10 +117,14 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
     def init_account(self, account: ParadexAccount):
         self.account = account
         if self.auto_auth:
-            with contextlib.suppress(Exception):
-                # Onboarding is not a critical step if the account has already been onboarded.
-                self.onboarding()
-            self.auth()
+            try:
+                self.auth(params=self.auth_params)
+            except ValueError as e:
+                if "NOT_ONBOARDED" in str(e):
+                    self.onboarding()
+                    self.auth(params=self.auth_params)
+                else:
+                    raise
 
     def onboarding(self):
         if self.account is None:
@@ -125,11 +133,13 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         payload = {"public_key": hex(self.account.l2_public_key)}
         self.post(api_url=self.api_url, path="onboarding", headers=headers, payload=payload)
 
-    def auth(self):
+    def auth(self, params: dict | None = None):
         if self.account is None:
             raise ValueError("Account not initialized")
         headers = self.account.auth_headers()
-        res = self.post(api_url=self.api_url, path=f"auth/{hex(self.account.l2_public_key)}", headers=headers)
+        res = self.post(
+            api_url=self.api_url, path=f"auth/{hex(self.account.l2_public_key)}", headers=headers, params=params
+        )
         data = AuthSchema().load(res, unknown="exclude", partial=True)
         self.auth_timestamp = int(time.time())
         self._token_exp = _jwt_exp(data.jwt_token)
@@ -203,7 +213,7 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         # Refresh JWT if expired
         if self._is_token_expired():
             if self.auto_auth:
-                self.auth()
+                self.auth(params=self.auth_params)
             else:
                 self.logger.warning(f"{self.classname}: JWT expired but auto_auth disabled")
 

@@ -4,6 +4,10 @@ Usage:
     uv run python examples/twap_order.py --market DIME-USD --side BUY --notional-usd 5000 --duration 24h
     uv run python examples/twap_order.py --market DIME-USD --side BUY --notional-usd 500 --duration 1h30m
     uv run python examples/twap_order.py --market DIME-USD --side BUY --notional-usd 500 --duration 7200
+    uv run python examples/twap_order.py --market DIME-USD --side BUY --notional-usd 500 --duration 1h --no-interactive-auth
+
+By default, uses interactive auth (/auth?token_usage=interactive) to obtain a 0-fee JWT token.
+Pass --no-interactive-auth to use standard auth.
 
 Environment variables (option A — L2 key directly):
     PARADEX_ADDRESS - Your Paradex (L2/Starknet) account address
@@ -58,10 +62,17 @@ def parse_args() -> argparse.Namespace:
         help="Minimum notional per child order in USD; frequency is derived from this (default: market min_notional)",
     )
     parser.add_argument("--env", default="prod", choices=["testnet", "prod"], help="Environment (default: prod)")
+    parser.add_argument(
+        "--no-interactive-auth",
+        dest="interactive_auth",
+        action="store_false",
+        default=True,
+        help="Disable interactive auth (default: use interactive auth for 0-fee JWT)",
+    )
     return parser.parse_args()
 
 
-def init_paradex(env_name: str) -> Paradex:
+def init_paradex(env_name: str, interactive_auth: bool = True) -> Paradex:
     """Initialize Paradex client from environment variables."""
     paradex_address = os.getenv("PARADEX_ADDRESS", "")
     l2_private_key = os.getenv("L2_PRIVATE_KEY", "")
@@ -69,17 +80,15 @@ def init_paradex(env_name: str) -> Paradex:
     l1_private_key = os.getenv("L1_PRIVATE_KEY", "")
 
     env = TESTNET if env_name == "testnet" else PROD
+    auth_params = {"token_usage": "interactive"} if interactive_auth else None
 
     if paradex_address and l2_private_key:
-        paradex = Paradex(
+        return Paradex(
             env=env,
             l1_address=paradex_address,
             l2_private_key=l2_private_key,
-            auto_auth=False,
+            auth_params=auth_params,
         )
-        paradex.api_client.auto_auth = True
-        paradex.api_client.auth()
-        return paradex
 
     if l1_address and l1_private_key:
         from starknet_py.common import int_from_hex
@@ -88,6 +97,7 @@ def init_paradex(env_name: str) -> Paradex:
             env=env,
             l1_address=l1_address,
             l1_private_key=int_from_hex(l1_private_key),
+            auth_params=auth_params,
         )
 
     print("Error: set PARADEX_ADDRESS + L2_PRIVATE_KEY, or L1_ADDRESS + L1_PRIVATE_KEY")
@@ -125,8 +135,9 @@ def main() -> None:
     args = parse_args()
     notional = Decimal(str(args.notional_usd))
 
-    print(f"Connecting to Paradex ({args.env})...")
-    paradex = init_paradex(args.env)
+    auth_mode = "interactive" if args.interactive_auth else "standard"
+    print(f"Connecting to Paradex ({args.env}, {auth_mode} auth)...")
+    paradex = init_paradex(args.env, interactive_auth=args.interactive_auth)
 
     # Fetch market info
     markets_resp = paradex.api_client.fetch_markets(params={"market": args.market})

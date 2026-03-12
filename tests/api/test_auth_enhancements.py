@@ -175,8 +175,8 @@ class TestAuthenticationEnhancements:
             mock_warning.assert_called_once()
 
     @patch.object(ParadexApiClient, "fetch_system_config", return_value=MagicMock())
-    def test_init_account_with_auto_auth_enabled(self, mock_config):
-        """Test account initialization with auto_auth enabled."""
+    def test_init_account_with_auto_auth_already_onboarded(self, mock_config):
+        """Test account initialization when already onboarded (auth succeeds immediately)."""
         client = ParadexApiClient(env=TESTNET, auto_auth=True)
         mock_account = MagicMock()
 
@@ -184,8 +184,35 @@ class TestAuthenticationEnhancements:
             client.init_account(mock_account)
 
             assert client.account is mock_account
+            mock_onboarding.assert_not_called()
+            mock_auth.assert_called_once_with(params=None)
+
+    @patch.object(ParadexApiClient, "fetch_system_config", return_value=MagicMock())
+    def test_init_account_with_auto_auth_not_onboarded(self, mock_config):
+        """Test account initialization when not onboarded (auth fails with NOT_ONBOARDED, then succeeds after onboarding).
+        """
+        client = ParadexApiClient(env=TESTNET, auto_auth=True)
+        mock_account = MagicMock()
+
+        with patch.object(client, "onboarding") as mock_onboarding, patch.object(client, "auth") as mock_auth:
+            mock_auth.side_effect = [ValueError("NOT_ONBOARDED"), None]
+            client.init_account(mock_account)
+
+            assert client.account is mock_account
             mock_onboarding.assert_called_once()
-            mock_auth.assert_called_once()
+            assert mock_auth.call_count == 2
+
+    @patch.object(ParadexApiClient, "fetch_system_config", return_value=MagicMock())
+    def test_init_account_with_auth_params(self, mock_config):
+        """Test that auth_params are passed through to auth() calls."""
+        auth_params = {"token_usage": "interactive"}
+        client = ParadexApiClient(env=TESTNET, auto_auth=True, auth_params=auth_params)
+        mock_account = MagicMock()
+
+        with patch.object(client, "onboarding"), patch.object(client, "auth") as mock_auth:
+            client.init_account(mock_account)
+
+            mock_auth.assert_called_once_with(params=auth_params)
 
     @patch.object(ParadexApiClient, "fetch_system_config", return_value=MagicMock())
     def test_init_account_with_auto_auth_disabled(self, mock_config):
