@@ -55,6 +55,8 @@ class Paradex(_ClientBase):
         enable_ws_compression (bool, optional): Enable WebSocket per-message compression (RFC 7692). Defaults to True.
         auto_auth (bool, optional): Whether to automatically handle onboarding/auth. Defaults to True.
         auth_provider (AuthProvider, optional): Custom authentication provider. Defaults to None.
+        auth_params (dict, optional): Extra query parameters sent with every ``/auth`` request
+            (initial and refresh). For example, ``{"token_usage": "interactive"}`` for 0-fee JWT. Defaults to None.
         signer (Signer, optional): Custom order signer for submit/modify/batch operations. Defaults to None.
         rpc_version (str, optional): RPC version (e.g., "v0_9"). If provided, constructs URL as {base_url}/rpc/{rpc_version}. Defaults to None.
         config (SystemConfig, optional): System configuration. If provided, uses this config instead of fetching from API. Defaults to None.
@@ -100,6 +102,7 @@ class Paradex(_ClientBase):
         # Auth configuration
         auto_auth: bool = True,
         auth_provider: "AuthProvider | None" = None,
+        auth_params: dict | None = None,
         # Signing configuration
         signer: "Signer | None" = None,
         # RPC configuration
@@ -130,6 +133,7 @@ class Paradex(_ClientBase):
             api_base_url=api_base_url,
             auto_auth=auto_auth,
             auth_provider=auth_provider,
+            auth_params=auth_params,
             signer=signer,
             retry_strategy=effective_retry,
         )

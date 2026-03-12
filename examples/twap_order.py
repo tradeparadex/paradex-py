@@ -23,11 +23,9 @@ import math
 import os
 import re
 import sys
-import time
 from decimal import ROUND_DOWN, Decimal
 
 from paradex_py import Paradex
-from paradex_py.api.api_client import AuthSchema
 from paradex_py.common.order import Order, OrderSide, OrderType
 from paradex_py.environment import PROD, TESTNET
 
@@ -74,23 +72,6 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _do_auth(paradex: Paradex, interactive: bool) -> None:
-    """Authenticate with Paradex, optionally using interactive auth for 0-fee JWT."""
-    params = {"token_usage": "interactive"} if interactive else None
-    api = paradex.api_client
-    headers = api.account.auth_headers()
-    res = api.post(
-        api_url=api.api_url,
-        path=f"auth/{hex(api.account.l2_public_key)}",
-        headers=headers,
-        params=params,
-    )
-    data = AuthSchema().load(res, unknown="exclude", partial=True)
-    api.auth_timestamp = int(time.time())
-    api.account.set_jwt_token(data.jwt_token)
-    api.client.headers.update({"Authorization": f"Bearer {data.jwt_token}"})
-
-
 def init_paradex(env_name: str, interactive_auth: bool = True) -> Paradex:
     """Initialize Paradex client from environment variables."""
     paradex_address = os.getenv("PARADEX_ADDRESS", "")
@@ -99,30 +80,25 @@ def init_paradex(env_name: str, interactive_auth: bool = True) -> Paradex:
     l1_private_key = os.getenv("L1_PRIVATE_KEY", "")
 
     env = TESTNET if env_name == "testnet" else PROD
+    auth_params = {"token_usage": "interactive"} if interactive_auth else None
 
     if paradex_address and l2_private_key:
-        paradex = Paradex(
+        return Paradex(
             env=env,
             l1_address=paradex_address,
             l2_private_key=l2_private_key,
-            auto_auth=False,
+            auth_params=auth_params,
         )
-        _do_auth(paradex, interactive_auth)
-        paradex.api_client.auto_auth = True
-        return paradex
 
     if l1_address and l1_private_key:
         from starknet_py.common import int_from_hex
 
-        paradex = Paradex(
+        return Paradex(
             env=env,
             l1_address=l1_address,
             l1_private_key=int_from_hex(l1_private_key),
-            auto_auth=False,
+            auth_params=auth_params,
         )
-        _do_auth(paradex, interactive_auth)
-        paradex.api_client.auto_auth = True
-        return paradex
 
     print("Error: set PARADEX_ADDRESS + L2_PRIVATE_KEY, or L1_ADDRESS + L1_PRIVATE_KEY")
     sys.exit(1)
