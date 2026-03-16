@@ -61,7 +61,7 @@ class PriceBookUpdate(BaseModel):
 
 
 # Type mapping for channel names to payload models
-WS_PAYLOAD_MODELS = {
+WS_PAYLOAD_MODELS: dict[str, type[BaseModel]] = { # Map channel names to their corresponding payload models
     "balance_events": BalanceEventResponse,
     "order_book": PriceBookUpdate,
 }
