@@ -169,6 +169,7 @@ class ParadexWebsocketClient:
         disable_reconnect: bool = False,
         enable_compression: bool = True,
         api_client: Any | None = None,
+        sbe_enabled: bool = False,
     ):
         self.env = env
         self.api_url = ws_url_override or f"wss://ws.api.{self.env}.paradex.trade/v1"
@@ -203,6 +204,9 @@ class ParadexWebsocketClient:
 
         # API client reference for token refresh on reconnect
         self._api_client = api_client
+
+        # SBE binary encoding opt-in
+        self.sbe_enabled = sbe_enabled
 
         if auto_start_reader:
             try:
@@ -256,14 +260,19 @@ class ParadexWebsocketClient:
             if self.account:
                 extra_headers.update({"Authorization": f"Bearer {self.account.jwt_token}"})
 
+            ws_url = self.api_url
+            if self.sbe_enabled:
+                sep = "&" if "?" in ws_url else "?"
+                ws_url += f"{sep}sbeSchemaId=1&sbeSchemaVersion=0"
+
             # Use custom connector if provided, otherwise use default websockets.connect
             if self.connector is not None:
-                self.ws = await self.connector(self.api_url, extra_headers)
+                self.ws = await self.connector(ws_url, extra_headers)
             else:
                 connect_kwargs = self._build_connect_kwargs(extra_headers)
-                self.ws = await websockets.connect(self.api_url, **connect_kwargs)
+                self.ws = await websockets.connect(ws_url, **connect_kwargs)
 
-            self.logger.info(f"{self.classname}: Connected to {self.api_url}")
+            self.logger.info(f"{self.classname}: Connected to {ws_url}")
 
             # Start reader task if auto_start_reader is enabled and not already running
             if self.auto_start_reader and self._reader_task is None:
@@ -492,6 +501,9 @@ class ParadexWebsocketClient:
         async with self._recv_lock:
             response = await asyncio.wait_for(self.ws.recv(), timeout=self.ws_timeout)
         if isinstance(response, bytes):
+            if self.sbe_enabled:
+                await self._process_binary_message(response)
+                return
             response = response.decode("utf-8")
         await self._process_message(response)
 
@@ -600,9 +612,55 @@ class ParadexWebsocketClient:
             return False
         else:
             if isinstance(response, bytes):
+                if self.sbe_enabled:
+                    await self._process_binary_message(response)
+                    return True
                 response = response.decode("utf-8")
             await self._process_message(response)
             return True
+
+    async def _process_binary_message(self, data: bytes) -> None:
+        """Decode an SBE binary frame and dispatch to the registered callback."""
+        from paradex_py.api.sbe import SbeDecodeError, decode_frame
+
+        try:
+            channel_name, model = decode_frame(data)
+        except SbeDecodeError as e:
+            self.logger.warning(f"{self.classname}: SBE decode error: {e}")
+            return
+        if channel_name is None or model is None:
+            # heartbeat / subscribed ack — discard
+            return
+        resolved = self._resolve_sbe_channel(channel_name) or channel_name
+        ws_channel = _get_ws_channel_from_name(resolved)
+        message = {"params": {"channel": resolved}, "data": model.model_dump()}
+        if resolved in self.callbacks:
+            self.logger.debug(f"{self.classname}: SBE channel:{resolved}")
+            await self.callbacks[resolved](ws_channel, message)
+        else:
+            self.logger.debug(f"{self.classname}: SBE frame, no callback: {resolved}")
+
+    def _resolve_sbe_channel(self, channel_name: str) -> str | None:
+        """Map an SBE-derived channel name to a registered callback key.
+
+        The SBE codec returns bare channel names like ``order_book.BTC-USD-PERP``
+        while the callback may be registered as
+        ``order_book.BTC-USD-PERP.snapshot@15@100ms``.  A prefix scan bridges the
+        two.
+
+        Note: if the user subscribes two depth levels for the same market
+        simultaneously the prefix scan may match the wrong entry.
+        """
+        if channel_name in self.callbacks:
+            return channel_name
+        # Prefix scan: "order_book.BTC-USD-PERP" → "order_book.BTC-USD-PERP.snapshot@15@100ms"
+        for key in self.callbacks:
+            if key.startswith(channel_name):
+                return key
+        # markets_summary.ALL fallback
+        if channel_name.startswith("markets_summary.") and "markets_summary.ALL" in self.callbacks:
+            return "markets_summary.ALL"
+        return None
 
     async def inject(self, message: str) -> None:
         """Inject a raw message string into the message processing pipeline.
