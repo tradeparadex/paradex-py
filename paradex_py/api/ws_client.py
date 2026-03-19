@@ -633,7 +633,7 @@ class ParadexWebsocketClient:
             return
         resolved = self._resolve_sbe_channel(channel_name) or channel_name
         ws_channel = _get_ws_channel_from_name(resolved)
-        message = {"params": {"channel": resolved}, "data": model.model_dump()}
+        message = {"params": {"channel": resolved, "data": model.model_dump()}}
         if resolved in self.callbacks:
             self.logger.debug(f"{self.classname}: SBE channel:{resolved}")
             await self.callbacks[resolved](ws_channel, message)

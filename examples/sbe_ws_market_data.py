@@ -44,8 +44,7 @@ def _parse_args() -> argparse.Namespace:
 
 
 async def on_markets_summary(ws_channel: ParadexWebsocketChannel, message: dict) -> None:
-    data = message["data"]
-    # data is model.model_dump() — same keys as SBE field names
+    data = message["params"]["data"]
     logger.info(
         f"[markets_summary] {data.get('market')} "
         f"mark={data.get('mark_price')} "
@@ -56,7 +55,7 @@ async def on_markets_summary(ws_channel: ParadexWebsocketChannel, message: dict)
 
 
 async def on_order_book(ws_channel: ParadexWebsocketChannel, message: dict) -> None:
-    data = message["data"]
+    data = message["params"]["data"]
     bids = data.get("bids", [])
     asks = data.get("asks", [])
     best_bid = bids[0] if bids else None

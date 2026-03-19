@@ -138,7 +138,7 @@ async def test_binary_frame_dispatched_to_callback():
     ws_channel, message = received[0]
     assert ws_channel == ParadexWebsocketChannel.TRADES
     assert message["params"]["channel"] == "trades.BTC-USD-PERP"
-    data = message["data"]
+    data = message["params"]["data"]
     assert data["market"] == "BTC-USD-PERP"
     assert data["price"] == "42000.50000000"
     assert data["side"] == "BUY"
@@ -150,7 +150,7 @@ async def test_binary_frame_model_dump_type():
     received_data = {}
 
     async def on_trade(ws_channel, message):
-        received_data.update(message["data"])
+        received_data.update(message["params"]["data"])
 
     ws_client = ParadexWebsocketClient(env=TESTNET, sbe_enabled=True, auto_start_reader=False)
     ws_client.callbacks["trades.BTC-USD-PERP"] = on_trade
