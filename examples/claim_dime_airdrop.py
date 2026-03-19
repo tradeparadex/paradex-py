@@ -10,6 +10,7 @@ Usage:
 Environment variables:
     L1_ADDRESS                  Ethereum L1 address
     L2_PRIVATE_KEY              Paradex L2 private key (hex)
+    L2_GUARDIAN_PRIVATE_KEY     Guardian private key (hex, required if account has guardian)
     L2_ADDRESS                  Expected L2 account address (hex, for verification)
     TREASURY_CONTRACT_ADDRESS   Address of the treasury contract holding tokens
     DRY_RUN                     Set to "false" to execute (default: true)
@@ -21,8 +22,10 @@ import os
 
 from starknet_py.common import int_from_hex
 from starknet_py.hash.selector import get_selector_from_name
+from starknet_py.net.signer.stark_curve_signer import KeyPair
 
 from paradex_py import Paradex
+from paradex_py.account.starknet import Account as StarknetAccount
 from paradex_py.environment import PROD
 
 L1_ADDRESS = os.getenv("L1_ADDRESS", "")
@@ -32,6 +35,8 @@ if not L1_ADDRESS:
 L2_PRIVATE_KEY = os.getenv("L2_PRIVATE_KEY", "")
 if not L2_PRIVATE_KEY:
     raise SystemExit("Error: L2_PRIVATE_KEY environment variable is required")
+
+L2_GUARDIAN_PRIVATE_KEY = os.getenv("L2_GUARDIAN_PRIVATE_KEY", "")
 
 L2_ADDRESS = os.getenv("L2_ADDRESS", "")
 if not L2_ADDRESS:
@@ -256,15 +261,36 @@ async def main():
     # Execute the multicall transaction
     account_contract = await paradex.account.starknet.load_contract(paradex.account.l2_address, is_cairo0_contract=True)
     need_multisig = await paradex.account.starknet.check_multisig_required(account_contract)
+
+    # Build guardian account if multisig is required
+    guardian_account = None
     if need_multisig:
-        raise SystemExit("Error: multisig accounts are not supported")
+        if not L2_GUARDIAN_PRIVATE_KEY:
+            raise SystemExit(
+                "Error: L2_GUARDIAN_PRIVATE_KEY environment variable is required"
+                " (account has a guardian configured)"
+            )
+        guardian_key_pair = KeyPair.from_private_key(int_from_hex(L2_GUARDIAN_PRIVATE_KEY))
+        guardian_account = StarknetAccount(
+            client=paradex.account.starknet.client,
+            address=paradex.account.l2_address,
+            key_pair=guardian_key_pair,
+            chain=paradex.account.starknet._chain_id,
+        )
+        print(f"Guardian public key: {hex(guardian_account.signer.public_key)}")
 
     prepared_invoke = await paradex.account.starknet.prepare_invoke(calls=calls, auto_estimate=True)
     owner_signature = paradex.account.starknet.signer.sign_transaction(prepared_invoke)
 
+    # Guardian co-signs if multisig is required
+    signature = owner_signature
+    if need_multisig:
+        guardian_signature = guardian_account.signer.sign_transaction(prepared_invoke)
+        signature += guardian_signature
+
     # Simulate before sending
     print("Simulating transaction...")
-    signed_invoke = paradex.account.starknet._add_signature(prepared_invoke, owner_signature)
+    signed_invoke = paradex.account.starknet._add_signature(prepared_invoke, signature)
     simulation = await paradex.account.starknet.client.simulate_transactions(transactions=[signed_invoke])
     exec_info = simulation[0].transaction_trace.execute_invocation
     revert_reason = getattr(exec_info, "revert_reason", None)
@@ -273,7 +299,7 @@ async def main():
     print("Simulation successful!")
 
     print("\nExecuting transaction...")
-    invoke_result = await paradex.account.starknet.invoke(account_contract, prepared_invoke, owner_signature)
+    invoke_result = await paradex.account.starknet.invoke(account_contract, prepared_invoke, signature)
     tx_hash = hex(invoke_result.hash)
     print(f"Transaction sent! Hash: {tx_hash}")
 
