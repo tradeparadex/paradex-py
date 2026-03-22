@@ -45,12 +45,16 @@ def _parse_args() -> argparse.Namespace:
 
 async def on_markets_summary(ws_channel: ParadexWebsocketChannel, message: dict) -> None:
     data = message["params"]["data"]
+    # SBE uses 'market'/'last_price'/'timestamp'; JSON uses 'symbol'/'last_traded_price'/'created_at'
+    market = data.get("market") or data.get("symbol")
+    last = data.get("last_price") or data.get("last_traded_price")
+    ts = data.get("timestamp") or data.get("created_at")
     logger.info(
-        f"[markets_summary] {data.get('market')} "
+        f"[markets_summary] {market} "
         f"mark={data.get('mark_price')} "
-        f"last={data.get('last_price')} "
+        f"last={last} "
         f"funding={data.get('funding_rate')} "
-        f"ts={data.get('timestamp')}"
+        f"ts={ts}"
     )
 
 

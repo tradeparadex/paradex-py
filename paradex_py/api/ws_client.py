@@ -91,7 +91,7 @@ class ParadexWebsocketChannel(Enum):
     FILLS = "fills.{market}"
     FUNDING_DATA = "funding_data.{market}"
     FUNDING_PAYMENTS = "funding_payments.{market}"
-    MARKETS_SUMMARY = "markets_summary"
+    MARKETS_SUMMARY = "markets_summary.{market}"
     ORDERS = "orders.{market}"
     ORDER_BOOK = "order_book.{market}.{feed_type}@15@{refresh_rate}@{price_tick}"
     POSITIONS = "positions"
@@ -262,8 +262,10 @@ class ParadexWebsocketClient:
 
             ws_url = self.api_url
             if self.sbe_enabled:
+                from paradex_py.api.sbe.codec import _SCHEMA_ID, _SCHEMA_VERSION
+
                 sep = "&" if "?" in ws_url else "?"
-                ws_url += f"{sep}sbeSchemaId=1&sbeSchemaVersion=0"
+                ws_url += f"{sep}sbeSchemaId={_SCHEMA_ID}&sbeSchemaVersion={_SCHEMA_VERSION}"
 
             # Use custom connector if provided, otherwise use default websockets.connect
             if self.connector is not None:
@@ -657,9 +659,20 @@ class ParadexWebsocketClient:
         for key in self.callbacks:
             if key.startswith(channel_name):
                 return key
-        # markets_summary.ALL fallback
-        if channel_name.startswith("markets_summary.") and "markets_summary.ALL" in self.callbacks:
-            return "markets_summary.ALL"
+        # markets_summary fallback: SBE frames carry per-market channels like
+        # "markets_summary.BTC-USD-PERP"; map to the ALL or base registration.
+        if channel_name.startswith("markets_summary."):
+            if "markets_summary.ALL" in self.callbacks:
+                return "markets_summary.ALL"
+            if "markets_summary" in self.callbacks:
+                return "markets_summary"
+        # Generic *.ALL fallback: SBE frames for orders/fills/trades carry per-market
+        # channel names like "orders.BTC-USD-PERP" while the subscription may be
+        # registered as "orders.ALL".
+        prefix = channel_name.split(".")[0]
+        all_key = f"{prefix}.ALL"
+        if all_key in self.callbacks:
+            return all_key
         return None
 
     async def inject(self, message: str) -> None:

@@ -11,7 +11,7 @@ from paradex_py.environment import TESTNET
 from paradex_py.paradex import Paradex
 
 HEADER = struct.Struct("<HHHH")
-TRADE_STRUCT = struct.Struct("<qqqBqqq")
+TRADE_STRUCT = struct.Struct("<qqqBqqqB")
 MARKET = b"BTC-USD-PERP"
 
 
@@ -29,6 +29,7 @@ def _make_trade_frame(market: bytes = MARKET) -> bytes:
         4200050000000,
         100000,
         1710000000100000,
+        1,  # tradeType FILL
     )
     payload += _var(market)
     return HEADER.pack(block_len, 1, 1, 0) + payload
