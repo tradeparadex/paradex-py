@@ -304,7 +304,7 @@ def test_book_event_best_prices_set():
             best_bid_size=100000000,
             best_ask_price=4200100000000,
             best_ask_size=150000000,
-            relative_spread=238095,  # ~0.000000238095 in Rate12
+            relative_spread=238095,  # ~0.00238095 in Rate8
         )
     )
     assert model.best_bid_price == "42000.00000000"
@@ -358,7 +358,7 @@ def _make_ms_frame(market: bytes = MARKET) -> bytes:
         INT64_MIN,  # delta (null)
         INT64_MIN,  # gamma (null)
         INT64_MIN,  # vega (null)
-        INT64_MIN,  # futureFundingRate (null — Rate12NULL)
+        INT64_MIN,  # futureFundingRate (null — Rate8NULL)
         INT64_MIN,  # externalFairPrice (null)
     )
     payload += _var(market)

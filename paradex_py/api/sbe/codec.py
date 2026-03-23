@@ -407,7 +407,7 @@ def _decode_3(payload: bytes, block_len: int) -> tuple[str, BookEventData]:
         best_bid_size=_f8n(best_bid_size_raw),
         best_ask_price=_f8n(best_ask_price_raw),
         best_ask_size=_f8n(best_ask_size_raw),
-        relative_spread=_f12n(relative_spread_raw),
+        relative_spread=_f8n(relative_spread_raw),
         bids=bids,
         asks=asks,
         market=market,
@@ -463,7 +463,7 @@ def _decode_4(payload: bytes, block_len: int) -> tuple[str, MarketSummaryEventDa
         delta=_f8n(delta_raw),
         gamma=_f8n(gamma_raw),
         vega=_f8n(vega_raw),
-        future_funding_rate=_f12n(future_funding_rate_raw),
+        future_funding_rate=_f8n(future_funding_rate_raw),
         external_fair_price=_f8n(external_fair_price_raw),
         market=market,
     )
