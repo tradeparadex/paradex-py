@@ -109,7 +109,7 @@ class TestWebSocketTimeout:
         assert ws_client.callbacks == {}
         assert ws_client.subscribed_channels == {}
         assert ws_client.ws_timeout == custom_timeout
-        assert ws_client.api_url == f"wss://ws.api.{TESTNET}.paradex.trade/v1"
+        assert ws_client.api_url == f"wss://ws-public.api.{TESTNET}.paradex.trade/v1"
 
     def test_timeout_parameter_in_constructor(self):
         """Test that timeout parameter is properly handled in constructor."""

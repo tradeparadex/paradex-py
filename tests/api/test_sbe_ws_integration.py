@@ -59,7 +59,7 @@ def test_sbe_enabled_flag():
 
 def test_sbe_via_paradex_constructor():
     paradex = Paradex(env=TESTNET, ws_sbe_enabled=True)
-    assert paradex.ws_client.sbe_enabled is True
+    assert paradex.ws_direct_client.sbe_enabled is True
 
 
 def test_sbe_off_via_paradex_constructor():

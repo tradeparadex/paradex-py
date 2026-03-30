@@ -130,6 +130,10 @@ class ParadexWebsocketClient:
         disable_reconnect (bool, optional): Disable automatic reconnection for tight simulation control. Defaults to False.
         enable_compression (bool, optional): Enable WebSocket per-message compression (RFC 7692). Defaults to True.
         api_client (Optional[Any], optional): Reference to ParadexApiClient for token refresh. Defaults to None.
+        direct (bool, optional): Connect to the direct WebSocket endpoint
+            (``ws.api.{env}.paradex.trade``) instead of the default public one
+            (``ws-public.api.{env}.paradex.trade``). Use this for authenticated/private channels
+            that require a JWT token. Ignored when ``ws_url_override`` is provided. Defaults to False.
 
     Examples:
         >>> from paradex_py import Paradex
@@ -170,9 +174,15 @@ class ParadexWebsocketClient:
         enable_compression: bool = True,
         api_client: Any | None = None,
         sbe_enabled: bool = False,
+        direct: bool = False,
     ):
         self.env = env
-        self.api_url = ws_url_override or f"wss://ws.api.{self.env}.paradex.trade/v1"
+        default_ws_url = (
+            f"wss://ws.api.{self.env}.paradex.trade/v1"
+            if direct
+            else f"wss://ws-public.api.{self.env}.paradex.trade/v1"
+        )
+        self.api_url = ws_url_override or default_ws_url
         self.logger = logger or logging.getLogger(__name__)
         self.ws: WebSocketConnection | ClientConnection | None = None
         self.account: ParadexAccount | None = None
