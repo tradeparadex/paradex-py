@@ -6,7 +6,7 @@ subscribes to:
   - trades.<MARKET>                           (live trade feed)
   - order_book.<MARKET>.snapshot@15@100ms     (top-15 levels, 100ms refresh)
 
-Pass --latency to compare delivery latency between the public and default WS
+Pass --latency to compare delivery latency between the public and direct WS
 endpoints side-by-side (subscribes BBO on both, prints stats every 10s).
 
 Usage:
@@ -46,14 +46,9 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--latency",
         action="store_true",
-        help="Compare delivery latency between public and default WS endpoints",
+        help="Compare delivery latency between public and direct WS endpoints",
     )
     return parser.parse_args()
-
-
-# ---------------------------------------------------------------------------
-# Callbacks for the basic subscription mode
-# ---------------------------------------------------------------------------
 
 
 async def on_bbo(ws_channel: ParadexWebsocketChannel, message: dict) -> None:
@@ -92,11 +87,6 @@ async def on_order_book(ws_channel: ParadexWebsocketChannel, message: dict) -> N
     )
 
 
-# ---------------------------------------------------------------------------
-# Latency comparison mode
-# ---------------------------------------------------------------------------
-
-
 def _latency_stats(samples: list[float]) -> str:
     if not samples:
         return "n=0"
@@ -110,7 +100,7 @@ def _latency_stats(samples: list[float]) -> str:
 
 
 async def run_latency_comparison(env: Environment, market: str) -> None:
-    """Subscribe to BBO on both public and default WS endpoints and compare delivery latency."""
+    """Subscribe to BBO on both public and direct WS endpoints and compare delivery latency."""
     paradex = Paradex(env=env, logger=logger)
 
     samples: dict[str, list[float]] = {"public": [], "direct": []}
@@ -124,7 +114,6 @@ async def run_latency_comparison(env: Environment, market: str) -> None:
 
         return cb
 
-    # Connect both endpoints
     for client, name in [(paradex.ws_client, "public"), (paradex.ws_direct_client, "direct")]:
         connected = False
         while not connected:
@@ -146,11 +135,6 @@ async def run_latency_comparison(env: Environment, market: str) -> None:
             s = samples[endpoint]
             logger.info(f"[latency/{endpoint}] {_latency_stats(s)}")
             samples[endpoint] = []  # reset window
-
-
-# ---------------------------------------------------------------------------
-# Basic subscription mode
-# ---------------------------------------------------------------------------
 
 
 async def run_subscriptions(env: Environment, market: str) -> None:
@@ -184,10 +168,6 @@ async def run_subscriptions(env: Environment, market: str) -> None:
     logger.info(f"Subscribed. Listening for {market} data... (Ctrl+C to stop)")
     await asyncio.get_event_loop().create_future()  # run forever
 
-
-# ---------------------------------------------------------------------------
-# Entry point
-# ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
     args = _parse_args()

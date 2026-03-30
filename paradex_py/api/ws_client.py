@@ -132,8 +132,8 @@ class ParadexWebsocketClient:
         api_client (Optional[Any], optional): Reference to ParadexApiClient for token refresh. Defaults to None.
         direct (bool, optional): Connect to the direct WebSocket endpoint
             (``ws.api.{env}.paradex.trade``) instead of the default public one
-            (``ws-public.api.{env}.paradex.trade``). Use this for authenticated/private channels
-            that require a JWT token. Ignored when ``ws_url_override`` is provided. Defaults to False.
+            (``ws-public.api.{env}.paradex.trade``).
+            Ignored when ``ws_url_override`` is provided. Defaults to False.
 
     Examples:
         >>> from paradex_py import Paradex
