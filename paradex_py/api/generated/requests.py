@@ -1,4 +1,4 @@
-# Generated from Paradex API spec version 1.106.0
+# Generated from Paradex API spec version 1.114.2
 
 from __future__ import annotations
 
@@ -26,6 +26,47 @@ class AccountMarginRequest(BaseModel):
     ] = None
 
 
+class ActivateSubkey(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        populate_by_name=True,
+    )
+    account_id: Annotated[
+        str, Field(description="Account ID that the pending subkey belongs to.", examples=["0x1234567890abcdef"])
+    ]
+    name: Annotated[
+        str | None,
+        Field(description="Optional: New name for the subkey upon activation.", examples=["My Mobile Device"]),
+    ] = None
+    public_key: Annotated[
+        str,
+        Field(
+            description="Public key of the pending subkey to activate.",
+            examples=["0x3d9f2b2e5f50c1aade60ca540368cd7490160f41270c192c05729fe35b656a9"],
+        ),
+    ]
+    signature: Annotated[
+        list[str],
+        Field(
+            description="Starknet signature [r, s] over pedersen(timestamp, eph_public_key).",
+            examples=[['["0xr..."', '"0xs..."]']],
+        ),
+    ]
+    timestamp: Annotated[
+        int, Field(description="Unix timestamp (seconds) included in signed message.", examples=[1706400000])
+    ]
+
+
+class ActivateSubkeyResponse(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        populate_by_name=True,
+    )
+    encrypted_key: Annotated[
+        str | None, Field(description="Encrypted private key returned to client.", examples=["0xabc..."])
+    ] = None
+
+
 class CancelOrderBatchRequest(BaseModel):
     model_config = ConfigDict(
         extra="allow",
@@ -46,17 +87,28 @@ class CreateSubkey(BaseModel):
         extra="allow",
         populate_by_name=True,
     )
-    key_type: Annotated[str | None, Field(description="Key type to be registered as a subkey.")] = None
-    name: Annotated[
-        str | None, Field(description="User-friendly name for the subkey.", examples=["My Trading Subkey"])
+    encrypted_key: Annotated[
+        str | None, Field(description="Encrypted private key (required if state=pending).", examples=["0xabc..."])
     ] = None
-    public_key: Annotated[
+    eph_public_key: Annotated[
         str | None,
+        Field(
+            description="Ephemeral public key for signature verification (required if state=pending).",
+            examples=["0x123..."],
+        ),
+    ] = None
+    name: Annotated[str, Field(description="User-friendly name for the subkey.", examples=["My Trading Subkey"])]
+    public_key: Annotated[
+        str,
         Field(
             description="Public key to be registered as a subkey.",
             examples=["0x3d9f2b2e5f50c1aade60ca540368cd7490160f41270c192c05729fe35b656a9"],
         ),
-    ] = None
+    ]
+    state: Annotated[
+        str | None,
+        Field(description="State of the subkey: 'active' or 'pending'. Defaults to 'active'.", examples=["active"]),
+    ] = "active"
 
 
 class CreateToken(BaseModel):
@@ -65,13 +117,12 @@ class CreateToken(BaseModel):
         populate_by_name=True,
     )
     expiry_duration: Annotated[
-        int | None,
-        Field(description="Duration in seconds from now until expiration (1 min to 1 year).", examples=[86400]),
-    ] = None
+        int, Field(description="Duration in seconds from now until expiration (1 min to 1 year).", examples=[86400])
+    ]
     name: Annotated[
-        str | None, Field(description="User-friendly name for the JWT token.", examples=["My Long-term Trading Token"])
-    ] = None
-    token_type: Annotated[str | None, Field(description="Type of token to create.")] = None
+        str, Field(description="User-friendly name for the JWT token.", examples=["My Long-term Trading Token"])
+    ]
+    token_type: Annotated[str, Field(description="Type of token to create.")]
 
 
 class CreateVault(BaseModel):
@@ -159,6 +210,15 @@ class PriceKind(str, Enum):
     price_kind_underlying = "underlying"
 
 
+class RecordComplianceActionRequest(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        populate_by_name=True,
+    )
+    action_type: str
+    action_version: str
+
+
 class UpdateAccountMaxSlippageRequest(BaseModel):
     model_config = ConfigDict(
         extra="allow",
@@ -208,6 +268,14 @@ class UpdateSizeCurrencyDisplayRequest(BaseModel):
     size_currency_display: str
 
 
+class UpdateSubkey(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        populate_by_name=True,
+    )
+    name: Annotated[str, Field(description="New name for the subkey.", examples=["My Updated Device Name"])]
+
+
 class UpdateTradingValueDisplayRequest(BaseModel):
     model_config = ConfigDict(
         extra="allow",
@@ -241,6 +309,9 @@ class AlgoOrderRequest(BaseModel):
             examples=[3600],
         ),
     ]
+    frequency: Annotated[
+        int | None, Field(description="Interval in seconds between child orders (default: 30)", examples=[30])
+    ] = None
     market: Annotated[str, Field(description="Market for which order is created", examples=["BTC-USD-PERP"])]
     on_behalf_of_account: Annotated[
         str | None,
