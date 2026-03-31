@@ -80,23 +80,25 @@ async def main(env: Environment, market: str) -> None:
     paradex = Paradex(
         env=env,
         logger=logger,
-        ws_sbe_enabled=True,  # opt-in SBE binary encoding
+        ws_sbe_enabled=True,  # enables SBE on ws_direct_client
         auto_start_ws_reader=True,
     )
 
+    # SBE binary encoding is on ws_direct_client (ws.api.{env}.paradex.trade)
+    client = paradex.ws_direct_client
     connected = False
     while not connected:
-        connected = await paradex.ws_client.connect()
+        connected = await client.connect()
         if not connected:
             logger.info("Connection failed, retrying in 1s...")
             await asyncio.sleep(1)
 
-    await paradex.ws_client.subscribe(
+    await client.subscribe(
         ParadexWebsocketChannel.MARKETS_SUMMARY,
         callback=on_markets_summary,
         params={"market": market},
     )
-    await paradex.ws_client.subscribe(
+    await client.subscribe(
         ParadexWebsocketChannel.ORDER_BOOK,
         callback=on_order_book,
         params={"market": market, "refresh_rate": "100ms"},
