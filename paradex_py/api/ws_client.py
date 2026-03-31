@@ -286,13 +286,15 @@ class ParadexWebsocketClient:
 
             self.logger.info(f"{self.classname}: Connected to {ws_url}")
 
-            # Start reader task if auto_start_reader is enabled and not already running
-            if self.auto_start_reader and self._reader_task is None:
-                self._reader_task = asyncio.create_task(self._read_messages())
-
             if self.account:
                 await self._send_auth_id(self.ws, self.account.jwt_token)
                 self.logger.info(f"{self.classname}: Authenticated to {self.api_url}")
+
+            # Start reader task after auth so the first message the reader sees is
+            # already authenticated (prevents a race where the reader starts before
+            # the auth RPC round-trip completes).
+            if self.auto_start_reader and self._reader_task is None:
+                self._reader_task = asyncio.create_task(self._read_messages())
         except (
             websockets.exceptions.ConnectionClosedOK,
             websockets.exceptions.ConnectionClosed,

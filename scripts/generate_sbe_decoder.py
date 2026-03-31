@@ -23,6 +23,7 @@ _PRIM_TO_CHAR = {
     "uint8": "B",
     "uint16": "H",
     "int8": "b",
+    "int16": "h",
     "uint32": "I",
 }
 
@@ -32,13 +33,25 @@ _COMPOSITE_INFO = {
     "Price8": ("q", "_f8({v})", "str"),
     "Price8NULL": ("q", "_f8n({v})", "Optional[str]"),
     "Qty8": ("q", "_f8({v})", "str"),
+    "Qty8NULL": ("q", "_f8n({v})", "Optional[str]"),
     "Value8": ("q", "_f8({v})", "str"),
     "Value8NULL": ("q", "_f8n({v})", "Optional[str]"),
     "Rate8": ("q", "_f8({v})", "str"),
+    "Rate8NULL": ("q", "_f8n({v})", "Optional[str]"),
     "Rate12": ("q", "_f12({v})", "str"),
-    # Rate12NULL not in schema but added for completeness
     "Rate12NULL": ("q", "_f12n({v})", "Optional[str]"),
     "Timestamp": ("q", "_ts({v})", "int"),
+}
+
+# Fixed-length byte fields → (struct_char, helper_call_template, python_type_str)
+_FIXED_FIELDS = {
+    "AccountAddress": ("32s", "_addr({v})", "str"),
+}
+
+# Set/bitset types → (struct_char, helper_call_template, python_type_str)
+# The helper name matches the generated _decode_{setname_lower}() function.
+_SET_FIELDS = {
+    "OrderFlags": ("B", "_decode_orderflags({v})", "list[str]"),
 }
 
 
@@ -47,7 +60,7 @@ def _to_snake(name: str) -> str:
     return re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", s1).lower()
 
 
-def parse_schema(schema_path: str):
+def parse_schema(schema_path: str):  # noqa: C901
     """Parse the XML schema and return (enums, messages, schema_meta)."""
     tree = ET.parse(schema_path)
     root = tree.getroot()
@@ -55,7 +68,7 @@ def parse_schema(schema_path: str):
     schema_id = root.get("id", "1")
     schema_version = root.get("version", "0")
     root.get("description", "")
-    released = "2026-03-13"  # from XML comments
+    released = "2026-03-31"
 
     # Parse enums
     enums = {}  # name → {int_val: python_val}
@@ -77,6 +90,17 @@ def parse_schema(schema_path: str):
         name = elem.get("name")
         enc = elem.get("encodingType", "uint8")
         enum_encoding[name] = _PRIM_TO_CHAR.get(enc, "B")
+
+    # Parse set types (bitsets like OrderFlags)
+    sets = {}  # name → {bit_pos: flag_name}
+    for elem in root.iter("set"):
+        name = elem.get("name")
+        bits = {}
+        for choice in elem.findall("choice"):
+            flag_name = choice.get("name")
+            bit_pos = int(choice.text.strip())
+            bits[bit_pos] = flag_name
+        sets[name] = bits
 
     # Parse messages
     messages = []
@@ -120,12 +144,17 @@ def parse_schema(schema_path: str):
         "released": released,
         "enums": enums,
         "enum_encoding": enum_encoding,
+        "sets": sets,
         "messages": messages,
     }
 
 
 def _field_struct_char(field_type: str, enums: dict, enum_encoding: dict) -> str:
     """Return the struct char for a field type."""
+    if field_type in _FIXED_FIELDS:
+        return _FIXED_FIELDS[field_type][0]
+    if field_type in _SET_FIELDS:
+        return _SET_FIELDS[field_type][0]
     if field_type in _COMPOSITE_INFO:
         return _COMPOSITE_INFO[field_type][0]
     if field_type in _PRIM_TO_CHAR:
@@ -137,10 +166,16 @@ def _field_struct_char(field_type: str, enums: dict, enum_encoding: dict) -> str
 
 def _field_helper(field_type: str, var: str, enums: dict) -> str:
     """Return the Python expression to convert a raw value."""
+    if field_type in _FIXED_FIELDS:
+        tmpl = _FIXED_FIELDS[field_type][1]
+        return tmpl.replace("{v}", var)
+    if field_type in _SET_FIELDS:
+        tmpl = _SET_FIELDS[field_type][1]
+        return tmpl.replace("{v}", var)
     if field_type in _COMPOSITE_INFO:
         tmpl = _COMPOSITE_INFO[field_type][1]
         return tmpl.replace("{v}", var)
-    if field_type in ("int64", "uint8", "uint16"):
+    if field_type in _PRIM_TO_CHAR:
         return var
     if field_type in enums:
         enum_name = f"_ENUM_{field_type.upper()}"
@@ -150,11 +185,13 @@ def _field_helper(field_type: str, var: str, enums: dict) -> str:
 
 def _field_python_type(field_type: str, enums: dict) -> str:
     """Return the Python type annotation string."""
+    if field_type in _FIXED_FIELDS:
+        return _FIXED_FIELDS[field_type][2]
+    if field_type in _SET_FIELDS:
+        return _SET_FIELDS[field_type][2]
     if field_type in _COMPOSITE_INFO:
         return _COMPOSITE_INFO[field_type][2]
-    if field_type in ("int64",):
-        return "int"
-    if field_type in ("uint8", "uint16"):
+    if field_type in _PRIM_TO_CHAR:
         return "int"
     if field_type in enums:
         return "Optional[str]"
@@ -185,6 +222,7 @@ def generate_codec(schema: dict) -> str:  # noqa: C901
     released = schema["released"]
     enums = schema["enums"]
     enum_encoding = schema["enum_encoding"]
+    sets = schema["sets"]
     messages = schema["messages"]
 
     lines = []
@@ -258,7 +296,30 @@ def generate_codec(schema: dict) -> str:  # noqa: C901
         '_GROUP_HDR = struct.Struct("<HH")',
         "",
         "",
+        "def _addr(b: bytes) -> str:",
+        '    """Decode 32-byte big-endian AccountAddress to 0x-prefixed hex string."""',
+        '    val = int.from_bytes(b, "big")',
+        '    return "0x" + format(val, "x") if val else "0x0"',
+        "",
+        "",
     ]
+
+    # Sets (bitsets like OrderFlags)
+    for set_name, bits in sets.items():
+        f"_{''.join(c if c.isupper() or c.isdigit() else '_' if c == '_' else '' for c in set_name).upper().rstrip('_')}_FLAG_NAMES"
+        # Build {bit_pos: "FLAG_NAME", ...}
+        parts = [f'{bit}: "{name}"' for bit, name in sorted(bits.items())]
+        lines += [
+            f"# ── {set_name} bitset ──────────────────────────────────────────────────────",
+            "",
+            f"_{set_name.upper()}_FLAG_NAMES = {{{', '.join(parts)}}}",
+            "",
+            "",
+            f"def _decode_{set_name.lower()}(flags: int) -> list[str]:",
+            f"    return [name for bit, name in _{set_name.upper()}_FLAG_NAMES.items() if flags & (1 << bit)]",
+            "",
+            "",
+        ]
 
     # Enum maps
     lines += ["# ── Enum maps ────────────────────────────────────────────────────────────", ""]

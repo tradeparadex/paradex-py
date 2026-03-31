@@ -230,7 +230,7 @@ def test_bbo_event_null_ask():
 
 # ── BookEvent (id=3) ─────────────────────────────────────────────────────
 
-_BOOK_FIXED = struct.Struct("<qqBqqqqq")
+_BOOK_FIXED = struct.Struct("<qqBqqqqqqqqq")  # 4 new API-feed best price/size fields
 _BOOK_ENTRY = struct.Struct("<qq")
 _GROUP_HDR = struct.Struct("<HH")
 
@@ -244,6 +244,10 @@ def _make_book_frame(
     best_ask_price: int = INT64_MIN,
     best_ask_size: int = INT64_MIN,
     relative_spread: int = INT64_MIN,
+    best_bid_api_price: int = INT64_MIN,
+    best_bid_api_size: int = INT64_MIN,
+    best_ask_api_price: int = INT64_MIN,
+    best_ask_api_size: int = INT64_MIN,
     bids: list[tuple[int, int]] | None = None,
     asks: list[tuple[int, int]] | None = None,
     market: bytes = MARKET,
@@ -255,7 +259,18 @@ def _make_book_frame(
 
     block_len = _BOOK_FIXED.size
     payload = _BOOK_FIXED.pack(
-        ts, seq, pkg_type, best_bid_price, best_bid_size, best_ask_price, best_ask_size, relative_spread
+        ts,
+        seq,
+        pkg_type,
+        best_bid_price,
+        best_bid_size,
+        best_ask_price,
+        best_ask_size,
+        relative_spread,
+        best_bid_api_price,
+        best_bid_api_size,
+        best_ask_api_price,
+        best_ask_api_size,
     )
 
     # bids group
@@ -333,7 +348,7 @@ def test_book_event_zero_size_removal():
 
 # ── MarketSummaryEvent (id=4) ─────────────────────────────────────────────
 
-_MS_STRUCT = struct.Struct("<qqqqqqqqqqqqqqqqqqqqq")
+_MS_STRUCT = struct.Struct("<qqqqqqqqqqqqqqqqqqqqqqqqqqq")  # 27 fields; 6 new vs prev schema
 
 
 def _make_ms_frame(market: bytes = MARKET) -> bytes:
@@ -358,8 +373,14 @@ def _make_ms_frame(market: bytes = MARKET) -> bytes:
         INT64_MIN,  # delta (null)
         INT64_MIN,  # gamma (null)
         INT64_MIN,  # vega (null)
+        INT64_MIN,  # theta (null — new)
+        INT64_MIN,  # rho (null — new)
+        INT64_MIN,  # volga (null — new)
+        INT64_MIN,  # vanna (null — new)
         INT64_MIN,  # futureFundingRate (null — Rate8NULL)
         INT64_MIN,  # externalFairPrice (null)
+        INT64_MIN,  # bidSize (null — new)
+        INT64_MIN,  # askSize (null — new)
     )
     payload += _var(market)
     return _hdr(block_len, 4) + payload
@@ -374,7 +395,7 @@ def test_ms_event():
     assert model.funding_rate == "0.01000000"
     assert model.bid == "42000.00000000"
     assert model.ask == "42001.00000000"
-    assert model.price_change_rate_24h == "-0.00500000"
+    assert model.price_change_rate24h == "-0.00500000"
 
 
 def test_ms_event_null_options_fields():
@@ -400,15 +421,21 @@ def test_ms_event_null_bid_ask():
         INT64_MIN,  # ask null
         100_000_000_000,
         0,
-        INT64_MIN,
-        INT64_MIN,
-        INT64_MIN,
-        INT64_MIN,
-        INT64_MIN,
-        INT64_MIN,
-        INT64_MIN,
-        INT64_MIN,
-        INT64_MIN,
+        INT64_MIN,  # markIv
+        INT64_MIN,  # bidIv
+        INT64_MIN,  # askIv
+        INT64_MIN,  # lastIv
+        INT64_MIN,  # delta
+        INT64_MIN,  # gamma
+        INT64_MIN,  # vega
+        INT64_MIN,  # theta (new)
+        INT64_MIN,  # rho (new)
+        INT64_MIN,  # volga (new)
+        INT64_MIN,  # vanna (new)
+        INT64_MIN,  # futureFundingRate
+        INT64_MIN,  # externalFairPrice
+        INT64_MIN,  # bidSize (new)
+        INT64_MIN,  # askSize (new)
     )
     frame = _hdr(_MS_STRUCT.size, 4) + payload + _var(MARKET)
     _, model = decode_frame(frame)
@@ -444,7 +471,7 @@ def test_funding_data_event():
     assert model.funding_rate == "0.01000000"
     assert model.funding_index == "42000.00000000"
     assert model.funding_premium == "0.00500000"
-    assert model.funding_rate_8h == "0.00800000"
+    assert model.funding_rate8h == "0.00800000"
     assert model.funding_period_hours == 8
 
 
