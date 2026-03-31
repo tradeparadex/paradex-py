@@ -142,26 +142,37 @@ class Paradex(_ClientBase):
             retry_strategy=effective_retry,
         )
 
-        _ws_common_kwargs = {
-            "env": env,
-            "logger": logger,
-            "ws_timeout": ws_timeout,
-            "auto_start_reader": auto_start_ws_reader,
-            "connector": ws_connector,
-            "reader_sleep_on_error": ws_reader_sleep_on_error,
-            "reader_sleep_on_no_connection": ws_reader_sleep_on_no_connection,
-            "validate_messages": validate_ws_messages,
-            "ping_interval": ping_interval,
-            "disable_reconnect": disable_reconnect,
-            "enable_compression": enable_ws_compression,
-            "api_client": self.api_client,
-        }
         # Public endpoint (default): ws-public.api.{env}.paradex.trade
-        self.ws_client = ParadexWebsocketClient(**_ws_common_kwargs, ws_url_override=ws_url_override)
+        self.ws_client = ParadexWebsocketClient(
+            env=env,
+            logger=logger,
+            ws_timeout=ws_timeout,
+            auto_start_reader=auto_start_ws_reader,
+            connector=ws_connector,
+            ws_url_override=ws_url_override,
+            reader_sleep_on_error=ws_reader_sleep_on_error,
+            reader_sleep_on_no_connection=ws_reader_sleep_on_no_connection,
+            validate_messages=validate_ws_messages,
+            ping_interval=ping_interval,
+            disable_reconnect=disable_reconnect,
+            enable_compression=enable_ws_compression,
+            api_client=self.api_client,
+        )
         # Direct endpoint (opt-in): ws.api.{env}.paradex.trade
         self.ws_direct_client = ParadexWebsocketClient(
-            **_ws_common_kwargs,
+            env=env,
+            logger=logger,
+            ws_timeout=ws_timeout,
+            auto_start_reader=auto_start_ws_reader,
+            connector=ws_connector,
             ws_url_override=ws_direct_url_override,
+            reader_sleep_on_error=ws_reader_sleep_on_error,
+            reader_sleep_on_no_connection=ws_reader_sleep_on_no_connection,
+            validate_messages=validate_ws_messages,
+            ping_interval=ping_interval,
+            disable_reconnect=disable_reconnect,
+            enable_compression=enable_ws_compression,
+            api_client=self.api_client,
             sbe_enabled=ws_sbe_enabled,
             direct=True,
         )
