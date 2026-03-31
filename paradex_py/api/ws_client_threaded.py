@@ -38,9 +38,8 @@ class ThreadedParadexWebsocketClient:
             msg = client.get_updates(timeout=1.0)
     """
 
-    def __init__(self, env: Environment, log_messages: bool = True):
+    def __init__(self, env: Environment):
         self.env = env
-        self.log_messages = log_messages
         self.message_queue: queue.Queue = queue.Queue(maxsize=1000)
 
         self._ws_client: ParadexWebsocketClient | None = None
@@ -102,30 +101,28 @@ class ThreadedParadexWebsocketClient:
     async def _async_loop(self) -> None:
         """Main async loop using the reconnect-aware client."""
         try:
+            def _on_message(channel: str, message: dict) -> None:
+                self.message_queue.put((channel, message))
+
             self._ws_client = ParadexWebsocketClient(
                 env=self.env,
-                log_messages=self.log_messages,
+                auto_start_reader=True,
             )
 
             self._connected_event.set()
+            await self._ws_client.connect()
 
             while not self._stop_event.is_set():
                 try:
-                    # Check for commands
+                    # Check for subscribe commands
                     try:
                         cmd, channel = self.message_queue.get_nowait()
                         if cmd == "_subscribe":
-                            await self._ws_client.subscribe(channel)
+                            await self._ws_client.subscribe(channel, callback=_on_message)
                     except queue.Empty:
                         pass
 
-                    # Receive messages (benefits from their reconnect logic)
-                    msg = await asyncio.wait_for(
-                        self._ws_client.receive_message(),
-                        timeout=1.0,
-                    )
-                    if msg:
-                        self.message_queue.put((msg.get("channel"), msg))
+                    await asyncio.sleep(0.05)
 
                 except asyncio.TimeoutError:
                     continue
