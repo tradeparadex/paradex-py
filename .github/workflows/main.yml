@@ -48,7 +48,7 @@ jobs:
           cache-dependency-glob: "uv.lock"
 
       - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y libusb-1.0-0-dev
+        run: sudo apt-get update && sudo apt-get install -y libusb-1.0-0-dev libudev-dev
 
       - name: Sync dependencies
         run: uv sync --locked
