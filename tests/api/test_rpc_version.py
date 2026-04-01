@@ -94,6 +94,7 @@ class TestParadexRpcVersion:
         paradex.logger = MagicMock()
         paradex.api_client = MockApiClient()
         paradex.ws_client = MagicMock()
+        paradex.ws_direct_client = MagicMock()
         paradex.config = paradex.api_client.fetch_system_config()
         paradex.account = None
 

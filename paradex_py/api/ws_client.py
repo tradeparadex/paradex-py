@@ -91,7 +91,7 @@ class ParadexWebsocketChannel(Enum):
     FILLS = "fills.{market}"
     FUNDING_DATA = "funding_data.{market}"
     FUNDING_PAYMENTS = "funding_payments.{market}"
-    MARKETS_SUMMARY = "markets_summary"
+    MARKETS_SUMMARY = "markets_summary.{market}"
     ORDERS = "orders.{market}"
     ORDER_BOOK = "order_book.{market}.{feed_type}@15@{refresh_rate}@{price_tick}"
     POSITIONS = "positions"
@@ -130,6 +130,10 @@ class ParadexWebsocketClient:
         disable_reconnect (bool, optional): Disable automatic reconnection for tight simulation control. Defaults to False.
         enable_compression (bool, optional): Enable WebSocket per-message compression (RFC 7692). Defaults to True.
         api_client (Optional[Any], optional): Reference to ParadexApiClient for token refresh. Defaults to None.
+        direct (bool, optional): Connect to the direct WebSocket endpoint
+            (``ws.api.{env}.paradex.trade``) instead of the default public one
+            (``ws-public.api.{env}.paradex.trade``).
+            Ignored when ``ws_url_override`` is provided. Defaults to False.
 
     Examples:
         >>> from paradex_py import Paradex
@@ -169,9 +173,16 @@ class ParadexWebsocketClient:
         disable_reconnect: bool = False,
         enable_compression: bool = True,
         api_client: Any | None = None,
+        sbe_enabled: bool = False,
+        direct: bool = False,
     ):
         self.env = env
-        self.api_url = ws_url_override or f"wss://ws.api.{self.env}.paradex.trade/v1"
+        default_ws_url = (
+            f"wss://ws.api.{self.env}.paradex.trade/v1"
+            if direct
+            else f"wss://ws-public.api.{self.env}.paradex.trade/v1"
+        )
+        self.api_url = ws_url_override or default_ws_url
         self.logger = logger or logging.getLogger(__name__)
         self.ws: WebSocketConnection | ClientConnection | None = None
         self.account: ParadexAccount | None = None
@@ -203,6 +214,9 @@ class ParadexWebsocketClient:
 
         # API client reference for token refresh on reconnect
         self._api_client = api_client
+
+        # SBE binary encoding opt-in
+        self.sbe_enabled = sbe_enabled
 
         if auto_start_reader:
             try:
@@ -256,22 +270,31 @@ class ParadexWebsocketClient:
             if self.account:
                 extra_headers.update({"Authorization": f"Bearer {self.account.jwt_token}"})
 
+            ws_url = self.api_url
+            if self.sbe_enabled:
+                from paradex_py.api.sbe.codec import _SCHEMA_ID, _SCHEMA_VERSION
+
+                sep = "&" if "?" in ws_url else "?"
+                ws_url += f"{sep}sbeSchemaId={_SCHEMA_ID}&sbeSchemaVersion={_SCHEMA_VERSION}"
+
             # Use custom connector if provided, otherwise use default websockets.connect
             if self.connector is not None:
-                self.ws = await self.connector(self.api_url, extra_headers)
+                self.ws = await self.connector(ws_url, extra_headers)
             else:
                 connect_kwargs = self._build_connect_kwargs(extra_headers)
-                self.ws = await websockets.connect(self.api_url, **connect_kwargs)
+                self.ws = await websockets.connect(ws_url, **connect_kwargs)
 
-            self.logger.info(f"{self.classname}: Connected to {self.api_url}")
-
-            # Start reader task if auto_start_reader is enabled and not already running
-            if self.auto_start_reader and self._reader_task is None:
-                self._reader_task = asyncio.create_task(self._read_messages())
+            self.logger.info(f"{self.classname}: Connected to {ws_url}")
 
             if self.account:
                 await self._send_auth_id(self.ws, self.account.jwt_token)
                 self.logger.info(f"{self.classname}: Authenticated to {self.api_url}")
+
+            # Start reader task after auth so the first message the reader sees is
+            # already authenticated (prevents a race where the reader starts before
+            # the auth RPC round-trip completes).
+            if self.auto_start_reader and self._reader_task is None:
+                self._reader_task = asyncio.create_task(self._read_messages())
         except (
             websockets.exceptions.ConnectionClosedOK,
             websockets.exceptions.ConnectionClosed,
@@ -492,6 +515,9 @@ class ParadexWebsocketClient:
         async with self._recv_lock:
             response = await asyncio.wait_for(self.ws.recv(), timeout=self.ws_timeout)
         if isinstance(response, bytes):
+            if self.sbe_enabled:
+                await self._process_binary_message(response)
+                return
             response = response.decode("utf-8")
         await self._process_message(response)
 
@@ -600,9 +626,66 @@ class ParadexWebsocketClient:
             return False
         else:
             if isinstance(response, bytes):
+                if self.sbe_enabled:
+                    await self._process_binary_message(response)
+                    return True
                 response = response.decode("utf-8")
             await self._process_message(response)
             return True
+
+    async def _process_binary_message(self, data: bytes) -> None:
+        """Decode an SBE binary frame and dispatch to the registered callback."""
+        from paradex_py.api.sbe import SbeDecodeError, decode_frame
+
+        try:
+            channel_name, model = decode_frame(data)
+        except SbeDecodeError as e:
+            self.logger.warning(f"{self.classname}: SBE decode error: {e}")
+            return
+        if channel_name is None or model is None:
+            # heartbeat / subscribed ack — discard
+            return
+        resolved = self._resolve_sbe_channel(channel_name) or channel_name
+        ws_channel = _get_ws_channel_from_name(resolved)
+        message = {"params": {"channel": resolved, "data": model.model_dump()}}
+        if resolved in self.callbacks:
+            self.logger.debug(f"{self.classname}: SBE channel:{resolved}")
+            await self.callbacks[resolved](ws_channel, message)
+        else:
+            self.logger.debug(f"{self.classname}: SBE frame, no callback: {resolved}")
+
+    def _resolve_sbe_channel(self, channel_name: str) -> str | None:
+        """Map an SBE-derived channel name to a registered callback key.
+
+        The SBE codec returns bare channel names like ``order_book.BTC-USD-PERP``
+        while the callback may be registered as
+        ``order_book.BTC-USD-PERP.snapshot@15@100ms``.  A prefix scan bridges the
+        two.
+
+        Note: if the user subscribes two depth levels for the same market
+        simultaneously the prefix scan may match the wrong entry.
+        """
+        if channel_name in self.callbacks:
+            return channel_name
+        # Prefix scan: "order_book.BTC-USD-PERP" → "order_book.BTC-USD-PERP.snapshot@15@100ms"
+        for key in self.callbacks:
+            if key.startswith(channel_name):
+                return key
+        # markets_summary fallback: SBE frames carry per-market channels like
+        # "markets_summary.BTC-USD-PERP"; map to the ALL or base registration.
+        if channel_name.startswith("markets_summary."):
+            if "markets_summary.ALL" in self.callbacks:
+                return "markets_summary.ALL"
+            if "markets_summary" in self.callbacks:
+                return "markets_summary"
+        # Generic *.ALL fallback: SBE frames for orders/fills/trades carry per-market
+        # channel names like "orders.BTC-USD-PERP" while the subscription may be
+        # registered as "orders.ALL".
+        prefix = channel_name.split(".")[0]
+        all_key = f"{prefix}.ALL"
+        if all_key in self.callbacks:
+            return all_key
+        return None
 
     async def inject(self, message: str) -> None:
         """Inject a raw message string into the message processing pipeline.

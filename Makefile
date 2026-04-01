@@ -44,6 +44,13 @@ check: ## Run code quality tools
 	@echo "🚀 Checking for unused dependencies: Running deptry"
 	@$(UV) run deptry .
 
+.PHONY: ci
+ci: ## Run the same checks as GitHub CI (quality + tox + docs)
+	@$(MAKE) check
+	@$(MAKE) docs-test
+	@echo "🚀 Running tox (pytest + mypy per Python version)"
+	@$(UV) run tox
+
 .PHONY: test
 test: ## Test the code with pytest
 	@echo "🚀 Testing code: Running pytest"

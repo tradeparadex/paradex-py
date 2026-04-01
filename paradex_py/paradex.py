@@ -46,13 +46,15 @@ class Paradex(_ClientBase):
         enable_http_compression (bool, optional): Enable HTTP compression (gzip, deflate, br). Defaults to True.
         auto_start_ws_reader (bool, optional): Whether to automatically start WS message reader. Defaults to True.
         ws_connector (WebSocketConnector, optional): Custom WebSocket connector for injection. Defaults to None.
-        ws_url_override (str, optional): Custom WebSocket URL override. Defaults to None.
+        ws_url_override (str, optional): Custom public WebSocket URL override. Defaults to None.
+        ws_direct_url_override (str, optional): Custom direct (authenticated) WebSocket URL override. Defaults to None.
         ws_reader_sleep_on_error (float, optional): WebSocket reader sleep duration after errors. Defaults to 1.0.
         ws_reader_sleep_on_no_connection (float, optional): WebSocket reader sleep when no connection. Defaults to 1.0.
         validate_ws_messages (bool, optional): Enable JSON-RPC message validation. Defaults to False.
         ping_interval (float, optional): WebSocket ping interval in seconds. Defaults to None.
         disable_reconnect (bool, optional): Disable automatic WebSocket reconnection. Defaults to False.
         enable_ws_compression (bool, optional): Enable WebSocket per-message compression (RFC 7692). Defaults to True.
+        ws_sbe_enabled (bool, optional): Enable SBE binary encoding on the WebSocket connection. Defaults to False.
         auto_auth (bool, optional): Whether to automatically handle onboarding/auth. Defaults to True.
         auth_provider (AuthProvider, optional): Custom authentication provider. Defaults to None.
         auth_params (dict, optional): Extra query parameters sent with every ``/auth`` request
@@ -93,12 +95,14 @@ class Paradex(_ClientBase):
         auto_start_ws_reader: bool = True,
         ws_connector: "WebSocketConnector | None" = None,
         ws_url_override: str | None = None,
+        ws_direct_url_override: str | None = None,
         ws_reader_sleep_on_error: float = 1.0,
         ws_reader_sleep_on_no_connection: float = 1.0,
         validate_ws_messages: bool = False,
         ping_interval: float | None = None,
         disable_reconnect: bool = False,
         enable_ws_compression: bool = True,
+        ws_sbe_enabled: bool = False,
         # Auth configuration
         auto_auth: bool = True,
         auth_provider: "AuthProvider | None" = None,
@@ -138,8 +142,7 @@ class Paradex(_ClientBase):
             retry_strategy=effective_retry,
         )
 
-        # Initialize WebSocket client with all optional injection
-        # Pass api_client reference to enable automatic JWT token refresh
+        # Public endpoint (default): ws-public.api.{env}.paradex.trade
         self.ws_client = ParadexWebsocketClient(
             env=env,
             logger=logger,
@@ -154,6 +157,24 @@ class Paradex(_ClientBase):
             disable_reconnect=disable_reconnect,
             enable_compression=enable_ws_compression,
             api_client=self.api_client,
+        )
+        # Direct endpoint (opt-in): ws.api.{env}.paradex.trade
+        self.ws_direct_client = ParadexWebsocketClient(
+            env=env,
+            logger=logger,
+            ws_timeout=ws_timeout,
+            auto_start_reader=auto_start_ws_reader,
+            connector=ws_connector,
+            ws_url_override=ws_direct_url_override,
+            reader_sleep_on_error=ws_reader_sleep_on_error,
+            reader_sleep_on_no_connection=ws_reader_sleep_on_no_connection,
+            validate_messages=validate_ws_messages,
+            ping_interval=ping_interval,
+            disable_reconnect=disable_reconnect,
+            enable_compression=enable_ws_compression,
+            api_client=self.api_client,
+            sbe_enabled=ws_sbe_enabled,
+            direct=True,
         )
 
         if config is not None:

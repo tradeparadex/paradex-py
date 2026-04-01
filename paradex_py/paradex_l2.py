@@ -48,6 +48,7 @@ class ParadexL2(_ClientBase):
         logger: logging.Logger | None = None,
         ws_timeout: int | None = None,
         ws_enabled: bool = True,
+        ws_sbe_enabled: bool = False,
     ):
         _validate_env(env, "ParadexL2")
 
@@ -61,7 +62,13 @@ class ParadexL2(_ClientBase):
 
         self.api_client = ParadexApiClient(env=env, logger=logger)
         self.ws_client: ParadexWebsocketClient | None = (
-            ParadexWebsocketClient(env=env, logger=logger, ws_timeout=ws_timeout, api_client=self.api_client)
+            ParadexWebsocketClient(
+                env=env,
+                logger=logger,
+                ws_timeout=ws_timeout,
+                api_client=self.api_client,
+                sbe_enabled=ws_sbe_enabled,
+            )
             if ws_enabled
             else None
         )

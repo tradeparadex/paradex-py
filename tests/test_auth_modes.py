@@ -81,7 +81,7 @@ class TestParadexL2:
         MockApiClient.return_value.fetch_system_config.return_value = MOCK_SYSTEM_CONFIG
         ParadexL2(env=TESTNET, l2_private_key=L2_KEY, l2_address=L2_ADDR, ws_timeout=42)
         MockWsClient.assert_called_once_with(
-            env=TESTNET, logger=None, ws_timeout=42, api_client=MockApiClient.return_value
+            env=TESTNET, logger=None, ws_timeout=42, api_client=MockApiClient.return_value, sbe_enabled=False
         )
 
     @patch("paradex_py.paradex_l2.SubkeyAccount")
@@ -198,7 +198,9 @@ class TestParadexApiKey:
 
         ParadexApiKey(env=TESTNET, api_key=API_KEY)
 
-        MockWsClient.assert_called_once_with(env=TESTNET, logger=None, ws_timeout=None, api_client=mock_api)
+        MockWsClient.assert_called_once_with(
+            env=TESTNET, logger=None, ws_timeout=None, api_client=mock_api, sbe_enabled=False
+        )
 
     @patch("paradex_py.paradex_api_key.ParadexWebsocketClient")
     @patch("paradex_py.paradex_api_key.ParadexApiClient")
@@ -206,7 +208,7 @@ class TestParadexApiKey:
         MockApiClient.return_value.fetch_system_config.return_value = MOCK_SYSTEM_CONFIG
         ParadexApiKey(env=TESTNET, api_key=API_KEY, ws_timeout=30)
         MockWsClient.assert_called_once_with(
-            env=TESTNET, logger=None, ws_timeout=30, api_client=MockApiClient.return_value
+            env=TESTNET, logger=None, ws_timeout=30, api_client=MockApiClient.return_value, sbe_enabled=False
         )
 
     @patch("paradex_py.paradex_api_key.ParadexWebsocketClient")
