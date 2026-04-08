@@ -32,6 +32,7 @@ class CustomStarknetChainId(IntEnum):
     PRIVATE_SN_MAINNET = int_from_bytes(b"PRIVATE_SN_PARACLEAR_MAINNET")
     PRIVATE_SN_TESTNET_MOCK_SEPOLIA = int_from_bytes(b"PRIVATE_SN_POTC_MOCK_SEPOLIA")
     PRIVATE_SN_TESTNET_SEPOLIA = int_from_bytes(b"PRIVATE_SN_POTC_SEPOLIA")
+    PRIVATE_SN_PARACLEAR_TESTNET = int_from_bytes(b"PRIVATE_SN_PARACLEAR_TESTNET")
 
 
 class ParadexAccount:
