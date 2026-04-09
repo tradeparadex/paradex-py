@@ -58,6 +58,27 @@ def _inject_response(
     future.set_result(response)
 
 
+async def _run_with_response(
+    ws_client: ParadexWebsocketClient,
+    coro,
+    *,
+    result: dict | None = None,
+    error: dict | None = None,
+):
+    """Run *coro* while auto-injecting a server response for the first pending request."""
+
+    async def inject():
+        while not ws_client._pending_requests:
+            await asyncio.sleep(0)
+        msg_id = next(iter(ws_client._pending_requests))
+        _inject_response(ws_client, msg_id, result=result, error=error)
+
+    task = asyncio.create_task(inject())
+    ret = await coro
+    await task
+    return ret
+
+
 # ---------------------------------------------------------------------------
 # WsRpcError
 # ---------------------------------------------------------------------------
@@ -92,16 +113,7 @@ async def test_send_request_success():
 
     result_payload = {"status": "ok"}
 
-    async def inject():
-        # Wait until the request is registered then resolve it
-        while not ws_client._pending_requests:
-            await asyncio.sleep(0)
-        msg_id = next(iter(ws_client._pending_requests))
-        _inject_response(ws_client, msg_id, result=result_payload)
-
-    task = asyncio.create_task(inject())
-    result = await ws_client._send_request("order.cancel_all", {})
-    await task
+    result = await _run_with_response(ws_client, ws_client._send_request("order.cancel_all", {}), result=result_payload)
 
     assert result == result_payload
     assert len(sent) == 1
@@ -117,16 +129,12 @@ async def test_send_request_raises_ws_rpc_error_on_error_response():
     sent: list[str] = []
     ws_client.ws = _make_open_ws(sent)
 
-    async def inject():
-        while not ws_client._pending_requests:
-            await asyncio.sleep(0)
-        msg_id = next(iter(ws_client._pending_requests))
-        _inject_response(ws_client, msg_id, error={"code": 400, "message": "bad request"})
-
-    task = asyncio.create_task(inject())
     with pytest.raises(WsRpcError) as exc_info:
-        await ws_client._send_request("order.create", {})
-    await task
+        await _run_with_response(
+            ws_client,
+            ws_client._send_request("order.create", {}),
+            error={"code": 400, "message": "bad request"},
+        )
 
     assert exc_info.value.code == 400
 
@@ -197,15 +205,7 @@ async def test_submit_order_with_account():
     order = _make_order()
     server_result = {"order": {"id": "srv-id"}, "created_at": 1000, "received_at": 2000}
 
-    async def inject():
-        while not ws_client._pending_requests:
-            await asyncio.sleep(0)
-        msg_id = next(iter(ws_client._pending_requests))
-        _inject_response(ws_client, msg_id, result=server_result)
-
-    task = asyncio.create_task(inject())
-    result = await ws_client.submit_order(order)
-    await task
+    result = await _run_with_response(ws_client, ws_client.submit_order(order), result=server_result)
 
     assert result == server_result
     sent_msg = json.loads(sent[0])
@@ -225,15 +225,7 @@ async def test_submit_order_with_signer():
 
     order = _make_order()
 
-    async def inject():
-        while not ws_client._pending_requests:
-            await asyncio.sleep(0)
-        msg_id = next(iter(ws_client._pending_requests))
-        _inject_response(ws_client, msg_id, result={"order": {}})
-
-    task = asyncio.create_task(inject())
-    await ws_client.submit_order(order, signer=mock_signer)
-    await task
+    await _run_with_response(ws_client, ws_client.submit_order(order, signer=mock_signer), result={"order": {}})
 
     mock_signer.sign_order.assert_called_once()
 
@@ -258,15 +250,9 @@ async def test_cancel_order_sends_correct_params():
     sent: list[str] = []
     ws_client.ws = _make_open_ws(sent)
 
-    async def inject():
-        while not ws_client._pending_requests:
-            await asyncio.sleep(0)
-        msg_id = next(iter(ws_client._pending_requests))
-        _inject_response(ws_client, msg_id, result={"order_id": "abc", "status": "cancelled"})
-
-    task = asyncio.create_task(inject())
-    result = await ws_client.cancel_order("abc")
-    await task
+    result = await _run_with_response(
+        ws_client, ws_client.cancel_order("abc"), result={"order_id": "abc", "status": "cancelled"}
+    )
 
     sent_msg = json.loads(sent[0])
     assert sent_msg["method"] == "order.cancel"
@@ -285,15 +271,11 @@ async def test_cancel_order_by_client_id_sends_correct_params():
     sent: list[str] = []
     ws_client.ws = _make_open_ws(sent)
 
-    async def inject():
-        while not ws_client._pending_requests:
-            await asyncio.sleep(0)
-        msg_id = next(iter(ws_client._pending_requests))
-        _inject_response(ws_client, msg_id, result={"order_id": "abc", "status": "cancelled"})
-
-    task = asyncio.create_task(inject())
-    await ws_client.cancel_order_by_client_id("my-id", "BTC-USD-PERP")
-    await task
+    await _run_with_response(
+        ws_client,
+        ws_client.cancel_order_by_client_id("my-id", "BTC-USD-PERP"),
+        result={"order_id": "abc", "status": "cancelled"},
+    )
 
     sent_msg = json.loads(sent[0])
     assert sent_msg["method"] == "order.cancel"
@@ -311,15 +293,7 @@ async def test_cancel_all_orders_no_market():
     sent: list[str] = []
     ws_client.ws = _make_open_ws(sent)
 
-    async def inject():
-        while not ws_client._pending_requests:
-            await asyncio.sleep(0)
-        msg_id = next(iter(ws_client._pending_requests))
-        _inject_response(ws_client, msg_id, result={"status": "ok"})
-
-    task = asyncio.create_task(inject())
-    result = await ws_client.cancel_all_orders()
-    await task
+    result = await _run_with_response(ws_client, ws_client.cancel_all_orders(), result={"status": "ok"})
 
     sent_msg = json.loads(sent[0])
     assert sent_msg["method"] == "order.cancel_all"
@@ -333,15 +307,7 @@ async def test_cancel_all_orders_with_market():
     sent: list[str] = []
     ws_client.ws = _make_open_ws(sent)
 
-    async def inject():
-        while not ws_client._pending_requests:
-            await asyncio.sleep(0)
-        msg_id = next(iter(ws_client._pending_requests))
-        _inject_response(ws_client, msg_id, result={"status": "ok"})
-
-    task = asyncio.create_task(inject())
-    await ws_client.cancel_all_orders(market="ETH-USD-PERP")
-    await task
+    await _run_with_response(ws_client, ws_client.cancel_all_orders(market="ETH-USD-PERP"), result={"status": "ok"})
 
     sent_msg = json.loads(sent[0])
     assert sent_msg["params"] == {"market": "ETH-USD-PERP"}
@@ -360,15 +326,7 @@ async def test_cancel_orders_batch_sends_correct_params():
 
     order_ids = ["id1", "id2", "id3"]
 
-    async def inject():
-        while not ws_client._pending_requests:
-            await asyncio.sleep(0)
-        msg_id = next(iter(ws_client._pending_requests))
-        _inject_response(ws_client, msg_id, result={"results": []})
-
-    task = asyncio.create_task(inject())
-    await ws_client.cancel_orders_batch(order_ids)
-    await task
+    await _run_with_response(ws_client, ws_client.cancel_orders_batch(order_ids), result={"results": []})
 
     sent_msg = json.loads(sent[0])
     assert sent_msg["method"] == "order.cancel_batch"
@@ -392,15 +350,7 @@ async def test_modify_order_includes_order_id_in_params():
 
     order = _make_order()
 
-    async def inject():
-        while not ws_client._pending_requests:
-            await asyncio.sleep(0)
-        msg_id = next(iter(ws_client._pending_requests))
-        _inject_response(ws_client, msg_id, result={"order": {}})
-
-    task = asyncio.create_task(inject())
-    await ws_client.modify_order("existing-id", order)
-    await task
+    await _run_with_response(ws_client, ws_client.modify_order("existing-id", order), result={"order": {}})
 
     sent_msg = json.loads(sent[0])
     assert sent_msg["method"] == "order.modify"
@@ -418,15 +368,7 @@ async def test_cancel_on_disconnect_enable():
     sent: list[str] = []
     ws_client.ws = _make_open_ws(sent)
 
-    async def inject():
-        while not ws_client._pending_requests:
-            await asyncio.sleep(0)
-        msg_id = next(iter(ws_client._pending_requests))
-        _inject_response(ws_client, msg_id, result={"enabled": True})
-
-    task = asyncio.create_task(inject())
-    result = await ws_client.cancel_on_disconnect(True)
-    await task
+    result = await _run_with_response(ws_client, ws_client.cancel_on_disconnect(True), result={"enabled": True})
 
     sent_msg = json.loads(sent[0])
     assert sent_msg["method"] == "order.cancel_on_disconnect"
@@ -440,15 +382,7 @@ async def test_cancel_on_disconnect_disable():
     sent: list[str] = []
     ws_client.ws = _make_open_ws(sent)
 
-    async def inject():
-        while not ws_client._pending_requests:
-            await asyncio.sleep(0)
-        msg_id = next(iter(ws_client._pending_requests))
-        _inject_response(ws_client, msg_id, result={"enabled": False})
-
-    task = asyncio.create_task(inject())
-    result = await ws_client.cancel_on_disconnect(False)
-    await task
+    result = await _run_with_response(ws_client, ws_client.cancel_on_disconnect(False), result={"enabled": False})
 
     assert result["enabled"] is False
 
@@ -470,15 +404,7 @@ async def test_submit_orders_batch_signs_each_order():
 
     orders = [_make_order(), _make_order()]
 
-    async def inject():
-        while not ws_client._pending_requests:
-            await asyncio.sleep(0)
-        msg_id = next(iter(ws_client._pending_requests))
-        _inject_response(ws_client, msg_id, result={"results": []})
-
-    task = asyncio.create_task(inject())
-    await ws_client.submit_orders_batch(orders)
-    await task
+    await _run_with_response(ws_client, ws_client.submit_orders_batch(orders), result={"results": []})
 
     sent_msg = json.loads(sent[0])
     assert sent_msg["method"] == "order.create_batch"

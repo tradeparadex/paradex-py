@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+import itertools
 import json
 import logging
 import time
@@ -19,6 +20,7 @@ from paradex_py.common.order import Order
 from paradex_py.constants import WS_TIMEOUT
 from paradex_py.environment import Environment
 from paradex_py.user_agent import get_user_agent
+from paradex_py.utils import time_now_micro_secs
 
 
 class WsRpcError(Exception):
@@ -213,6 +215,7 @@ class ParadexWebsocketClient:
 
         # Pending request-response futures keyed by JSON-RPC id
         self._pending_requests: dict[int, asyncio.Future] = {}
+        self._next_request_id = itertools.count(1)
 
         # Configurable sleep durations for simulator-friendly behavior
         self.reader_sleep_on_error = reader_sleep_on_error
@@ -491,7 +494,7 @@ class ParadexWebsocketClient:
         await websocket.send(
             json.dumps(
                 {
-                    "id": int(time.time() * 1_000_000),
+                    "id": time_now_micro_secs(),
                     "jsonrpc": "2.0",
                     "method": "auth",
                     "params": {"bearer": paradex_jwt},
@@ -502,7 +505,7 @@ class ParadexWebsocketClient:
     def _check_subscribed_channel(self, message: dict) -> None:
         if "id" in message:
             # Resolve pending request-response futures first
-            msg_id = message.get("id")
+            msg_id = message["id"]
             if msg_id in self._pending_requests:
                 future = self._pending_requests.pop(msg_id)
                 if not future.done():
@@ -841,7 +844,7 @@ class ParadexWebsocketClient:
             "jsonrpc": "2.0",
             "method": "unsubscribe",
             "params": {"channel": channel_name},
-            "id": str(int(time.time() * 1_000_000)),
+            "id": str(time_now_micro_secs()),
         }
         await self._send(json.dumps(unsubscribe_message))
 
@@ -913,7 +916,7 @@ class ParadexWebsocketClient:
         await self._send(
             json.dumps(
                 {
-                    "id": int(time.time() * 1_000_000),
+                    "id": time_now_micro_secs(),
                     "jsonrpc": "2.0",
                     "method": "subscribe",
                     "params": {"channel": channel_name},
@@ -940,9 +943,8 @@ class ParadexWebsocketClient:
             WsRpcError: If the server returns an error response.
             asyncio.TimeoutError: If no response arrives within *timeout* seconds.
         """
-        msg_id = int(time.time() * 1_000_000)
-        loop = asyncio.get_event_loop()
-        future: asyncio.Future = loop.create_future()
+        msg_id = next(self._next_request_id)
+        future: asyncio.Future[dict] = asyncio.get_running_loop().create_future()
         self._pending_requests[msg_id] = future
         try:
             await self._send(
@@ -955,7 +957,7 @@ class ParadexWebsocketClient:
                     }
                 )
             )
-            response = await asyncio.wait_for(asyncio.shield(future), timeout=timeout)
+            response = await asyncio.wait_for(future, timeout=timeout)
         except asyncio.TimeoutError:
             self._pending_requests.pop(msg_id, None)
             raise
