@@ -14,9 +14,22 @@ from pydantic import BaseModel
 from websockets import ClientConnection, State
 
 from paradex_py.account.account import ParadexAccount
+from paradex_py.api.protocols import Signer
+from paradex_py.common.order import Order
 from paradex_py.constants import WS_TIMEOUT
 from paradex_py.environment import Environment
 from paradex_py.user_agent import get_user_agent
+
+
+class WsRpcError(Exception):
+    """Raised when a WebSocket JSON-RPC response contains an error."""
+
+    def __init__(self, error: dict):
+        self.code = error.get("code")
+        self.message = error.get("message", "")
+        self.data = error.get("data")
+        super().__init__(f"WS RPC error {self.code}: {self.message}")
+
 
 # Optional typed message models
 try:
@@ -198,6 +211,9 @@ class ParadexWebsocketClient:
         # Lock to synchronize WebSocket recv() calls between background reader and manual pump_once
         self._recv_lock = asyncio.Lock()
 
+        # Pending request-response futures keyed by JSON-RPC id
+        self._pending_requests: dict[int, asyncio.Future] = {}
+
         # Configurable sleep durations for simulator-friendly behavior
         self.reader_sleep_on_error = reader_sleep_on_error
         self.reader_sleep_on_no_connection = reader_sleep_on_no_connection
@@ -338,6 +354,10 @@ class ParadexWebsocketClient:
             # Set flag to prevent reconnection during intentional closure
             self._is_closing = True
 
+            # Fail any in-flight request-response futures immediately so callers
+            # get a ConnectionError rather than waiting for their timeout.
+            self._cancel_pending_requests(ConnectionError("WebSocket connection closed"))
+
             # Cancel reader task if it exists
             if self._reader_task and not self._reader_task.done():
                 self._reader_task.cancel()
@@ -356,6 +376,13 @@ class ParadexWebsocketClient:
         finally:
             # Reset flag after closing is complete
             self._is_closing = False
+
+    def _cancel_pending_requests(self, exc: Exception) -> None:
+        """Fail all in-flight request futures with *exc* and clear the pending map."""
+        for future in self._pending_requests.values():
+            if not future.done():
+                future.set_exception(exc)
+        self._pending_requests.clear()
 
     def _decode_jwt_payload(self, token: str) -> dict[str, Any] | None:
         """Decode JWT token payload without signature verification.
@@ -474,6 +501,14 @@ class ParadexWebsocketClient:
 
     def _check_subscribed_channel(self, message: dict) -> None:
         if "id" in message:
+            # Resolve pending request-response futures first
+            msg_id = message.get("id")
+            if msg_id in self._pending_requests:
+                future = self._pending_requests.pop(msg_id)
+                if not future.done():
+                    future.set_result(message)
+                return
+
             # Check for successful subscription
             channel_subscribed: str | None = message.get("result", {}).get("channel")
             if channel_subscribed:
@@ -885,3 +920,216 @@ class ParadexWebsocketClient:
                 }
             )
         )
+
+    # -------------------------------------------------------------------------
+    # Request-response plumbing
+    # -------------------------------------------------------------------------
+
+    async def _send_request(self, method: str, params: Any, timeout: float = 10.0) -> dict:
+        """Send a JSON-RPC request and wait for the server's response.
+
+        Args:
+            method: JSON-RPC method name (e.g. "order.create").
+            params: Request parameters — dict or list depending on the method.
+            timeout: Seconds to wait for a response before raising TimeoutError.
+
+        Returns:
+            The ``result`` field from the server response.
+
+        Raises:
+            WsRpcError: If the server returns an error response.
+            asyncio.TimeoutError: If no response arrives within *timeout* seconds.
+        """
+        msg_id = int(time.time() * 1_000_000)
+        loop = asyncio.get_event_loop()
+        future: asyncio.Future = loop.create_future()
+        self._pending_requests[msg_id] = future
+        try:
+            await self._send(
+                json.dumps(
+                    {
+                        "id": msg_id,
+                        "jsonrpc": "2.0",
+                        "method": method,
+                        "params": params,
+                    }
+                )
+            )
+            response = await asyncio.wait_for(asyncio.shield(future), timeout=timeout)
+        except asyncio.TimeoutError:
+            self._pending_requests.pop(msg_id, None)
+            raise
+        if "error" in response:
+            raise WsRpcError(response["error"])
+        return response.get("result", {})
+
+    # -------------------------------------------------------------------------
+    # Order management — mirrors paradex_py.api.api_client interface
+    # -------------------------------------------------------------------------
+
+    def _resolve_order_params(self, order: Order, signer: Signer | None) -> dict:
+        """Sign the order and return the payload dict."""
+        if signer is not None:
+            return signer.sign_order(order.dump_to_dict())
+        if self.account is not None:
+            order.signature = self.account.sign_order(order)
+            return order.dump_to_dict()
+        raise ValueError("Account not initialized and no signer provided")
+
+    async def submit_order(self, order: Order, signer: Signer | None = None) -> dict:
+        """Create an order over WebSocket (``order.create``).
+
+        Mirrors :meth:`paradex_py.api.api_client.ParadexApiClient.submit_order`.
+        The connection must be authenticated before calling this method.
+
+        Args:
+            order: Order to submit.
+            signer: Optional custom signer. Falls back to the account signer.
+
+        Returns:
+            Server result dict containing ``order``, ``created_at``, ``received_at``.
+
+        Raises:
+            WsRpcError: If the server rejects the order.
+        """
+        params = self._resolve_order_params(order, signer)
+        return await self._send_request("order.create", params)
+
+    async def submit_orders_batch(self, orders: list[Order], signer: Signer | None = None) -> dict:
+        """Create a batch of orders over WebSocket (``order.create_batch``).
+
+        Args:
+            orders: Orders to submit.
+            signer: Optional custom signer. Falls back to the account signer.
+
+        Returns:
+            Server result dict containing per-order outcomes.
+
+        Raises:
+            WsRpcError: If the server rejects the batch.
+        """
+        params = [self._resolve_order_params(order, signer) for order in orders]
+        return await self._send_request("order.create_batch", params)
+
+    async def modify_order(self, order_id: str, order: Order, signer: Signer | None = None) -> dict:
+        """Modify an open order over WebSocket (``order.modify``).
+
+        Mirrors :meth:`paradex_py.api.api_client.ParadexApiClient.modify_order`.
+
+        Args:
+            order_id: ID of the order to modify.
+            order: Order object carrying the updated fields and a fresh signature.
+            signer: Optional custom signer. Falls back to the account signer.
+
+        Returns:
+            Server result dict containing the updated ``order``.
+
+        Raises:
+            WsRpcError: If the server rejects the modification.
+        """
+        params = self._resolve_order_params(order, signer)
+        params["id"] = order_id
+        return await self._send_request("order.modify", params)
+
+    async def cancel_order(self, order_id: str) -> dict:
+        """Cancel an order by ID over WebSocket (``order.cancel``).
+
+        Mirrors :meth:`paradex_py.api.api_client.ParadexApiClient.cancel_order`.
+
+        Args:
+            order_id: Paradex-assigned order ID.
+
+        Returns:
+            Server result dict containing ``order_id`` and ``status``.
+
+        Raises:
+            WsRpcError: If the order cannot be cancelled.
+        """
+        return await self._send_request("order.cancel", {"id": order_id})
+
+    async def cancel_order_by_client_id(self, client_id: str, market: str) -> dict:
+        """Cancel an order by client ID over WebSocket (``order.cancel``).
+
+        Mirrors :meth:`paradex_py.api.api_client.ParadexApiClient.cancel_order_by_client_id`.
+
+        Args:
+            client_id: Trader-assigned client order ID.
+            market: Market the order belongs to (required by the server).
+
+        Returns:
+            Server result dict containing ``order_id`` and ``status``.
+
+        Raises:
+            WsRpcError: If the order cannot be cancelled.
+        """
+        return await self._send_request("order.cancel", {"client_id": client_id, "market": market})
+
+    async def cancel_all_orders(self, market: str | None = None) -> dict:
+        """Cancel all open orders over WebSocket (``order.cancel_all``).
+
+        Mirrors :meth:`paradex_py.api.api_client.ParadexApiClient.cancel_all_orders`.
+
+        Args:
+            market: If provided, cancel only orders in this market.
+
+        Returns:
+            Server result dict containing ``status``.
+
+        Raises:
+            WsRpcError: On server-side error.
+        """
+        params: dict = {}
+        if market:
+            params["market"] = market
+        return await self._send_request("order.cancel_all", params)
+
+    async def cancel_orders_batch(self, order_ids: list[str]) -> dict:
+        """Cancel a batch of orders by ID over WebSocket (``order.cancel_batch``).
+
+        Mirrors :meth:`paradex_py.api.api_client.ParadexApiClient.cancel_orders_batch`.
+
+        Args:
+            order_ids: List of Paradex-assigned order IDs to cancel.
+
+        Returns:
+            Server result dict containing per-order cancellation outcomes.
+
+        Raises:
+            WsRpcError: On server-side error.
+        """
+        return await self._send_request("order.cancel_batch", {"order_ids": order_ids})
+
+    async def cancel_on_disconnect(self, enabled: bool) -> dict:
+        """Toggle Cancel-on-Disconnect for this WebSocket session (``order.cancel_on_disconnect``).
+
+        **Off by default.** Each new WebSocket session starts with CoD disabled.
+        Call ``cancel_on_disconnect(True)`` after connecting and authenticating to
+        arm it for the session.
+
+        When enabled, the server automatically cancels all orders that were submitted
+        via this session if the WebSocket connection drops. The tracking set is
+        managed entirely server-side and is scoped to the current connection — it
+        resets on every reconnect, so re-enable CoD after each reconnect if needed.
+
+        Args:
+            enabled: ``True`` to enable CoD, ``False`` to disable.
+
+        Returns:
+            Server result dict containing ``enabled`` confirming the new state.
+
+        Raises:
+            WsRpcError: If the server rejects the request.
+
+        Examples:
+            >>> async def main():
+            ...     paradex = Paradex(env=TESTNET, l1_address="0x...", l1_private_key="0x...")
+            ...     await paradex.ws_client.connect()
+            ...     # Arm cancel-on-disconnect for this session
+            ...     await paradex.ws_client.cancel_on_disconnect(True)
+            ...     # Orders submitted now will be cancelled if the connection drops
+            ...     order = Order(market="BTC-USD-PERP", ...)
+            ...     result = await paradex.ws_client.submit_order(order)
+            ...     # Disable CoD when no longer needed
+            ...     await paradex.ws_client.cancel_on_disconnect(False)
+        """
+        return await self._send_request("order.cancel_on_disconnect", {"enabled": enabled})
