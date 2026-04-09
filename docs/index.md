@@ -107,6 +107,12 @@ Full details for REST API & WebSocket JSON-RPC API can be found at the following
       show_source: false
       show_root_heading: true
 
+::: paradex_py.api.ws_client.WsRpcError
+    handler: python
+    options:
+      show_source: false
+      show_root_heading: true
+
 ::: paradex_py.api.ws_client.ParadexWebsocketClient
     handler: python
     options:
