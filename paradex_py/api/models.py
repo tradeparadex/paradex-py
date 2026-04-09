@@ -38,6 +38,7 @@ class SystemConfig:
     l1_operator_address: str
     l1_chain_id: str
     liquidation_fee: str
+    paraclear_evm_account_hash: str | None = None
 
 
 @dataclass
