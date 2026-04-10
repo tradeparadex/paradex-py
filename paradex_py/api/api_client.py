@@ -135,6 +135,30 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
                 else:
                     raise
 
+    def fetch_onboarding(self, params: dict | None = None) -> dict:
+        """Check whether an account has been onboarded.
+
+        Public endpoint — no authentication required.
+
+        Args:
+            params: Query parameters. Exactly one of two forms:
+
+                Starknet account (``account_signer_type="starknet"``)::
+
+                    {"account_signer_type": "starknet", "public_key": "0x<l2_pubkey>"}
+
+                EVM account (``account_signer_type="eip191"``)::
+
+                    {"account_signer_type": "eip191", "eth_address": "0x<evm_address>"}
+
+                Note: ``public_key`` is ignored by the server for EIP-191 accounts.
+
+        Returns:
+            dict with ``address``, ``exists`` (bool), ``account_signer_type``, and
+            ``derivation_info``.
+        """
+        return self.get(api_url=self.api_url, path="onboarding", params=params)
+
     def onboarding(self):
         if self.account is None:
             raise ValueError("Account not initialized")

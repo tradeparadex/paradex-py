@@ -1,4 +1,8 @@
 import logging
+import secrets
+from typing import TYPE_CHECKING
+
+from starknet_py.net.signer.stark_curve_signer import KeyPair
 
 from paradex_py._client_base import _ClientBase
 from paradex_py.account.evm_account import EvmAccount
@@ -7,6 +11,9 @@ from paradex_py.api.ws_client import ParadexWebsocketClient
 from paradex_py.auth_level import AuthLevel
 from paradex_py.environment import Environment, _validate_env
 from paradex_py.utils import raise_value_error
+
+if TYPE_CHECKING:
+    from paradex_py.paradex_subkey import ParadexSubkey
 
 __all__ = ["ParadexEvm"]
 
@@ -93,8 +100,8 @@ class ParadexEvm(_ClientBase):
 
     @property
     def auth_level(self) -> AuthLevel:
-        """``AuthLevel.AUTHENTICATED`` — JWT present, no Starknet signing key."""
-        return AuthLevel.AUTHENTICATED
+        """``AuthLevel.FULL`` — full L2 account; deposits and withdrawals supported."""
+        return AuthLevel.FULL
 
     @property
     def is_authenticated(self) -> bool:
@@ -103,10 +110,47 @@ class ParadexEvm(_ClientBase):
 
     @property
     def can_trade(self) -> bool:
-        """Always ``False`` — no Starknet L2 signing key; use a registered subkey."""
+        """Always ``False`` — order signing requires a registered Starknet subkey.
+        Use :meth:`create_trading_subkey` to generate one."""
         return False
 
     @property
     def can_withdraw(self) -> bool:
-        """Always ``False`` — no Starknet L2 signing key."""
-        return False
+        """Always ``True`` — the L2 account is owned by the EVM key; on-chain
+        operations (deposit, withdraw, transfer) are supported."""
+        return True
+
+    def create_trading_subkey(self, name: str = "trading") -> "ParadexSubkey":
+        """Generate a fresh Starknet subkey, register it, and return a ready-to-trade client.
+
+        This is the recommended way to enable trading from an EVM-authenticated account.
+        The generated private key is ephemeral — save it if you need to reuse the subkey
+        across sessions.
+
+        Args:
+            name (str): Human-readable label for the subkey. Defaults to ``"trading"``.
+
+        Returns:
+            ParadexSubkey: Authenticated client signed with the new subkey.
+
+        Examples:
+            >>> evm = ParadexEvm(env=TESTNET, evm_address="0x...", evm_private_key="0x...")
+            >>> subkey = evm.create_trading_subkey()
+            >>> subkey.api_client.submit_order(order=buy_order)
+        """
+        from paradex_py.paradex_subkey import ParadexSubkey
+
+        l2_private_key_int = secrets.randbelow(2**251)
+        key_pair = KeyPair.from_private_key(l2_private_key_int)
+        self.api_client.create_subkey(
+            {
+                "name": name,
+                "public_key": hex(key_pair.public_key),
+                "state": "active",
+            }
+        )
+        return ParadexSubkey(
+            env=self.env,
+            l2_private_key=hex(l2_private_key_int),
+            l2_address=hex(self.account.l2_address),
+        )

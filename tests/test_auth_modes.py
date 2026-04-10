@@ -1,4 +1,4 @@
-"""Tests for AuthLevel, ParadexL2, ParadexSubkey, ParadexApiKey, and on_token_expired."""
+"""Tests for AuthLevel, ParadexL2, ParadexSubkey, ParadexApiKey, ParadexEvm, and on_token_expired."""
 
 import base64
 import json
@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from paradex_py import AuthLevel, ParadexApiKey, ParadexL2, ParadexSubkey
+from paradex_py import AuthLevel, ParadexApiKey, ParadexEvm, ParadexL2, ParadexSubkey
 from paradex_py.api.api_client import ParadexApiClient, _jwt_exp
 from paradex_py.environment import TESTNET
 
@@ -16,6 +16,8 @@ MOCK_SYSTEM_CONFIG = MagicMock()
 L2_KEY = "0x1234567890abcdef"
 L2_ADDR = "0xdeadbeef"
 API_KEY = "test-api-key-token"
+EVM_ADDR = "0x846359e7bffc0AA5cB98767D94a874ec90f3944e"
+EVM_KEY = "0x" + "a" * 64
 
 
 def _make_jwt(exp: float) -> str:
@@ -574,6 +576,137 @@ class TestClosePartialInit:
 
         MockWsClient.return_value.close.assert_not_called()
         mock_api.client.close.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# ParadexEvm — full L2 account via EVM key
+# ---------------------------------------------------------------------------
+
+
+class TestParadexEvm:
+    @patch("paradex_py.paradex_evm.EvmAccount")
+    @patch("paradex_py.paradex_evm.ParadexWebsocketClient")
+    @patch("paradex_py.paradex_evm.ParadexApiClient")
+    def test_successful_init(self, MockApiClient, MockWsClient, MockEvmAccount):
+        mock_api = MockApiClient.return_value
+        mock_api.fetch_system_config.return_value = MOCK_SYSTEM_CONFIG
+
+        p = ParadexEvm(env=TESTNET, evm_address=EVM_ADDR, evm_private_key=EVM_KEY)
+
+        MockApiClient.assert_called_once_with(env=TESTNET, logger=None)
+        mock_api.fetch_system_config.assert_called_once()
+        MockEvmAccount.assert_called_once_with(
+            config=MOCK_SYSTEM_CONFIG,
+            env=TESTNET,
+            evm_address=EVM_ADDR,
+            evm_private_key=EVM_KEY,
+        )
+        mock_api.init_account_evm.assert_called_once_with(MockEvmAccount.return_value)
+        assert p.config is MOCK_SYSTEM_CONFIG
+
+    @patch("paradex_py.paradex_evm.EvmAccount")
+    @patch("paradex_py.paradex_evm.ParadexWebsocketClient")
+    @patch("paradex_py.paradex_evm.ParadexApiClient")
+    def test_ws_timeout_forwarded(self, MockApiClient, MockWsClient, MockEvmAccount):
+        MockApiClient.return_value.fetch_system_config.return_value = MOCK_SYSTEM_CONFIG
+        ParadexEvm(env=TESTNET, evm_address=EVM_ADDR, evm_private_key=EVM_KEY, ws_timeout=42)
+        MockWsClient.assert_called_once_with(
+            env=TESTNET, logger=None, ws_timeout=42, api_client=MockApiClient.return_value, sbe_enabled=False
+        )
+
+    @patch("paradex_py.paradex_evm.EvmAccount")
+    @patch("paradex_py.paradex_evm.ParadexWebsocketClient")
+    @patch("paradex_py.paradex_evm.ParadexApiClient")
+    def test_ws_enabled_false_skips_ws_client(self, MockApiClient, MockWsClient, MockEvmAccount):
+        MockApiClient.return_value.fetch_system_config.return_value = MOCK_SYSTEM_CONFIG
+        p = ParadexEvm(env=TESTNET, evm_address=EVM_ADDR, evm_private_key=EVM_KEY, ws_enabled=False)
+        MockWsClient.assert_not_called()
+        assert p.ws_client is None
+
+    def test_missing_env_raises(self):
+        with pytest.raises((ValueError, TypeError)):
+            ParadexEvm(env=None, evm_address=EVM_ADDR, evm_private_key=EVM_KEY)
+
+    @patch("paradex_py.paradex_evm.ParadexApiClient")
+    def test_missing_evm_address_raises(self, MockApiClient):
+        MockApiClient.return_value.fetch_system_config.return_value = MOCK_SYSTEM_CONFIG
+        with pytest.raises(ValueError):
+            ParadexEvm(env=TESTNET, evm_address="", evm_private_key=EVM_KEY)
+
+    @patch("paradex_py.paradex_evm.ParadexApiClient")
+    def test_missing_evm_private_key_raises(self, MockApiClient):
+        MockApiClient.return_value.fetch_system_config.return_value = MOCK_SYSTEM_CONFIG
+        with pytest.raises(ValueError):
+            ParadexEvm(env=TESTNET, evm_address=EVM_ADDR, evm_private_key="")
+
+    @patch("paradex_py.paradex_evm.EvmAccount")
+    @patch("paradex_py.paradex_evm.ParadexWebsocketClient")
+    @patch("paradex_py.paradex_evm.ParadexApiClient")
+    def test_capabilities(self, MockApiClient, MockWsClient, MockEvmAccount):
+        """Full account: withdraw yes, trade no (needs subkey), auth FULL."""
+        MockApiClient.return_value.fetch_system_config.return_value = MOCK_SYSTEM_CONFIG
+        p = ParadexEvm(env=TESTNET, evm_address=EVM_ADDR, evm_private_key=EVM_KEY)
+        assert p.auth_level == AuthLevel.FULL
+        assert p.is_authenticated is True
+        assert p.can_trade is False
+        assert p.can_withdraw is True
+
+    @patch("paradex_py.paradex_evm.EvmAccount")
+    @patch("paradex_py.paradex_evm.ParadexWebsocketClient")
+    @patch("paradex_py.paradex_evm.ParadexApiClient")
+    def test_create_trading_subkey_registers_and_returns_subkey(self, MockApiClient, MockWsClient, MockEvmAccount):
+        mock_api = MockApiClient.return_value
+        mock_api.fetch_system_config.return_value = MOCK_SYSTEM_CONFIG
+        MockEvmAccount.return_value.l2_address = 0xDEADBEEF
+
+        p = ParadexEvm(env=TESTNET, evm_address=EVM_ADDR, evm_private_key=EVM_KEY)
+
+        with (
+            patch("paradex_py.paradex_evm.KeyPair") as MockKeyPair,
+            patch("paradex_py.paradex_evm.secrets") as MockSecrets,
+            patch("paradex_py.paradex_subkey.ParadexSubkey") as MockSubkeyClass,
+        ):
+            MockSecrets.randbelow.return_value = 0x1234
+            mock_kp = MagicMock()
+            mock_kp.public_key = 0x5678
+            MockKeyPair.from_private_key.return_value = mock_kp
+
+            result = p.create_trading_subkey(name="test-key")
+
+        MockSecrets.randbelow.assert_called_once_with(2**251)
+        MockKeyPair.from_private_key.assert_called_once_with(0x1234)
+        mock_api.create_subkey.assert_called_once_with(
+            {"name": "test-key", "public_key": hex(0x5678), "state": "active"}
+        )
+        MockSubkeyClass.assert_called_once_with(
+            env=TESTNET,
+            l2_private_key=hex(0x1234),
+            l2_address=hex(0xDEADBEEF),
+        )
+        assert result is MockSubkeyClass.return_value
+
+    @patch("paradex_py.paradex_evm.EvmAccount")
+    @patch("paradex_py.paradex_evm.ParadexWebsocketClient")
+    @patch("paradex_py.paradex_evm.ParadexApiClient")
+    def test_create_trading_subkey_default_name(self, MockApiClient, MockWsClient, MockEvmAccount):
+        mock_api = MockApiClient.return_value
+        mock_api.fetch_system_config.return_value = MOCK_SYSTEM_CONFIG
+        MockEvmAccount.return_value.l2_address = 0xDEADBEEF
+
+        p = ParadexEvm(env=TESTNET, evm_address=EVM_ADDR, evm_private_key=EVM_KEY)
+
+        with (
+            patch("paradex_py.paradex_evm.KeyPair") as MockKeyPair,
+            patch("paradex_py.paradex_evm.secrets") as MockSecrets,
+            patch("paradex_py.paradex_subkey.ParadexSubkey"),
+        ):
+            MockSecrets.randbelow.return_value = 0x1234
+            MockKeyPair.from_private_key.return_value.public_key = 0x5678
+            p.create_trading_subkey()
+
+        mock_api.create_subkey.assert_called_once_with(
+            {"name": "trading", "public_key": hex(0x5678), "state": "active"}
+        )
 
 
 # ---------------------------------------------------------------------------
