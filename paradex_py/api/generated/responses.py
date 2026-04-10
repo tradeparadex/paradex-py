@@ -1,4 +1,4 @@
-# Generated from Paradex API spec version 1.114.2
+# Generated from Paradex API spec version 1.116.1
 
 from __future__ import annotations
 
@@ -7,15 +7,7 @@ from typing import Annotated, Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-
-class NftPrice(BaseModel):
-    model_config = ConfigDict(
-        extra="allow",
-        populate_by_name=True,
-    )
-    currency: str | None = None
-    decimals: int | None = None
-    value: str | None = None
+from . import messagesv1
 
 
 class APIResults(BaseModel):
@@ -817,7 +809,7 @@ class Nft(BaseModel):
     id: str | None = None
     image_url: str | None = None
     name: str | None = None
-    price: NftPrice | None = None
+    price: messagesv1.NftPrice | None = None
 
 
 class NotificationPreferencesResp(BaseModel):
@@ -830,6 +822,15 @@ class NotificationPreferencesResp(BaseModel):
     fills: Annotated[bool | None, Field(examples=[True])] = None
     orders: Annotated[bool | None, Field(examples=[True])] = None
     transfers: Annotated[bool | None, Field(examples=[True])] = None
+
+
+class OnboardingDerivationInfo(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        populate_by_name=True,
+    )
+    class_hash: str | None = None
+    proxy_class_hash: str | None = None
 
 
 class OptionMarginParams(BaseModel):
@@ -1897,6 +1898,19 @@ class GetAccountsInfoResponse(BaseModel):
         populate_by_name=True,
     )
     results: list[AccountInfoResponse] | None = None
+
+
+class GetOnboardingResp(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        populate_by_name=True,
+    )
+    account_signer_type: Annotated[str | None, Field(description='Signer variant: "starknet" or "eip191"')] = None
+    address: Annotated[str | None, Field(description="Paradex Starknet address")] = None
+    derivation_info: Annotated[
+        OnboardingDerivationInfo | None, Field(description="Class hash(es) used for address derivation")
+    ] = None
+    exists: Annotated[bool | None, Field(description="Whether the account is already onboarded")] = None
 
 
 class GetSubAccountsResponse(BaseModel):

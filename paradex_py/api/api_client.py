@@ -4,7 +4,7 @@ import logging
 import re
 import time
 from collections.abc import Callable
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import httpx
 
@@ -16,6 +16,9 @@ from paradex_py.api.protocols import AuthProvider, RetryStrategy, Signer
 from paradex_py.common.order import Order
 from paradex_py.environment import Environment
 from paradex_py.utils import raise_value_error
+
+if TYPE_CHECKING:
+    from paradex_py.account.evm_account import EvmAccount
 
 _REFRESH_BUFFER_SECONDS = 30  # refresh 30s before JWT expiry to avoid race conditions
 _OPAQUE_TOKEN_LIFETIME_SECONDS = 4 * 60  # assumed lifetime for tokens without an exp claim
@@ -98,8 +101,10 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         # Use custom base URL if provided, otherwise use default
         if api_base_url is not None:
             self.api_url = api_base_url
+            self._v2_api_url = api_base_url.replace("/v1", "/v2")
         else:
             self.api_url = f"https://api.{self.env}.paradex.trade/v1"
+            self._v2_api_url = f"https://api.{self.env}.paradex.trade/v2"
 
         # Auth configuration
         self.auto_auth = auto_auth
@@ -109,10 +114,14 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         self._token_exp: float | None = None
         self.on_token_expired: Callable[[], str | None] | None = on_token_expired
         self.account: ParadexAccount | None = None
+        self._evm_account: "EvmAccount | None" = None
         self.auth_timestamp = 0
 
         # Signing configuration
         self.signer = signer
+
+        # EVM account flag (set by init_account_evm)
+        self._is_evm_account = False
 
     def init_account(self, account: ParadexAccount):
         self.account = account
@@ -125,6 +134,30 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
                     self.auth(params=self.auth_params)
                 else:
                     raise
+
+    def fetch_onboarding(self, params: dict | None = None) -> dict:
+        """Check whether an account has been onboarded.
+
+        Public endpoint — no authentication required.
+
+        Args:
+            params: Query parameters. Exactly one of two forms:
+
+                Starknet account (``account_signer_type="starknet"``)::
+
+                    {"account_signer_type": "starknet", "public_key": "0x<l2_pubkey>"}
+
+                EVM account (``account_signer_type="eip191"``)::
+
+                    {"account_signer_type": "eip191", "eth_address": "0x<evm_address>"}
+
+                Note: ``public_key`` is ignored by the server for EIP-191 accounts.
+
+        Returns:
+            dict with ``address``, ``exists`` (bool), ``account_signer_type``, and
+            ``derivation_info``.
+        """
+        return self.get(api_url=self.api_url, path="onboarding", params=params)
 
     def onboarding(self):
         if self.account is None:
@@ -144,6 +177,40 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         self.auth_timestamp = int(time.time())
         self._token_exp = _jwt_exp(data.jwt_token)
         self.account.set_jwt_token(data.jwt_token)
+        self.client.headers.update({"Authorization": f"Bearer {data.jwt_token}"})
+
+    def init_account_evm(self, account: "EvmAccount"):
+        """Initialize an EVM account and run the v2 onboarding/auth flow."""
+        self._evm_account = account
+        self._is_evm_account = True
+        if self.auto_auth:
+            try:
+                self.auth_evm(params=self.auth_params)
+            except ValueError as e:
+                if "NOT_ONBOARDED" in str(e):
+                    self.onboarding_evm()
+                    self.auth_evm(params=self.auth_params)
+                else:
+                    raise
+
+    def onboarding_evm(self):
+        """Onboard an EVM account via POST /v2/onboarding (SIWE)."""
+        if self._evm_account is None:
+            raise ValueError("EVM account not initialized")
+        headers = self._evm_account.onboarding_headers()
+        payload = {"public_key": self._evm_account.evm_public_key_uncompressed}
+        self.post(api_url=self._v2_api_url, path="onboarding", headers=headers, payload=payload)
+
+    def auth_evm(self, params: dict | None = None):
+        """Obtain a JWT for an EVM account via POST /v2/auth (SIWE)."""
+        if self._evm_account is None:
+            raise ValueError("EVM account not initialized")
+        headers = self._evm_account.auth_headers()
+        res = self.post(api_url=self._v2_api_url, path="auth", headers=headers, params=params)
+        data = AuthSchema().load(res, unknown="exclude", partial=True)
+        self.auth_timestamp = int(time.time())
+        self._token_exp = _jwt_exp(data.jwt_token)
+        self._evm_account.set_jwt_token(data.jwt_token)
         self.client.headers.update({"Authorization": f"Bearer {data.jwt_token}"})
 
     def set_token(self, jwt: str) -> None:
@@ -205,7 +272,7 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
                 return
 
         # Fall back to standard account-based auth
-        if self.account is None:
+        if self.account is None and self._evm_account is None:
             if not self.auto_auth:
                 return  # Skip auth if disabled and no account
             raise_value_error(f"{self.classname}: Account not found")
@@ -213,7 +280,10 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         # Refresh JWT if expired
         if self._is_token_expired():
             if self.auto_auth:
-                self.auth(params=self.auth_params)
+                if self._is_evm_account:
+                    self.auth_evm(params=self.auth_params)
+                else:
+                    self.auth(params=self.auth_params)
             else:
                 self.logger.warning(f"{self.classname}: JWT expired but auto_auth disabled")
 
@@ -500,6 +570,113 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         Private endpoint requires authorization.
         """
         return self._get_authorized(path="account/info")
+
+    # SUBKEY MANAGEMENT
+
+    def fetch_subkeys(self, params: dict | None = None) -> dict:
+        """List all subkeys for this account.
+        Private endpoint requires authorization.
+
+        Args:
+            params:
+                `include_revoked`: Include revoked subkeys in results\n
+
+        Returns:
+            results (list): List of Subkeys
+        """
+        return self._get_authorized(path="account/keys/subkeys", params=params)
+
+    def create_subkey(self, payload: dict) -> None:
+        """Register a new subkey for this account.
+        Private endpoint requires authorization.
+
+        Args:
+            payload: CreateSubkey fields — name, public_key, state ('active' or 'pending'),
+                     encrypted_key and eph_public_key (required when state='pending').
+
+        Returns:
+            None (server responds with 204 No Content on success)
+        """
+        self._post_authorized(path="account/keys/subkeys", payload=payload)
+
+    def activate_subkey(self, payload: dict) -> dict:
+        """Activate a pending subkey via Starknet signature.
+        Private endpoint requires authorization.
+
+        The signature must be [r, s] over pedersen(timestamp, eph_public_key),
+        produced by the main account's Starknet key.
+
+        Args:
+            payload: ActivateSubkey fields — account_id, public_key, timestamp, signature, name.
+
+        Returns:
+            ActivateSubkeyResponse dict (may include encrypted_key)
+        """
+        return self._post_authorized(path="account/keys/subkeys/activate", payload=payload)
+
+    def fetch_subkey(self, public_key: str) -> dict:
+        """Fetch a specific subkey by its public key.
+        Private endpoint requires authorization.
+
+        Args:
+            public_key: Public key of the subkey to fetch.
+        """
+        return self._get_authorized(path=f"account/keys/subkeys/{public_key}")
+
+    def update_subkey(self, public_key: str, payload: dict) -> dict:
+        """Update a subkey (e.g. rename it).
+        Private endpoint requires authorization.
+
+        Args:
+            public_key: Public key of the subkey to update.
+            payload: UpdateSubkey fields — name.
+        """
+        return self._put_authorized(path=f"account/keys/subkeys/{public_key}", payload=payload)
+
+    def revoke_subkey(self, public_key: str) -> None:
+        """Revoke a subkey permanently.
+        Private endpoint requires authorization.
+
+        Args:
+            public_key: Public key of the subkey to revoke.
+        """
+        self._delete_authorized(path=f"account/keys/subkeys/{public_key}")
+
+    # TOKEN MANAGEMENT
+
+    def fetch_tokens(self, params: dict | None = None) -> dict:
+        """List authentication tokens for this account.
+        Private endpoint requires authorization.
+
+        Args:
+            params:
+                `kind`: Filter by token kind ('jwt' or 'api_key')\n
+
+        Returns:
+            results (list): List of ApiToken entries
+        """
+        return self._get_authorized(path="account/tokens", params=params)
+
+    def create_token(self, payload: dict) -> dict:
+        """Create a new authentication token (JWT or API key).
+        Private endpoint requires authorization.
+
+        Args:
+            payload: CreateToken fields — name, token_type, expiry_duration (seconds).
+
+        Returns:
+            ApiToken response dict
+        """
+        return self._post_authorized(path="account/tokens", payload=payload)
+
+    def revoke_token(self, lookup_id: str) -> None:
+        """Revoke an authentication token by its lookup ID.
+        Private endpoint requires authorization.
+
+        Args:
+            lookup_id: Lookup ID of the token to revoke.
+        """
+        self._delete_authorized(path=f"account/tokens/{lookup_id}")
 
     def submit_order(self, order: Order, signer: Signer | None = None) -> dict:
         """Send order to Paradex.
