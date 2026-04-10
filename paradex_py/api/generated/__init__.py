@@ -1,6 +1,6 @@
-# Generated from Paradex API spec version 1.114.2
+# Generated from Paradex API spec version 1.116.1
 
-"""Generated API models from Paradex OpenAPI spec v1.114.2."""
+"""Generated API models from Paradex OpenAPI spec v1.116.1."""
 
 # ruff: noqa: F403, A003
 # Import all generated models
