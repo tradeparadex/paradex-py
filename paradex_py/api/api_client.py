@@ -125,7 +125,18 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
 
     def init_account(self, account: ParadexAccount):
         self.account = account
-        if self.auto_auth:
+        if not self.auto_auth:
+            return
+        is_onboarded = getattr(account, "is_onboarded", None)
+        if is_onboarded is True:
+            # Server precheck confirmed account is onboarded — skip POST /onboarding.
+            self.auth(params=self.auth_params)
+        elif is_onboarded is False:
+            # Server precheck confirmed account is NOT onboarded — POST first, then auth.
+            self.onboarding()
+            self.auth(params=self.auth_params)
+        else:
+            # No precheck ran (local-derivation path) — fall back to the retry-on-error dance.
             try:
                 self.auth(params=self.auth_params)
             except ValueError as e:
@@ -183,7 +194,15 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         """Initialize an EVM account and run the v2 onboarding/auth flow."""
         self._evm_account = account
         self._is_evm_account = True
-        if self.auto_auth:
+        if not self.auto_auth:
+            return
+        is_onboarded = getattr(account, "is_onboarded", None)
+        if is_onboarded is True:
+            self.auth_evm(params=self.auth_params)
+        elif is_onboarded is False:
+            self.onboarding_evm()
+            self.auth_evm(params=self.auth_params)
+        else:
             try:
                 self.auth_evm(params=self.auth_params)
             except ValueError as e:

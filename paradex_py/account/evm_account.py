@@ -6,8 +6,8 @@ from eth_account import Account
 from eth_account.messages import encode_defunct
 from eth_keys import keys as eth_keys
 from starknet_py.common import int_from_hex
-from starknet_py.hash.address import compute_address
 
+from paradex_py.account.utils import derive_l2_address_eip191
 from paradex_py.api.models import SystemConfig
 from paradex_py.environment import Environment
 from paradex_py.utils import raise_value_error
@@ -51,9 +51,9 @@ class EvmAccount:
         env: Environment,
         evm_address: str,
         evm_private_key: str,
+        l2_address: str | None = None,
+        is_onboarded: bool | None = None,
     ):
-        if not config.paraclear_evm_account_hash:
-            raise_value_error("EvmAccount: paraclear_evm_account_hash not available in system config")
         if not evm_address:
             raise_value_error("EvmAccount: EVM address is required")
         if not evm_private_key:
@@ -71,31 +71,16 @@ class EvmAccount:
         _priv_key_obj = eth_keys.PrivateKey(bytes(self._eth_account.key))
         self.evm_public_key_uncompressed = "0x04" + _priv_key_obj.public_key.to_bytes().hex()
 
-        # Derive Starknet address — Argent v0.5.0 direct (no proxy)
-        self.l2_address = self._compute_starknet_address()
-
-    # ------------------------------------------------------------------
-    # Starknet address derivation
-    # ------------------------------------------------------------------
-
-    def _compute_starknet_address(self) -> int:
-        """Derive the Starknet address from the EVM address.
-
-        Uses Argent v0.5.0 direct deployment with EIP-191 signer type:
-          calldata = [3 (Eip191 variant), eth_address, 1 (Option::None guardian)]
-          salt     = eth_address
-          deployer = 0
-        """
-        # paraclear_evm_account_hash is guaranteed non-None by __init__ guard
-        evm_class_hash: str = self.config.paraclear_evm_account_hash  # type: ignore[assignment]
-        eth_addr_int = int_from_hex(self.evm_address)
-        calldata = [3, eth_addr_int, 1]
-        return compute_address(
-            class_hash=int_from_hex(evm_class_hash),
-            constructor_calldata=calldata,
-            salt=eth_addr_int,
-            deployer_address=0,
-        )
+        if l2_address is not None:
+            self.l2_address = int_from_hex(l2_address)
+        else:
+            # Backwards-compat fallback: callers that construct EvmAccount directly
+            # (without going through the ParadexEvm orchestrator) still get their
+            # address derived for them. The orchestrator always resolves the address
+            # outside via the same helper, so this branch is only hit for direct
+            # construction and is intended for eventual removal.
+            self.l2_address = derive_l2_address_eip191(config, self.evm_address)
+        self.is_onboarded = is_onboarded
 
     # ------------------------------------------------------------------
     # SIWE helpers

@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING
 
 from paradex_py._client_base import _ClientBase
 from paradex_py.account.account import ParadexAccount
+from paradex_py.account.utils import derive_l2_address_starknet, resolve_l2_keypair
 from paradex_py.api.api_client import ParadexApiClient
 from paradex_py.api.protocols import DefaultRetryStrategy
 from paradex_py.api.ws_client import ParadexWebsocketClient
@@ -62,6 +63,9 @@ class Paradex(_ClientBase):
         signer (Signer, optional): Custom order signer for submit/modify/batch operations. Defaults to None.
         rpc_version (str, optional): RPC version (e.g., "v0_9"). If provided, constructs URL as {base_url}/rpc/{rpc_version}. Defaults to None.
         config (SystemConfig, optional): System configuration. If provided, uses this config instead of fetching from API. Defaults to None.
+        server_derive_address (bool, optional): When True, fetch the L2 address from ``GET /onboarding`` instead of
+            computing it locally from class hashes. Also caches the ``exists`` flag so ``POST /onboarding`` is skipped
+            when the account is already onboarded. Defaults to False (local ``compute_address`` path unchanged).
 
     Examples:
         >>> from paradex_py import Paradex
@@ -112,10 +116,13 @@ class Paradex(_ClientBase):
         # RPC configuration
         rpc_version: str | None = None,
         config: "SystemConfig | None" = None,
+        # Onboarding configuration
+        server_derive_address: bool = False,
     ):
         _validate_env(env, "Paradex")
         self.env = env
         self.logger: logging.Logger = logger or logging.getLogger(__name__)
+        self.server_derive_address = server_derive_address
 
         # Create enhanced HTTP client if needed (retry_strategy is handled by ParadexApiClient directly)
         if http_client is None and (default_timeout or request_hook or not enable_http_compression):
@@ -213,12 +220,42 @@ class Paradex(_ClientBase):
         """
         if self.account is not None:
             raise_value_error("Paradex: Account already initialized")
-        self.account = ParadexAccount(
+
+        # Resolve the L2 keypair once, up-front. This avoids double-triggering the EIP-712
+        # stark-key signature (or worse: a second Ledger prompt) when the account
+        # constructor would otherwise re-resolve from the same credentials.
+        key_pair = resolve_l2_keypair(
             config=self.config,
             l1_address=l1_address,
             l1_private_key=l1_private_key,
             l1_private_key_from_ledger=l1_private_key_from_ledger,
             l2_private_key=l2_private_key,
+        )
+
+        # Derive the L2 address outside the account constructor — either from the server
+        # (GET /onboarding) or from the shared local helper. Both paths converge to a
+        # single downstream ParadexAccount(...) call with a pre-resolved address.
+        # getattr fallback protects callers that bypass __init__ via Paradex.__new__(...).
+        is_onboarded: bool | None = None
+        if getattr(self, "server_derive_address", False):
+            info = self.api_client.fetch_onboarding(
+                {
+                    "account_signer_type": "starknet",
+                    "public_key": hex(key_pair.public_key),
+                }
+            )
+            l2_address_hex: str = info["address"]
+            exists = info.get("exists")
+            is_onboarded = bool(exists) if exists is not None else None
+        else:
+            l2_address_hex = hex(derive_l2_address_starknet(self.config, key_pair.public_key))
+
+        self.account = ParadexAccount(
+            config=self.config,
+            l1_address=l1_address,
+            l2_private_key=hex(key_pair.private_key),
+            l2_address=l2_address_hex,
+            is_onboarded=is_onboarded,
             rpc_version=rpc_version,
         )
         self.api_client.init_account(self.account)
@@ -257,3 +294,12 @@ class Paradex(_ClientBase):
         """``True`` when account is initialized — full account key, all on-chain operations
         available (deposit, withdraw, transfer)."""
         return self.account is not None
+
+    @property
+    def is_onboarded(self) -> bool | None:
+        """Cached onboarding state from ``GET /onboarding``.
+
+        Returns ``True`` / ``False`` when ``server_derive_address=True`` populated the cache at
+        account initialization, ``None`` otherwise (local derivation path — the SDK learns
+        onboarding status lazily via the ``NOT_ONBOARDED`` auth-retry flow)."""
+        return self.account.is_onboarded if self.account is not None else None

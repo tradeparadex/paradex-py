@@ -184,3 +184,45 @@ def test_subkey_account_with_subkey_auth_signature():
         unflatten_signature(sig),
         subkey_pair.public_key,  # verified with subkey's public key
     )
+
+
+# ---------------------------------------------------------------------------
+# ParadexAccount: server-derived l2_address (GET /onboarding path)
+# ---------------------------------------------------------------------------
+
+
+def test_paradex_account_with_server_derived_address_skips_local_derivation():
+    """When l2_address is supplied, ParadexAccount must use it verbatim and skip
+    compute_address (the class-hash-based local derivation). A deliberately-wrong
+    address proves local derivation did not run."""
+    config = MockApiClient().fetch_system_config()
+    # An address that cannot result from local derivation of TEST_L2_PRIVATE_KEY.
+    server_address = "0xdeadbeef"
+
+    account = ParadexAccount(
+        config=config,
+        l1_address=TEST_L1_ADDRESS,
+        l2_private_key=TEST_L2_PRIVATE_KEY,
+        l2_address=server_address,
+        is_onboarded=True,
+    )
+
+    assert account.l2_address == int_from_hex(server_address)
+    assert account.starknet.address == int_from_hex(server_address)
+    assert account.is_onboarded is True
+    # Keys are still resolved locally — only the address comes from the caller.
+    assert account.l2_public_key == TEST_L2_PUBLIC_KEY
+
+
+def test_paradex_account_default_still_derives_locally():
+    """Regression guard: without l2_address kwarg, behavior is unchanged."""
+    config = MockApiClient().fetch_system_config()
+
+    account = ParadexAccount(
+        config=config,
+        l1_address=TEST_L1_ADDRESS,
+        l2_private_key=TEST_L2_PRIVATE_KEY,
+    )
+
+    assert account.l2_address == TEST_L2_ADDRESS
+    assert account.is_onboarded is None

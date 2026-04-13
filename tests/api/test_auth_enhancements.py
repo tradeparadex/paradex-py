@@ -228,6 +228,61 @@ class TestAuthenticationEnhancements:
             mock_onboarding.assert_not_called()
             mock_auth.assert_not_called()
 
+    @patch.object(ParadexApiClient, "fetch_system_config", return_value=MagicMock())
+    def test_init_account_with_precheck_onboarded_skips_post(self, mock_config):
+        """When account.is_onboarded is True (server precheck), skip POST /onboarding entirely."""
+        client = ParadexApiClient(env=TESTNET, auto_auth=True)
+        mock_account = MagicMock()
+        mock_account.is_onboarded = True
+
+        with patch.object(client, "onboarding") as mock_onboarding, patch.object(client, "auth") as mock_auth:
+            client.init_account(mock_account)
+
+            mock_onboarding.assert_not_called()
+            mock_auth.assert_called_once_with(params=None)
+
+    @patch.object(ParadexApiClient, "fetch_system_config", return_value=MagicMock())
+    def test_init_account_with_precheck_not_onboarded_posts_then_auths(self, mock_config):
+        """When account.is_onboarded is False (server precheck), POST /onboarding before auth
+        without relying on the NOT_ONBOARDED exception dance."""
+        client = ParadexApiClient(env=TESTNET, auto_auth=True)
+        mock_account = MagicMock()
+        mock_account.is_onboarded = False
+
+        with patch.object(client, "onboarding") as mock_onboarding, patch.object(client, "auth") as mock_auth:
+            client.init_account(mock_account)
+
+            mock_onboarding.assert_called_once()
+            mock_auth.assert_called_once_with(params=None)
+            # Exactly one auth call — no retry
+            assert mock_auth.call_count == 1
+
+    @patch.object(ParadexApiClient, "fetch_system_config", return_value=MagicMock())
+    def test_init_account_evm_with_precheck_onboarded_skips_post(self, mock_config):
+        """EVM variant: precheck True skips POST /v2/onboarding."""
+        client = ParadexApiClient(env=TESTNET, auto_auth=True)
+        mock_account = MagicMock()
+        mock_account.is_onboarded = True
+
+        with patch.object(client, "onboarding_evm") as mock_onboarding, patch.object(client, "auth_evm") as mock_auth:
+            client.init_account_evm(mock_account)
+
+            mock_onboarding.assert_not_called()
+            mock_auth.assert_called_once_with(params=None)
+
+    @patch.object(ParadexApiClient, "fetch_system_config", return_value=MagicMock())
+    def test_init_account_evm_with_precheck_not_onboarded_posts_then_auths(self, mock_config):
+        """EVM variant: precheck False posts then auths (no exception dance)."""
+        client = ParadexApiClient(env=TESTNET, auto_auth=True)
+        mock_account = MagicMock()
+        mock_account.is_onboarded = False
+
+        with patch.object(client, "onboarding_evm") as mock_onboarding, patch.object(client, "auth_evm") as mock_auth:
+            client.init_account_evm(mock_account)
+
+            mock_onboarding.assert_called_once()
+            assert mock_auth.call_count == 1
+
 
 class TestSigningEnhancements:
     """Test signing enhancements."""
