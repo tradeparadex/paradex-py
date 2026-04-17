@@ -7,21 +7,17 @@ from enum import IntEnum
 
 from httpx import AsyncClient
 from starknet_py.common import int_from_bytes, int_from_hex
-from starknet_py.hash.address import compute_address
-from starknet_py.hash.selector import get_selector_from_name
 from starknet_py.net.full_node_client import FullNodeClient
 from starknet_py.net.http_client import HttpMethod
-from starknet_py.net.signer.stark_curve_signer import KeyPair
 
 from paradex_py.account.starknet import Account as StarknetAccount
-from paradex_py.account.utils import derive_stark_key, derive_stark_key_from_ledger, flatten_signature
+from paradex_py.account.utils import derive_l2_address_starknet, flatten_signature, resolve_l2_keypair
 from paradex_py.api.models import SystemConfig
 from paradex_py.common.order import Order
 from paradex_py.message.auth import build_auth_message, build_fullnode_message
 from paradex_py.message.block_trades import BlockTrade, build_block_trade_message
 from paradex_py.message.onboarding import build_onboarding_message
 from paradex_py.message.order import build_modify_order_message, build_order_message
-from paradex_py.message.stark_key import build_stark_key_message
 from paradex_py.utils import raise_value_error
 
 FULLNODE_SIGNATURE_VERSION = "1.0.0"
@@ -63,6 +59,8 @@ class ParadexAccount:
         l1_private_key: str | None = None,
         l2_private_key: str | None = None,
         rpc_version: str | None = None,
+        l2_address: str | None = None,
+        is_onboarded: bool | None = None,
     ):
         self.config = config
 
@@ -72,19 +70,26 @@ class ParadexAccount:
 
         if l1_private_key is not None:
             self.l1_private_key = int_from_hex(l1_private_key)
-            stark_key_msg = build_stark_key_message(int(config.l1_chain_id))
-            self.l2_private_key = derive_stark_key(self.l1_private_key, stark_key_msg)
-        elif l1_private_key_from_ledger:
-            stark_key_msg = build_stark_key_message(int(config.l1_chain_id))
-            self.l2_private_key = derive_stark_key_from_ledger(l1_address, stark_key_msg)
-        elif l2_private_key is not None:
-            self.l2_private_key = int_from_hex(l2_private_key)
-        else:
-            raise_value_error("Paradex: Provide Ethereum or Paradex private key")
 
-        key_pair = KeyPair.from_private_key(self.l2_private_key)
+        key_pair = resolve_l2_keypair(
+            config=config,
+            l1_address=l1_address,
+            l1_private_key=l1_private_key,
+            l1_private_key_from_ledger=bool(l1_private_key_from_ledger),
+            l2_private_key=l2_private_key,
+        )
+        self.l2_private_key = key_pair.private_key
         self.l2_public_key = key_pair.public_key
-        self.l2_address = self._account_address()
+        if l2_address is not None:
+            self.l2_address = int_from_hex(l2_address)
+        else:
+            # Backwards-compat fallback: callers that construct ParadexAccount directly
+            # (without going through the Paradex orchestrator) still get their address
+            # derived for them. The Paradex orchestrator always resolves the address
+            # outside via the same helper, so this branch is only hit for direct
+            # construction and is intended for eventual removal.
+            self.l2_address = derive_l2_address_starknet(config, self.l2_public_key)
+        self.is_onboarded = is_onboarded
 
         # Create starknet account
         if rpc_version:
@@ -133,22 +138,6 @@ class ParadexAccount:
             return await response.json()
 
         client._client._make_request = types.MethodType(monkey_patched_make_request, client._client)
-
-    def _account_address(self) -> int:
-        calldata = [
-            int_from_hex(self.config.paraclear_account_hash),
-            get_selector_from_name("initialize"),
-            2,
-            self.l2_public_key,
-            0,
-        ]
-
-        address = compute_address(
-            class_hash=int_from_hex(self.config.paraclear_account_proxy_hash),
-            constructor_calldata=calldata,
-            salt=self.l2_public_key,
-        )
-        return address
 
     def set_jwt_token(self, jwt_token: str) -> None:
         self.jwt_token = jwt_token

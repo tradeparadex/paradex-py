@@ -52,6 +52,11 @@ class SubkeyAccount(ParadexAccount):
         # Set L2 credentials
         self.l2_private_key = int_from_hex(l2_private_key)
         self.l2_address = int_from_hex(l2_address)
+        # A subkey can only be created against an already-onboarded parent account, so by
+        # construction it is onboarded. This skips the NOT_ONBOARDED retry branch in
+        # api_client.init_account() — that retry would fail anyway because
+        # `SubkeyAccount.onboarding_headers()` returns {} (subkeys cannot self-onboard).
+        self.is_onboarded: bool | None = True
 
         # Generate public key from private key
         key_pair = KeyPair.from_private_key(self.l2_private_key)

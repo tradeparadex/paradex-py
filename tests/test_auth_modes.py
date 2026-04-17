@@ -584,10 +584,11 @@ class TestClosePartialInit:
 
 
 class TestParadexEvm:
+    @patch("paradex_py.paradex_evm.derive_l2_address_eip191", return_value=0xABC)
     @patch("paradex_py.paradex_evm.EvmAccount")
     @patch("paradex_py.paradex_evm.ParadexWebsocketClient")
     @patch("paradex_py.paradex_evm.ParadexApiClient")
-    def test_successful_init(self, MockApiClient, MockWsClient, MockEvmAccount):
+    def test_successful_init(self, MockApiClient, MockWsClient, MockEvmAccount, mock_derive):
         mock_api = MockApiClient.return_value
         mock_api.fetch_system_config.return_value = MOCK_SYSTEM_CONFIG
 
@@ -595,29 +596,34 @@ class TestParadexEvm:
 
         MockApiClient.assert_called_once_with(env=TESTNET, logger=None)
         mock_api.fetch_system_config.assert_called_once()
+        # Orchestrator derives outside, then hands the pre-resolved address to EvmAccount.
         MockEvmAccount.assert_called_once_with(
             config=MOCK_SYSTEM_CONFIG,
             env=TESTNET,
             evm_address=EVM_ADDR,
             evm_private_key=EVM_KEY,
+            l2_address=hex(0xABC),
+            is_onboarded=None,
         )
         mock_api.init_account_evm.assert_called_once_with(MockEvmAccount.return_value)
         assert p.config is MOCK_SYSTEM_CONFIG
 
+    @patch("paradex_py.paradex_evm.derive_l2_address_eip191", return_value=0xABC)
     @patch("paradex_py.paradex_evm.EvmAccount")
     @patch("paradex_py.paradex_evm.ParadexWebsocketClient")
     @patch("paradex_py.paradex_evm.ParadexApiClient")
-    def test_ws_timeout_forwarded(self, MockApiClient, MockWsClient, MockEvmAccount):
+    def test_ws_timeout_forwarded(self, MockApiClient, MockWsClient, MockEvmAccount, mock_derive):
         MockApiClient.return_value.fetch_system_config.return_value = MOCK_SYSTEM_CONFIG
         ParadexEvm(env=TESTNET, evm_address=EVM_ADDR, evm_private_key=EVM_KEY, ws_timeout=42)
         MockWsClient.assert_called_once_with(
             env=TESTNET, logger=None, ws_timeout=42, api_client=MockApiClient.return_value, sbe_enabled=False
         )
 
+    @patch("paradex_py.paradex_evm.derive_l2_address_eip191", return_value=0xABC)
     @patch("paradex_py.paradex_evm.EvmAccount")
     @patch("paradex_py.paradex_evm.ParadexWebsocketClient")
     @patch("paradex_py.paradex_evm.ParadexApiClient")
-    def test_ws_enabled_false_skips_ws_client(self, MockApiClient, MockWsClient, MockEvmAccount):
+    def test_ws_enabled_false_skips_ws_client(self, MockApiClient, MockWsClient, MockEvmAccount, mock_derive):
         MockApiClient.return_value.fetch_system_config.return_value = MOCK_SYSTEM_CONFIG
         p = ParadexEvm(env=TESTNET, evm_address=EVM_ADDR, evm_private_key=EVM_KEY, ws_enabled=False)
         MockWsClient.assert_not_called()
@@ -639,10 +645,11 @@ class TestParadexEvm:
         with pytest.raises(ValueError):
             ParadexEvm(env=TESTNET, evm_address=EVM_ADDR, evm_private_key="")
 
+    @patch("paradex_py.paradex_evm.derive_l2_address_eip191", return_value=0xABC)
     @patch("paradex_py.paradex_evm.EvmAccount")
     @patch("paradex_py.paradex_evm.ParadexWebsocketClient")
     @patch("paradex_py.paradex_evm.ParadexApiClient")
-    def test_capabilities(self, MockApiClient, MockWsClient, MockEvmAccount):
+    def test_capabilities(self, MockApiClient, MockWsClient, MockEvmAccount, mock_derive):
         """Full account: withdraw yes, trade no (needs subkey), auth FULL."""
         MockApiClient.return_value.fetch_system_config.return_value = MOCK_SYSTEM_CONFIG
         p = ParadexEvm(env=TESTNET, evm_address=EVM_ADDR, evm_private_key=EVM_KEY)
@@ -651,10 +658,13 @@ class TestParadexEvm:
         assert p.can_trade is False
         assert p.can_withdraw is True
 
+    @patch("paradex_py.paradex_evm.derive_l2_address_eip191", return_value=0xABC)
     @patch("paradex_py.paradex_evm.EvmAccount")
     @patch("paradex_py.paradex_evm.ParadexWebsocketClient")
     @patch("paradex_py.paradex_evm.ParadexApiClient")
-    def test_create_trading_subkey_registers_and_returns_subkey(self, MockApiClient, MockWsClient, MockEvmAccount):
+    def test_create_trading_subkey_registers_and_returns_subkey(
+        self, MockApiClient, MockWsClient, MockEvmAccount, mock_derive
+    ):
         mock_api = MockApiClient.return_value
         mock_api.fetch_system_config.return_value = MOCK_SYSTEM_CONFIG
         MockEvmAccount.return_value.l2_address = 0xDEADBEEF
@@ -685,10 +695,11 @@ class TestParadexEvm:
         )
         assert result is MockSubkeyClass.return_value
 
+    @patch("paradex_py.paradex_evm.derive_l2_address_eip191", return_value=0xABC)
     @patch("paradex_py.paradex_evm.EvmAccount")
     @patch("paradex_py.paradex_evm.ParadexWebsocketClient")
     @patch("paradex_py.paradex_evm.ParadexApiClient")
-    def test_create_trading_subkey_default_name(self, MockApiClient, MockWsClient, MockEvmAccount):
+    def test_create_trading_subkey_default_name(self, MockApiClient, MockWsClient, MockEvmAccount, mock_derive):
         mock_api = MockApiClient.return_value
         mock_api.fetch_system_config.return_value = MOCK_SYSTEM_CONFIG
         MockEvmAccount.return_value.l2_address = 0xDEADBEEF
@@ -706,6 +717,51 @@ class TestParadexEvm:
 
         mock_api.create_subkey.assert_called_once_with(
             {"name": "trading", "public_key": hex(0x5678), "state": "active"}
+        )
+
+    @patch("paradex_py.paradex_evm.EvmAccount")
+    @patch("paradex_py.paradex_evm.ParadexWebsocketClient")
+    @patch("paradex_py.paradex_evm.ParadexApiClient")
+    def test_server_derive_address_calls_onboarding_and_passes_through(
+        self, MockApiClient, MockWsClient, MockEvmAccount
+    ):
+        """When server_derive_address=True, ParadexEvm hits GET /onboarding (eip191) and
+        forwards the server-returned address + exists flag to EvmAccount."""
+        mock_api = MockApiClient.return_value
+        mock_api.fetch_system_config.return_value = MOCK_SYSTEM_CONFIG
+        mock_api.fetch_onboarding.return_value = {
+            "account_signer_type": "eip191",
+            "address": "0xabc123",
+            "exists": True,
+            "derivation_info": {"class_hash": "0x73414441639dcd11d1846f287650a00c60c416b9d3ba45d31c651672125b2c2"},
+        }
+
+        ParadexEvm(
+            env=TESTNET,
+            evm_address=EVM_ADDR,
+            evm_private_key=EVM_KEY,
+            server_derive_address=True,
+        )
+
+        # GET /onboarding called with eth_address (checksum) and eip191 signer type.
+        mock_api.fetch_onboarding.assert_called_once()
+        params = mock_api.fetch_onboarding.call_args[0][0]
+        assert params["account_signer_type"] == "eip191"
+        # The `eth_address` is derived from the private key (checksum form), not the caller's
+        # evm_address param — that's what the server needs for deterministic derivation.
+        from eth_account import Account as _EthAccount
+
+        expected = _EthAccount.from_key(EVM_KEY).address
+        assert params["eth_address"] == expected
+
+        # Server-derived address + is_onboarded flag flow into EvmAccount.
+        MockEvmAccount.assert_called_once_with(
+            config=MOCK_SYSTEM_CONFIG,
+            env=TESTNET,
+            evm_address=EVM_ADDR,
+            evm_private_key=EVM_KEY,
+            l2_address="0xabc123",
+            is_onboarded=True,
         )
 
 

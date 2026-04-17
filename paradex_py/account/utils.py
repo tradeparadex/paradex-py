@@ -1,7 +1,7 @@
 import functools
 import hashlib
 from collections.abc import Sequence
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from eth_account import Account
 from eth_account.messages import SignableMessage, encode_typed_data
@@ -14,9 +14,15 @@ from starknet_crypto_py import sign as rs_sign
 from starknet_crypto_py import verify as rs_verify
 from starknet_py.common import int_from_hex
 from starknet_py.constants import EC_ORDER
+from starknet_py.hash.address import compute_address
+from starknet_py.hash.selector import get_selector_from_name
+from starknet_py.net.signer.stark_curve_signer import KeyPair
 from starknet_py.utils.typed_data import TypedData, TypedDataDict
 
 from paradex_py.utils import raise_value_error
+
+if TYPE_CHECKING:
+    from paradex_py.api.models import SystemConfig
 
 SHA256_EC_MAX_DIGEST = 2**256
 
@@ -87,6 +93,78 @@ def derive_stark_key_from_ledger(eth_account_address: str, stark_key_msg: TypedD
     message_signature = _sign_stark_key_message_ledger(signable_message, eth_account_address)
     l2_private_key = _get_private_key_from_eth_signature(message_signature)
     return l2_private_key
+
+
+def derive_l2_address_starknet(config: "SystemConfig", l2_public_key: int) -> int:
+    """Compute the Paraclear L2 account address from the L2 public key.
+
+    Mirrors the ``/onboarding`` endpoint's server-side derivation for Starknet-keyed
+    accounts: proxy deployment with ``initialize(public_key, 0)`` calldata.
+    Shared by ``Paradex.init_account()`` (primary caller) and
+    ``ParadexAccount.__init__`` (backwards-compat fallback for direct construction).
+    """
+    calldata = [
+        int_from_hex(config.paraclear_account_hash),
+        get_selector_from_name("initialize"),
+        2,
+        l2_public_key,
+        0,
+    ]
+    return compute_address(
+        class_hash=int_from_hex(config.paraclear_account_proxy_hash),
+        constructor_calldata=calldata,
+        salt=l2_public_key,
+    )
+
+
+def derive_l2_address_eip191(config: "SystemConfig", evm_address: str) -> int:
+    """Compute the Paraclear L2 account address from an EVM (EIP-191) address.
+
+    Mirrors the ``/onboarding`` endpoint's server-side derivation for EIP-191-keyed
+    accounts: Argent v0.5.0 direct deployment (no proxy) with EIP-191 signer variant.
+    Shared by ``ParadexEvm.__init__`` (primary caller) and ``EvmAccount.__init__``
+    (backwards-compat fallback for direct construction).
+    """
+    if not config.paraclear_evm_account_hash:
+        raise_value_error("paraclear_evm_account_hash not available in system config")
+    eth_addr_int = int_from_hex(evm_address)
+    return compute_address(
+        class_hash=int_from_hex(config.paraclear_evm_account_hash),
+        constructor_calldata=[3, eth_addr_int, 1],
+        salt=eth_addr_int,
+        deployer_address=0,
+    )
+
+
+def resolve_l2_keypair(
+    config: "SystemConfig",
+    l1_address: str,
+    l1_private_key: str | None = None,
+    l1_private_key_from_ledger: bool = False,
+    l2_private_key: str | None = None,
+) -> KeyPair:
+    """Resolve the L2 Starknet keypair from whichever credential the caller supplied.
+
+    Mirrors the credential-selection logic used internally by ``ParadexAccount``:
+    an L1 private key derives an L2 key via the STARK-key typed-data message; a
+    Ledger-backed L1 key does the same through the hardware wallet; an L2 private
+    key is used directly. Exposed as a helper so callers (e.g. ``Paradex``) can
+    compute the public key needed by public endpoints such as ``GET /onboarding``
+    before the account object itself is constructed.
+    """
+    from paradex_py.message.stark_key import build_stark_key_message
+
+    if l1_private_key is not None:
+        stark_key_msg = build_stark_key_message(int(config.l1_chain_id))
+        private_key = derive_stark_key(int_from_hex(l1_private_key), stark_key_msg)
+    elif l1_private_key_from_ledger:
+        stark_key_msg = build_stark_key_message(int(config.l1_chain_id))
+        private_key = derive_stark_key_from_ledger(l1_address, stark_key_msg)
+    elif l2_private_key is not None:
+        private_key = int_from_hex(l2_private_key)
+    else:
+        raise_value_error("Paradex: Provide Ethereum or Paradex private key")
+    return KeyPair.from_private_key(private_key)
 
 
 def flatten_signature(sig: list[int]) -> str:
