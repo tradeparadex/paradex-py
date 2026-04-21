@@ -291,6 +291,7 @@ class BlockTradeStatus(str, Enum):
     block_trade_status_completed = "COMPLETED"
     block_trade_status_failed = "FAILED"
     block_trade_status_cancelled = "CANCELLED"
+    block_trade_status_pending_settlement = "PENDING_SETTLEMENT"
 
 
 class BlockTradeType(str, Enum):
