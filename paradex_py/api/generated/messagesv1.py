@@ -1,4 +1,4 @@
-# Generated from Paradex API spec version 1.116.1
+# Generated from Paradex API spec version 1.119.0
 
 from __future__ import annotations
 

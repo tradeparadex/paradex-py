@@ -1,4 +1,4 @@
-# Generated from Paradex API spec version 1.116.1
+# Generated from Paradex API spec version 1.119.0
 
 from __future__ import annotations
 
@@ -232,6 +232,7 @@ class UpdateAccountProfileRequest(BaseModel):
         extra="allow",
         populate_by_name=True,
     )
+    ai_agent_url: Annotated[str | None, Field(examples=["wss://agent.example.com:18789"])] = None
     announcements: Annotated[bool | None, Field(examples=[False])] = None
     fill_sound: Annotated[bool | None, Field(examples=[True])] = None
     fills: Annotated[bool | None, Field(examples=[True])] = None
