@@ -263,6 +263,19 @@ def test_xm_total():
     assert_close(result["MMR"], 1.6339, tol=0.02, label="total MMR vs exchange")
 
 
+def test_xm_total_includes_orders():
+    result = compute_xm(
+        [],
+        [{"market": "BTC-USD-PERP", "side": "BUY", "size": 0.1, "price": 80000.0}],
+        MARKET_DATA,
+        MARKET_SPECS,
+    )
+    assert_close(result["IMR"], 160.0, tol=0.001, label="order IMR")
+    assert_close(result["MMR"], 80.0, tol=0.001, label="order MMR")
+    assert result["portfolio_delta"] > 0
+    assert len(result["orders"]) == 1
+
+
 def test_spot_balance_margin_usdc_excluded():
     sbm = spot_balance_margin([{"token": "USDC", "size": 100.0}], MARKET_DATA)
     assert sbm == 0.0

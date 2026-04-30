@@ -120,6 +120,20 @@ class MarginResult(TypedDict):
     mmr: float
 
 
+class XMMarginResult(MarginResult):
+    delta_contrib: float
+    mark_price: float
+    notional: float
+
+
+class XMPositionDetail(Position, XMMarginResult):
+    pass
+
+
+class XMOrderDetail(Order, XMMarginResult):
+    pass
+
+
 class LiquidationResult(TypedDict):
     down: float | None
     up: float | None

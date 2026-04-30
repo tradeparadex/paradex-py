@@ -7,8 +7,6 @@ and ``option_cross_margin_params`` on each market. Missing values raise
 ``ValueError`` rather than silently defaulting.
 """
 
-from typing import cast
-
 from ._utils import _req_dict, _req_f, _req_str
 from .config import normalise_delta1_margin_params, normalise_option_margin_params
 from .types import (
@@ -22,6 +20,9 @@ from .types import (
     Order,
     Position,
     RawDict,
+    XMMarginResult,
+    XMOrderDetail,
+    XMPositionDetail,
 )
 
 
@@ -82,28 +83,26 @@ def xm_option_margin(
     }
 
 
-def xm_position(
-    pos: Position,
+def _xm_instrument(
+    item: Position,
     market_data: dict[str, MarketData],
     market_specs: dict[str, MarketSpec],
-) -> dict[str, object]:
-    """Compute cross-margin IMR/MMR for a single position.
-
-    Returns: {imr, mmr, delta_contrib, mark_price, notional}
-    """
-    sym = pos["market"]
-    side = pos["side"]
-    size = abs(float(pos["size"]))
+    *,
+    price: float | None = None,
+) -> XMMarginResult:
+    sym = item["market"]
+    side = item["side"]
+    size = abs(float(item["size"]))
     try:
         md = market_data[sym]
     except KeyError as e:
-        raise ValueError(f"missing market data for position {sym!r}") from e
+        raise ValueError(f"missing market data for XM instrument {sym!r}") from e
     try:
         spec = market_specs[sym]
     except KeyError as e:
-        raise ValueError(f"missing market spec for position {sym!r}") from e
+        raise ValueError(f"missing market spec for XM instrument {sym!r}") from e
 
-    mark = md["mark_price"]
+    mark = md["mark_price"] if price is None else price
     signed_size = size if side in ("BUY", "LONG") else -size
     delta_contrib = md["delta"] * signed_size
     notional = size * mark
@@ -131,6 +130,24 @@ def xm_position(
         "mark_price": mark,
         "notional": notional,
     }
+
+
+def xm_position(
+    pos: Position,
+    market_data: dict[str, MarketData],
+    market_specs: dict[str, MarketSpec],
+) -> XMMarginResult:
+    """Compute cross-margin IMR/MMR for a single position."""
+    return _xm_instrument(pos, market_data, market_specs)
+
+
+def xm_order(
+    order: Order,
+    market_data: dict[str, MarketData],
+    market_specs: dict[str, MarketSpec],
+) -> XMMarginResult:
+    """Compute cross-margin IMR/MMR for a single open order."""
+    return _xm_instrument(order, market_data, market_specs, price=order["price"])
 
 
 def spot_balance_margin(balances: list[Balance], market_data: dict[str, MarketData]) -> float:
@@ -163,14 +180,22 @@ def compute_xm(
     total_imr = spot_bm
     total_mmr = spot_bm
     port_delta = 0.0
-    position_detail: list[dict[str, object]] = []
+    position_detail: list[XMPositionDetail] = []
+    order_detail: list[XMOrderDetail] = []
 
     for pos in positions:
         r = xm_position(pos, market_data, market_specs)
-        total_imr += cast(float, r["imr"])
-        total_mmr += cast(float, r["mmr"])
-        port_delta += cast(float, r["delta_contrib"])
+        total_imr += r["imr"]
+        total_mmr += r["mmr"]
+        port_delta += r["delta_contrib"]
         position_detail.append({**pos, **r})
+
+    for order in orders:
+        r = xm_order(order, market_data, market_specs)
+        total_imr += r["imr"]
+        total_mmr += r["mmr"]
+        port_delta += r["delta_contrib"]
+        order_detail.append({**order, **r})
 
     return {
         "IMR": total_imr,
@@ -178,4 +203,5 @@ def compute_xm(
         "portfolio_delta": port_delta,
         "spot_balance_margin": spot_bm,
         "positions": position_detail,
+        "orders": order_detail,
     }

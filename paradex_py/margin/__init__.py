@@ -55,6 +55,7 @@ from .cross_margin import (
     compute_xm,
     spot_balance_margin,
     xm_option_margin,
+    xm_order,
     xm_perp_margin,
     xm_position,
 )
@@ -80,6 +81,7 @@ __all__ = [
     "compute_xm",
     "compute_pm",
     "xm_position",
+    "xm_order",
     "xm_perp_margin",
     "xm_option_margin",
     "spot_balance_margin",
