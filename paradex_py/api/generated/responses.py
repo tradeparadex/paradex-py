@@ -281,6 +281,16 @@ class BlockTradeSignature(BaseModel):
     signer_account: Annotated[
         str, Field(description="Starknet account address of the signer", examples=["0x1234567890abcdef"])
     ]
+    signer_public_key: Annotated[
+        str | None,
+        Field(
+            default=None,
+            description=(
+                "Hex stark pubkey used to sign (account main key or active subkey). Empty defaults to account main key."
+            ),
+            examples=["0xabc..."],
+        ),
+    ] = None
 
 
 class BlockTradeStatus(str, Enum):
