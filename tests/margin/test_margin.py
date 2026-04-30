@@ -170,7 +170,7 @@ _PM_PARAMS = {
 
 
 def assert_close(a, b, tol=0.01, label=""):
-    assert abs(a - b) <= tol, f"{label}: expected ~{b:.6f}, got {a:.6f} (diff {a-b:+.6f})"
+    assert abs(a - b) <= tol, f"{label}: expected ~{b:.6f}, got {a:.6f} (diff {a - b:+.6f})"
 
 
 # ── Black-Scholes ──────────────────────────────────────────────────────────
@@ -427,9 +427,9 @@ def test_compute_pm_worst_scenario_is_vol_crush():
         pm_config=PM_CONFIG,
     )
     worst_sc = _SCENARIOS_FLAT[r["worst_idx"]]
-    assert (
-        worst_sc[1] < 0
-    ), f"Expected negative vol shock for long-vol position, got scenario #{r['worst_idx']+1}: {worst_sc}"
+    assert worst_sc[1] < 0, (
+        f"Expected negative vol shock for long-vol position, got scenario #{r['worst_idx'] + 1}: {worst_sc}"
+    )
 
 
 def test_compute_pm_portfolio_delta_includes_orders():
@@ -668,7 +668,7 @@ def test_compute_pm_missing_pm_config_field_raises():
     import pytest
 
     bad_cfg = {**PM_CONFIG, "vol_shock_params": {"vega_power_short_dte": 0.30}}  # missing 3 fields
-    with pytest.raises(ValueError, match="vega_power_long_dte|dte_floor_days|min_vol_shock_up"):
+    with pytest.raises(ValueError, match=r"vega_power_long_dte|dte_floor_days|min_vol_shock_up"):
         compute_pm([], [], MARKET_DATA, MARKET_SPECS, bad_cfg)
 
 
@@ -740,7 +740,7 @@ def test_pm_config_snapshot_requires_complete_policy():
     import pytest
 
     bad = {**PM_CONFIG, "vol_shock_params": {"dte_floor_days": 1}}
-    with pytest.raises(ValueError, match="vega_power_short_dte"):
+    with pytest.raises(ValueError, match=r"vega_power_short_dte"):
         pm_config_from_snapshot(bad)
 
 
@@ -970,5 +970,5 @@ def test_synthetic_margin_at_spot_pm_requires_complete_config():
         }
     ]
     margin_config = {"mode": "PM", "pm_config": {**PM_CONFIG, "vol_shock_params": {"dte_floor_days": 1}}}
-    with pytest.raises(ValueError, match="vega_power_short_dte"):
+    with pytest.raises(ValueError, match=r"vega_power_short_dte"):
         synthetic_margin_at_spot(positions, 80000.0, 0.5, 0.0, margin_config, "BTC")

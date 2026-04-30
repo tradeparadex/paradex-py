@@ -114,7 +114,7 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         self._token_exp: float | None = None
         self.on_token_expired: Callable[[], str | None] | None = on_token_expired
         self.account: ParadexAccount | None = None
-        self._evm_account: "EvmAccount | None" = None
+        self._evm_account: EvmAccount | None = None
         self.auth_timestamp = 0
 
         # Signing configuration

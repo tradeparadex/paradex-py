@@ -1,5 +1,5 @@
 #!/usr/bin/env -S uv run
-# ruff: noqa: C901, TRY300
+# ruff: noqa: C901
 """
 Block Trades Workflow Integration Test - Standalone Script
 
@@ -99,9 +99,9 @@ class Colors:
 
 def log_step(step_name: str):
     """Log a major test step with clear formatting"""
-    logger.info(f"\n{Colors.BOLD}{Colors.BLUE}{'='*60}{Colors.END}")
+    logger.info(f"\n{Colors.BOLD}{Colors.BLUE}{'=' * 60}{Colors.END}")
     logger.info(f"{Colors.BOLD}{Colors.BLUE}🔹 {step_name}{Colors.END}")
-    logger.info(f"{Colors.BOLD}{Colors.BLUE}{'='*60}{Colors.END}")
+    logger.info(f"{Colors.BOLD}{Colors.BLUE}{'=' * 60}{Colors.END}")
 
 
 def log_success(message: str):
@@ -991,7 +991,7 @@ def poll_status_for_entities(client, block_ids, max_checks=30, interval=3, timeo
         # Log current status of all entities being monitored
         if current_iteration:
             status_summary = ", ".join(current_iteration)
-            log_info(f"📊 Check {check+1}/{max_checks}: {status_summary}")
+            log_info(f"📊 Check {check + 1}/{max_checks}: {status_summary}")
             if monitoring_list:
                 log_info(f"   Still monitoring: {final_statuses}")
 

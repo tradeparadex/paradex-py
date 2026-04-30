@@ -1,7 +1,5 @@
 """Market metadata and symbol parsing helpers."""
 
-# ruff: noqa: A003
-
 import re
 from collections.abc import Mapping
 from datetime import datetime, timezone

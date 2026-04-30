@@ -3,6 +3,7 @@ WebSocket RPC message models for type-safe simulation and validation.
 
 Simplified models focusing on JSON-RPC 2.0 structure for WebSocket messages.
 """
+
 import json
 from typing import Any
 

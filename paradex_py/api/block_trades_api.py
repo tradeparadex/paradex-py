@@ -148,7 +148,7 @@ class BlockTradesMixin:
         if not block_trade:
             raise ValueError("BlockTradeRequest is required")
 
-        payload = block_trade.model_dump() if hasattr(block_trade, "model_dump") else block_trade.model_dump()
+        payload = block_trade.model_dump()
         response = self._post_authorized(path="block-trades", payload=payload)
         return self._parse_block_trade_response(response)
 
@@ -199,11 +199,7 @@ class BlockTradesMixin:
         Returns:
             Executed block trade with status and fill details
         """
-        payload = (
-            execution_request.model_dump()
-            if hasattr(execution_request, "model_dump")
-            else execution_request.model_dump()
-        )
+        payload = execution_request.model_dump()
         response = self._post_authorized(path=f"block-trades/{block_trade_id}/execute", payload=payload)
         return self._parse_block_trade_response(response)
 
@@ -237,7 +233,7 @@ class BlockTradesMixin:
         Returns:
             Created offer with unique ID and parent reference
         """
-        payload = offer.model_dump() if hasattr(offer, "model_dump") else offer.model_dump()
+        payload = offer.model_dump()
         response = self._post_authorized(path=f"block-trades/{block_trade_id}/offers", payload=payload)
         return self._parse_block_trade_response(response)
 
@@ -286,11 +282,7 @@ class BlockTradesMixin:
         Returns:
             Executed offer with status, fill details, and timestamps
         """
-        payload = (
-            execution_request.model_dump()
-            if hasattr(execution_request, "model_dump")
-            else execution_request.model_dump()
-        )
+        payload = execution_request.model_dump()
         response = self._post_authorized(
             path=f"block-trades/{block_trade_id}/offers/{offer_id}/execute", payload=payload
         )

@@ -136,16 +136,16 @@ class CreateVault(BaseModel):
     description: Annotated[
         str | None, Field(description="Description for the vault", examples=["My vault description"])
     ] = None
-    lockup_period: Annotated[
-        int | None, Field(description="User's deposits lockup period in days", examples=[1])
-    ] = None
+    lockup_period: Annotated[int | None, Field(description="User's deposits lockup period in days", examples=[1])] = (
+        None
+    )
     max_tvl: Annotated[
         int | None, Field(description="Max TVL locked by the Vault, if any. 0 for unlimited", examples=[1000000])
     ] = None
     name: Annotated[str | None, Field(description="Unique name for the vault", examples=["MyVault"])] = None
-    profit_share: Annotated[
-        int | None, Field(description="Vault owner profit share (percentage)", examples=[10])
-    ] = None
+    profit_share: Annotated[int | None, Field(description="Vault owner profit share (percentage)", examples=[10])] = (
+        None
+    )
     public_key: Annotated[
         str | None, Field(description="Public key of vault operator", examples=["0x1234567890abcdef"])
     ] = None
