@@ -15,10 +15,10 @@ BLOCK_TRADE_PAYLOAD_VERSION = "2"
 
 
 class BlockTradeOrder:
-    """Order-side component of a Trade leaf. Distinct from the rev0 Order used for
-    standalone order signing: drops timestamp (replay protection lives at block level)
-    and market (lives at Trade level), but includes account explicitly since a Trade
-    leaf may carry orders from different participants.
+    """Order-side component of a Trade. Distinct from the rev0 Order used for standalone
+    order signing: drops timestamp (replay protection lives at block level) and market
+    (lives at Trade level), but includes account explicitly since a Trade may carry orders
+    from different participants.
     """
 
     def __init__(
@@ -37,7 +37,7 @@ class BlockTradeOrder:
 
 
 class Trade:
-    """One leaf of the block-trade merkle tree.
+    """One trade in a block — becomes a single leaf of the merkle tree at signing time.
 
     A Trade carries either fill data (for direct/offer trades) or constraint data (for
     offer-based parent blocks where only bounds are agreed at create time). Both variants
@@ -78,7 +78,7 @@ class Trade:
         maker_order: BlockTradeOrder,
         taker_order: BlockTradeOrder,
     ) -> "Trade":
-        """Build a Trade leaf for a direct or offer (filled) trade. Constraints are zero."""
+        """Build a Trade for a direct or offer (filled) trade. Constraints are zero."""
         return cls(
             market=market,
             price=price,
@@ -97,7 +97,7 @@ class Trade:
         max_price: Decimal = decimal_zero,
         oracle_tolerance: Decimal = decimal_zero,
     ) -> "Trade":
-        """Build a Trade leaf for an offer-based parent block (constraints only, no fill)."""
+        """Build a Trade for an offer-based parent block (constraints only, no fill)."""
         return cls(
             market=market,
             min_size=min_size,
@@ -136,9 +136,9 @@ class BlockTradeOffer:
     field binds the offer cryptographically to a specific parent — an offer signed for
     parent A cannot be replayed against parent B.
 
-    Each Trade leaf should be built with the offerer's data on one side (maker by
-    convention, matching the server's merge logic) and the other side empty/zero.
-    Constraints in the leaf are zero — the offerer doesn't sign parent constraints.
+    Each Trade should be built with the offerer's data on one side (maker by convention,
+    matching the server's merge logic) and the other side empty/zero. Constraints are
+    zero — the offerer doesn't sign parent constraints.
     """
 
     def __init__(
@@ -162,9 +162,9 @@ def _chain_decimal(d: Decimal) -> str:
 
 
 def _empty_block_trade_order_message() -> dict:
-    """Zero-valued BlockTradeOrder leaf used when one side of a Trade is empty
-    (e.g. an offer where the offerer occupies maker side and taker side is empty
-    until merge). All fields encoded as "0" so starknet-py can parse as felts."""
+    """Zero-valued BlockTradeOrder used when one side of a Trade is empty (e.g. an offer
+    where the offerer occupies maker side and taker side is empty until merge). All fields
+    encoded as "0" so starknet-py can parse as felts."""
     return {
         "account": "0",
         "side": "0",
@@ -192,7 +192,7 @@ def _block_trade_order_message(order: BlockTradeOrder | None) -> dict:
     }
 
 
-def _trade_leaf_message(trade: Trade) -> dict:
+def _trade_message(trade: Trade) -> dict:
     return {
         "market": _felt_or_zero(trade.market),
         "price": _chain_decimal(trade.price),
@@ -228,8 +228,8 @@ def block_trade_from_response(response: BlockTradeDetailFullResponse, nonce: str
                     market=market,
                     price=Decimal(detail.price or "0"),
                     size=Decimal(detail.size or "0"),
-                    maker_order=_response_order_to_leaf_order(detail.maker_order),
-                    taker_order=_response_order_to_leaf_order(detail.taker_order),
+                    maker_order=_block_trade_order_from_response(detail.maker_order),
+                    taker_order=_block_trade_order_from_response(detail.taker_order),
                 )
             )
             continue
@@ -243,7 +243,7 @@ def block_trade_from_response(response: BlockTradeDetailFullResponse, nonce: str
                     max_size=Decimal(constraints.max_size or "0"),
                     min_price=Decimal(constraints.min_price or "0"),
                     max_price=Decimal(constraints.max_price or "0"),
-                    # oracle_tolerance is in the proto leaf but not yet exposed on
+                    # oracle_tolerance is in the proto Trade but not yet exposed on
                     # BlockTradeConstraints; default to 0 until the DTO adds it.
                     oracle_tolerance=Decimal(0),
                 )
@@ -252,8 +252,8 @@ def block_trade_from_response(response: BlockTradeDetailFullResponse, nonce: str
     return BlockTrade(nonce=nonce, expiration=expiration, trades=trades)
 
 
-def _response_order_to_leaf_order(response_order: BlockTradeOrderResponse) -> BlockTradeOrder:
-    """Convert a BlockTradeOrder DTO from a response into a leaf-level BlockTradeOrder."""
+def _block_trade_order_from_response(response_order: BlockTradeOrderResponse) -> BlockTradeOrder:
+    """Convert a response-side BlockTradeOrder DTO into the signing-side BlockTradeOrder."""
     return BlockTradeOrder(
         account=response_order.account or "",
         side=response_order.side.value,
@@ -323,7 +323,7 @@ def _build_block_typed_data(
         },
         "message": {
             **primary_values,
-            "trades": [_trade_leaf_message(t) for t in sorted_trades],
+            "trades": [_trade_message(t) for t in sorted_trades],
         },
     }
     return cast(TypedDataDict, message)

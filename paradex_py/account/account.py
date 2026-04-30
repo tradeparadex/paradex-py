@@ -225,8 +225,8 @@ class ParadexAccount:
         return flatten_signature(sig)
 
     def _build_block_trade_signature_dto(self, signature_data: str, nonce: str, expiration: int) -> BlockTradeSignature:
-        """Construct the BlockTradeSignature DTO with the metadata fields the server
-        expects. Single source of truth for the DTO shape so build_block_trade_signature
+        """Construct the BlockTradeSignature with the metadata fields the server
+        expects. Single source of truth to build_block_trade_signature
         and build_block_trade_offer_signature stay aligned if the schema evolves
         (e.g. a new field added to BlockTradeSignature must not be forgotten in one path).
         """
