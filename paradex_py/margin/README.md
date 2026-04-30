@@ -17,12 +17,6 @@ account state, or depend on authenticated clients.
 - `synthetic.py`: strategy/backtester helpers for generated legs.
 - `hedging.py` and `liquidation.py`: small portfolio utilities.
 
-The file split is intentionally by domain boundary rather than by function
-count. Prefer merging only when two modules have the same reason to change.
-Good future merge candidates are `config.py` + `adapters.py` if API glue starts
-to feel too scattered. Keep `cross_margin.py`, `portfolio_margin.py`, and
-`black_scholes.py` separate.
-
 ## Data Flow
 
 Live callers should fetch positions, open orders, balances, markets, market
@@ -65,6 +59,3 @@ skills, and MCP code. Generated Pydantic API models are useful at the API
 boundary, but avoid coupling core formulas directly to generated classes.
 Adapters may accept either dicts or generated models and should convert them to
 the canonical compute shape before calling formulas.
-
-Use Astral `ty` for SDK type checking, matching `mcp-paradex-py`. The standard
-local command is `uv run ty check paradex_py`.
