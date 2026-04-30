@@ -41,6 +41,7 @@ from paradex_py.margin import (
     xm_position,
 )
 from paradex_py.margin.adapters import fee_rate_for_market, infer_underlying, normalise_market_data
+from paradex_py.margin.config import normalise_option_margin_side_params
 from paradex_py.margin.cross_margin import compute_xm
 
 # ── Fixtures ───────────────────────────────────────────────────────────────
@@ -366,13 +367,15 @@ def test_compute_what_if_increases_imr():
 
 # ── XM option margin formulas ─────────────────────────────────────────────
 
-_IMF_PARAMS = {
-    "long_itm": "0.2",
-    "premium_multiplier": "1",
-    "short_itm": "0.15",
-    "short_otm": "0.1",
-    "short_put_cap": "0.5",
-}
+_IMF_PARAMS = normalise_option_margin_side_params(
+    {
+        "long_itm": "0.2",
+        "premium_multiplier": "1",
+        "short_itm": "0.15",
+        "short_otm": "0.1",
+        "short_put_cap": "0.5",
+    }
+)
 
 
 def test_xm_long_call_otm_uses_mark():

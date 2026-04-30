@@ -11,32 +11,24 @@ from __future__ import annotations
 import math
 from bisect import bisect_right
 
-from ._utils import _req_f
 from .black_scholes import bs_price
-from .config import validate_pm_config
+from .config import normalise_pm_config
 from .constants import OPTION_FEE_CAP, YEAR_IN_DAYS
 from .cross_margin import xm_option_margin, xm_perp_margin
 
 
 def _api_pm_to_synthetic(pm_config: dict) -> dict:
-    validate_pm_config(pm_config)
-    vsp = pm_config["vol_shock_params"]
+    typed_pm_config = normalise_pm_config(pm_config)
+    vsp = typed_pm_config["vol_shock_params"]
     return {
-        "scenarios": [
-            [
-                _req_f(s, "spot_shock", "pm_config.scenarios"),
-                _req_f(s, "vol_shock", "pm_config.scenarios"),
-                _req_f(s, "weight", "pm_config.scenarios"),
-            ]
-            for s in pm_config["scenarios"]
-        ],
-        "unhedged_mf": _req_f(pm_config, "unhedged_margin_factor", "pm_config"),
-        "hedged_mf": _req_f(pm_config, "hedged_margin_factor", "pm_config"),
-        "mmr_factor": _req_f(pm_config, "mmf_factor", "pm_config"),
-        "vega_power_st": _req_f(vsp, "vega_power_short_dte", "pm_config.vol_shock_params"),
-        "vega_power_lt": _req_f(vsp, "vega_power_long_dte", "pm_config.vol_shock_params"),
-        "dte_floor": _req_f(vsp, "dte_floor_days", "pm_config.vol_shock_params"),
-        "min_vol_shock_up": _req_f(vsp, "min_vol_shock_up", "pm_config.vol_shock_params"),
+        "scenarios": [[s["spot_shock"], s["vol_shock"], s["weight"]] for s in typed_pm_config["scenarios"]],
+        "unhedged_mf": typed_pm_config["unhedged_margin_factor"],
+        "hedged_mf": typed_pm_config["hedged_margin_factor"],
+        "mmr_factor": typed_pm_config["mmf_factor"],
+        "vega_power_st": vsp["vega_power_short_dte"],
+        "vega_power_lt": vsp["vega_power_long_dte"],
+        "dte_floor": vsp["dte_floor_days"],
+        "min_vol_shock_up": vsp["min_vol_shock_up"],
     }
 
 

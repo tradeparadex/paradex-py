@@ -10,11 +10,23 @@ and ``option_cross_margin_params`` on each market. Missing values raise
 from typing import cast
 
 from ._utils import _req_dict, _req_f, _req_str
-from .types import Balance, MarginResult, MarketData, MarketSpec, Order, Position
+from .config import normalise_delta1_margin_params, normalise_option_margin_params
+from .types import (
+    Balance,
+    Delta1MarginParams,
+    MarginResult,
+    MarketData,
+    MarketSpec,
+    OptionMarginParams,
+    OptionMarginSideParams,
+    Order,
+    Position,
+    RawDict,
+)
 
 
 def _xm_option_margin(
-    params: dict[str, object],
+    params: OptionMarginSideParams,
     mark: float,
     spot: float,
     strike: float,
@@ -29,24 +41,25 @@ def _xm_option_margin(
            capped at short_put_cap x spot x size for puts.
     """
     if is_long:
-        return min(mark * _req_f(params, "premium_multiplier"), _req_f(params, "long_itm") * spot) * size
+        return min(mark * params["premium_multiplier"], params["long_itm"] * spot) * size
 
     otm_amt = max(0.0, (strike - spot) if is_call else (spot - strike))
-    raw = max(_req_f(params, "short_itm") * spot - otm_amt, _req_f(params, "short_otm") * spot)
+    raw = max(params["short_itm"] * spot - otm_amt, params["short_otm"] * spot)
     if not is_call:
-        raw = min(raw, _req_f(params, "short_put_cap") * spot)
+        raw = min(raw, params["short_put_cap"] * spot)
     return raw * size
 
 
-def xm_perp_margin(size: float, price: float, params: dict[str, object]) -> MarginResult:
+def xm_perp_margin(size: float, price: float, params: Delta1MarginParams | RawDict) -> MarginResult:
     """IMR/MMR for a single perp/future leg: ``IMR = |size| * price * imf_base``.
 
     The ``imf_factor`` and ``imf_shift`` fields on the API response are
     deprecated (always 0 — see ``Delta1CrossMarginParams`` in the OpenAPI
     spec) and not part of the formula.
     """
-    imr = abs(size) * price * _req_f(params, "imf_base")
-    return {"imr": imr, "mmr": imr * _req_f(params, "mmf_factor")}
+    typed_params = normalise_delta1_margin_params(params)
+    imr = abs(size) * price * typed_params["imf_base"]
+    return {"imr": imr, "mmr": imr * typed_params["mmf_factor"]}
 
 
 def xm_option_margin(
@@ -56,15 +69,16 @@ def xm_option_margin(
     strike: float,
     spot: float,
     mark_price: float,
-    params: dict[str, object],
+    params: OptionMarginParams | RawDict,
 ) -> MarginResult:
     """Backtester-shaped helper: IMR/MMR for a single option leg.
 
     `params` must have nested {"imf": {...}, "mmf": {...}} param dicts.
     """
+    typed_params = normalise_option_margin_params(params)
     return {
-        "imr": _xm_option_margin(dict(_req_dict(params, "imf")), mark_price, spot, strike, is_call, is_buy, size),
-        "mmr": _xm_option_margin(dict(_req_dict(params, "mmf")), mark_price, spot, strike, is_call, is_buy, size),
+        "imr": _xm_option_margin(typed_params["imf"], mark_price, spot, strike, is_call, is_buy, size),
+        "mmr": _xm_option_margin(typed_params["mmf"], mark_price, spot, strike, is_call, is_buy, size),
     }
 
 
@@ -96,17 +110,17 @@ def xm_position(
     asset_kind = spec.get("asset_kind", "")
 
     if asset_kind in ("PERP", "FUTURE"):
-        params = _req_dict(spec, "delta1_cross_margin_params", sym)
-        r = xm_perp_margin(size, mark, dict(params))
+        params = normalise_delta1_margin_params(_req_dict(spec, "delta1_cross_margin_params", sym), sym)
+        r = xm_perp_margin(size, mark, params)
         imr, mmr = r["imr"], r["mmr"]
     elif asset_kind in ("OPTION", "PERP_OPTION"):
-        ocp = _req_dict(spec, "option_cross_margin_params", sym)
+        ocp = normalise_option_margin_params(_req_dict(spec, "option_cross_margin_params", sym), sym)
         spot = md["underlying_price"]
         strike = _req_f(spec, "strike_price", sym)
         is_call = _req_str(spec, "option_type", sym) == "CALL"
         is_long = side in ("BUY", "LONG")
-        imr = _xm_option_margin(dict(_req_dict(ocp, "imf", sym)), mark, spot, strike, is_call, is_long, size)
-        mmr = _xm_option_margin(dict(_req_dict(ocp, "mmf", sym)), mark, spot, strike, is_call, is_long, size)
+        imr = _xm_option_margin(ocp["imf"], mark, spot, strike, is_call, is_long, size)
+        mmr = _xm_option_margin(ocp["mmf"], mark, spot, strike, is_call, is_long, size)
     else:
         raise ValueError(f"unsupported asset_kind {asset_kind!r} for {sym}")
 

@@ -40,6 +40,10 @@ from .black_scholes import bs_delta, bs_gamma, bs_price, bs_vega, norm_cdf, norm
 from .compute import compute
 from .config import (
     fee_rate_for_market,
+    normalise_delta1_margin_params,
+    normalise_option_margin_params,
+    normalise_option_margin_side_params,
+    normalise_pm_config,
     pm_config_for_compute,
     pm_config_from_snapshot,
     select_pm_config,
@@ -95,6 +99,10 @@ __all__ = [
     "infer_underlying",
     "append_what_if_positions",
     "fee_rate_for_market",
+    "normalise_delta1_margin_params",
+    "normalise_option_margin_params",
+    "normalise_option_margin_side_params",
+    "normalise_pm_config",
     "Position",
     "Order",
     "Balance",

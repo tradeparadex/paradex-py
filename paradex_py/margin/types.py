@@ -82,13 +82,16 @@ class VolShockParams(TypedDict):
     min_vol_shock_up: float
 
 
-class PMConfig(TypedDict, total=False):
+class PMConfig(TypedDict):
     base_asset: str
     hedged_margin_factor: float
     unhedged_margin_factor: float
     mmf_factor: float
-    scenarios: list[PMScenario | RawDict]
-    vol_shock_params: VolShockParams | RawDict
+    scenarios: list[PMScenario]
+    vol_shock_params: VolShockParams
+
+
+class PMConfigWithOptionalFields(PMConfig, total=False):
     funding_provision_hour: float
 
 

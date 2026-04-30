@@ -8,17 +8,14 @@ directly). The engine raises ``ValueError`` if the required fields are
 missing rather than silently using stale local defaults.
 """
 
-from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
-from typing import cast
 
-from ._utils import _req_dict, _req_f, _req_str
 from .black_scholes import bs_price
-from .config import validate_pm_config
+from .config import normalise_pm_config
 from .constants import OPTION_FEE_CAP, TWAP_SETTLEMENT_MIN, YEAR_IN_DAYS
 from .cross_margin import spot_balance_margin
 from .markets import parse_market
-from .types import Balance, MarketData, MarketSpec, Order, Position, RawDict
+from .types import Balance, MarketData, MarketSpec, Order, PMConfig, Position, RawDict
 
 
 def _live_frac(expiry: datetime, now: datetime) -> float:
@@ -115,7 +112,7 @@ def compute_pm(  # noqa: C901
     orders: list[Order],
     market_data: dict[str, MarketData],
     market_specs: dict[str, MarketSpec],
-    pm_config: RawDict,
+    pm_config: PMConfig | RawDict,
     balances: list[Balance] | None = None,
     now: datetime | None = None,
 ) -> dict[str, object]:
@@ -137,39 +134,28 @@ def compute_pm(  # noqa: C901
     if now is None:
         now = datetime.now(timezone.utc)
 
-    validate_pm_config(pm_config)
-    vsp = _req_dict(pm_config, "vol_shock_params", "pm_config")
-    hedged_mf = _req_f(pm_config, "hedged_margin_factor", "pm_config")
-    unhedged_mf = _req_f(pm_config, "unhedged_margin_factor", "pm_config")
-    mmr_factor_eff = _req_f(pm_config, "mmf_factor", "pm_config")
-    raw_sc = pm_config["scenarios"]
-    if not isinstance(raw_sc, Sequence) or isinstance(raw_sc, str | bytes | bytearray):
-        raise TypeError("pm_config.scenarios must be a sequence")
-    scenario_maps = [cast(Mapping[str, object], s) for s in raw_sc if isinstance(s, Mapping)]
-    scenarios_eff = [
-        [
-            _req_f(s, "spot_shock", f"pm_config.scenarios[{i}]"),
-            _req_f(s, "vol_shock", f"pm_config.scenarios[{i}]"),
-            _req_f(s, "weight", f"pm_config.scenarios[{i}]"),
-        ]
-        for i, s in enumerate(scenario_maps)
-    ]
+    typed_pm_config = normalise_pm_config(pm_config)
+    vsp = typed_pm_config["vol_shock_params"]
+    hedged_mf = typed_pm_config["hedged_margin_factor"]
+    unhedged_mf = typed_pm_config["unhedged_margin_factor"]
+    mmr_factor_eff = typed_pm_config["mmf_factor"]
+    scenarios_eff = [[s["spot_shock"], s["vol_shock"], s["weight"]] for s in typed_pm_config["scenarios"]]
     weights_eff = [s[2] for s in scenarios_eff]
     n_sc_eff = len(scenarios_eff)
 
     pm_params = {
         "interest_rate": 0.0,
-        "dte_floor": _req_f(vsp, "dte_floor_days", "pm_config.vol_shock_params"),
-        "vp_short": _req_f(vsp, "vega_power_short_dte", "pm_config.vol_shock_params"),
-        "vp_long": _req_f(vsp, "vega_power_long_dte", "pm_config.vol_shock_params"),
-        "min_vol_shock_up": _req_f(vsp, "min_vol_shock_up", "pm_config.vol_shock_params"),
+        "dte_floor": vsp["dte_floor_days"],
+        "vp_short": vsp["vega_power_short_dte"],
+        "vp_long": vsp["vega_power_long_dte"],
+        "min_vol_shock_up": vsp["min_vol_shock_up"],
     }
 
     spot_bm = spot_balance_margin(balances or [], market_data)
 
     # Detect underlying perp (for spot/basis/funding). Prefer the selected PM
     # config base asset, then live positions/orders.
-    base_asset = _req_str(pm_config, "base_asset", "pm_config").upper()
+    base_asset = typed_pm_config["base_asset"].upper()
     ul_sym = f"{base_asset}-USD-PERP"
     for item in [*positions, *orders]:
         sym = item["market"]

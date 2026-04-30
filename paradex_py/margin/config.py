@@ -10,8 +10,8 @@ backtester) bundles XM perp/option params + PM config into one dict.
 from collections.abc import Mapping, Sequence
 from typing import Any, cast
 
-from ._utils import _req_dict, _req_f
-from .types import RawDict
+from ._utils import _req_dict, _req_f, _req_str
+from .types import Delta1MarginParams, OptionMarginParams, OptionMarginSideParams, PMConfig, PMScenario, RawDict
 
 _FEE_FIELD_BY_ASSET_KIND: dict[str, str] = {
     "SPOT": "spot_taker_rate",
@@ -40,6 +40,78 @@ def _pm_results(pm_data: object | None) -> list[RawDict]:
     if not isinstance(results, Sequence) or isinstance(results, str | bytes | bytearray):
         return []
     return [_asdict(item) for item in results]
+
+
+def normalise_delta1_margin_params(
+    params: Mapping[str, object], ctx: str = "delta1 margin params"
+) -> Delta1MarginParams:
+    """Return typed delta1 XM params from raw API/config values."""
+    return {
+        "imf_base": _req_f(params, "imf_base", ctx),
+        "mmf_factor": _req_f(params, "mmf_factor", ctx),
+    }
+
+
+def normalise_option_margin_side_params(
+    params: Mapping[str, object],
+    ctx: str = "option margin side params",
+) -> OptionMarginSideParams:
+    """Return typed option XM side params from raw API/config values."""
+    return {
+        "long_itm": _req_f(params, "long_itm", ctx),
+        "premium_multiplier": _req_f(params, "premium_multiplier", ctx),
+        "short_itm": _req_f(params, "short_itm", ctx),
+        "short_otm": _req_f(params, "short_otm", ctx),
+        "short_put_cap": _req_f(params, "short_put_cap", ctx),
+    }
+
+
+def normalise_option_margin_params(
+    params: Mapping[str, object],
+    ctx: str = "option margin params",
+) -> OptionMarginParams:
+    """Return typed option XM params from raw API/config values."""
+    return {
+        "imf": normalise_option_margin_side_params(_req_dict(params, "imf", ctx), f"{ctx}.imf"),
+        "mmf": normalise_option_margin_side_params(_req_dict(params, "mmf", ctx), f"{ctx}.mmf"),
+    }
+
+
+def normalise_pm_config(pm_config: Mapping[str, object]) -> PMConfig:
+    """Return typed PM config from raw API/snapshot values."""
+    scenarios = pm_config.get("scenarios")
+    if not scenarios:
+        raise ValueError("pm_config.scenarios is missing or empty")
+    if not isinstance(scenarios, Sequence) or isinstance(scenarios, str | bytes | bytearray):
+        raise TypeError("pm_config.scenarios must be a sequence")
+
+    scenario_params: list[PMScenario] = []
+    for i, scenario in enumerate(scenarios):
+        if not isinstance(scenario, Mapping):
+            raise TypeError(f"pm_config.scenarios[{i}] must be a mapping")
+        scenario = cast(Mapping[str, object], scenario)
+        scenario_params.append(
+            {
+                "spot_shock": _req_f(scenario, "spot_shock", f"pm_config.scenarios[{i}]"),
+                "vol_shock": _req_f(scenario, "vol_shock", f"pm_config.scenarios[{i}]"),
+                "weight": _req_f(scenario, "weight", f"pm_config.scenarios[{i}]"),
+            }
+        )
+
+    vsp = _req_dict(pm_config, "vol_shock_params", "pm_config")
+    return {
+        "base_asset": _req_str(pm_config, "base_asset", "pm_config"),
+        "hedged_margin_factor": _req_f(pm_config, "hedged_margin_factor", "pm_config"),
+        "unhedged_margin_factor": _req_f(pm_config, "unhedged_margin_factor", "pm_config"),
+        "mmf_factor": _req_f(pm_config, "mmf_factor", "pm_config"),
+        "scenarios": scenario_params,
+        "vol_shock_params": {
+            "dte_floor_days": _req_f(vsp, "dte_floor_days", "pm_config.vol_shock_params"),
+            "vega_power_short_dte": _req_f(vsp, "vega_power_short_dte", "pm_config.vol_shock_params"),
+            "vega_power_long_dte": _req_f(vsp, "vega_power_long_dte", "pm_config.vol_shock_params"),
+            "min_vol_shock_up": _req_f(vsp, "min_vol_shock_up", "pm_config.vol_shock_params"),
+        },
+    }
 
 
 def select_pm_config(
@@ -79,26 +151,7 @@ def validate_pm_config(pm_config: RawDict) -> RawDict:
     This intentionally does not mutate or fill missing values. Callers that
     need offline replay should pass a complete snapshot of the live API block.
     """
-    _req_f(pm_config, "hedged_margin_factor", "pm_config")
-    _req_f(pm_config, "unhedged_margin_factor", "pm_config")
-    _req_f(pm_config, "mmf_factor", "pm_config")
-    scenarios = pm_config.get("scenarios")
-    if not scenarios:
-        raise ValueError("pm_config.scenarios is missing or empty")
-    if not isinstance(scenarios, Sequence) or isinstance(scenarios, str | bytes | bytearray):
-        raise TypeError("pm_config.scenarios must be a sequence")
-    for i, scenario in enumerate(scenarios):
-        if not isinstance(scenario, Mapping):
-            raise TypeError(f"pm_config.scenarios[{i}] must be a mapping")
-        scenario = cast(Mapping[str, object], scenario)
-        _req_f(scenario, "spot_shock", f"pm_config.scenarios[{i}]")
-        _req_f(scenario, "vol_shock", f"pm_config.scenarios[{i}]")
-        _req_f(scenario, "weight", f"pm_config.scenarios[{i}]")
-    vsp = _req_dict(pm_config, "vol_shock_params", "pm_config")
-    _req_f(vsp, "dte_floor_days", "pm_config.vol_shock_params")
-    _req_f(vsp, "vega_power_short_dte", "pm_config.vol_shock_params")
-    _req_f(vsp, "vega_power_long_dte", "pm_config.vol_shock_params")
-    _req_f(vsp, "min_vol_shock_up", "pm_config.vol_shock_params")
+    normalise_pm_config(pm_config)
     return pm_config
 
 
@@ -225,8 +278,8 @@ def fetch_margin_config(
             }
     """
     log = log or (lambda *_a, **_k: None)
-    perp_params: dict[str, dict[str, float]] = {}
-    option_params: dict[str, dict[str, dict[str, float]]] = {}
+    perp_params: dict[str, Delta1MarginParams] = {}
+    option_params: dict[str, OptionMarginParams] = {}
     fee_rate: float | None = None
     config: RawDict = {
         "mode": "XM",
@@ -253,19 +306,11 @@ def fetch_margin_config(
         xm_raw = m.get("delta1_cross_margin_params")
         if isinstance(xm_raw, Mapping):
             xm = cast(Mapping[str, object], xm_raw)
-            perp_params[sym] = {
-                "imf_base": _req_f(xm, "imf_base", sym),
-                "mmf_factor": _req_f(xm, "mmf_factor", sym),
-            }
+            perp_params[sym] = normalise_delta1_margin_params(xm, sym)
         oxm_raw = m.get("option_cross_margin_params")
         if isinstance(oxm_raw, Mapping):
             oxm = cast(Mapping[str, object], oxm_raw)
-            imf = _req_dict(oxm, "imf", sym)
-            mmf = _req_dict(oxm, "mmf", sym)
-            option_params[sym] = {
-                "imf": {str(k): float(cast(float | str, v)) for k, v in imf.items()},
-                "mmf": {str(k): float(cast(float | str, v)) for k, v in mmf.items()},
-            }
+            option_params[sym] = normalise_option_margin_params(oxm, sym)
         market_fee_rate = fee_rate_for_market(m, account_info=account_info)
         fee_rate = market_fee_rate if fee_rate is None else max(fee_rate, market_fee_rate)
         config["fee_rate"] = fee_rate
@@ -277,28 +322,19 @@ def fetch_margin_config(
         return config
 
     if ul_cfg:
-        vsp = _req_dict(ul_cfg, "vol_shock_params", "pm_config")
-        scenarios_raw = ul_cfg.get("scenarios")
-        scenarios = scenarios_raw if isinstance(scenarios_raw, Sequence) else []
-        flat_scenarios = [
-            [
-                _req_f(cast(Mapping[str, object], s), "spot_shock", "pm_config.scenarios"),
-                _req_f(cast(Mapping[str, object], s), "vol_shock", "pm_config.scenarios"),
-                _req_f(cast(Mapping[str, object], s), "weight", "pm_config.scenarios"),
-            ]
-            for s in scenarios
-            if isinstance(s, Mapping)
-        ]
+        typed_pm_config = normalise_pm_config(ul_cfg)
+        vsp = typed_pm_config["vol_shock_params"]
+        flat_scenarios = [[s["spot_shock"], s["vol_shock"], s["weight"]] for s in typed_pm_config["scenarios"]]
         config["mode"] = "PM"
         pm_config = {
             "scenarios": flat_scenarios,
-            "unhedged_mf": _req_f(ul_cfg, "unhedged_margin_factor", "pm_config"),
-            "hedged_mf": _req_f(ul_cfg, "hedged_margin_factor", "pm_config"),
-            "mmr_factor": _req_f(ul_cfg, "mmf_factor", "pm_config"),
-            "vega_power_st": _req_f(vsp, "vega_power_short_dte", "pm_config.vol_shock_params"),
-            "vega_power_lt": _req_f(vsp, "vega_power_long_dte", "pm_config.vol_shock_params"),
-            "dte_floor": _req_f(vsp, "dte_floor_days", "pm_config.vol_shock_params"),
-            "min_vol_shock_up": _req_f(vsp, "min_vol_shock_up", "pm_config.vol_shock_params"),
+            "unhedged_mf": typed_pm_config["unhedged_margin_factor"],
+            "hedged_mf": typed_pm_config["hedged_margin_factor"],
+            "mmr_factor": typed_pm_config["mmf_factor"],
+            "vega_power_st": vsp["vega_power_short_dte"],
+            "vega_power_lt": vsp["vega_power_long_dte"],
+            "dte_floor": vsp["dte_floor_days"],
+            "min_vol_shock_up": vsp["min_vol_shock_up"],
             "funding_period_hours": ul_cfg.get("funding_provision_hour"),
         }
         config["pm_config"] = pm_config
