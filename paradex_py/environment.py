@@ -2,7 +2,7 @@ from typing import Literal
 
 from .utils import raise_value_error
 
-__all__ = ["Environment", "PROD", "TESTNET", "NIGHTLY"]
+__all__ = ["NIGHTLY", "PROD", "TESTNET", "Environment"]
 
 Environment = Literal["prod", "testnet", "nightly"]
 

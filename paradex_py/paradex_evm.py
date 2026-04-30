@@ -3,7 +3,7 @@ import secrets
 from typing import TYPE_CHECKING
 
 from eth_account import Account as EthAccount
-from starknet_py.net.signer.stark_curve_signer import KeyPair
+from starknet_py.net.signer.key_pair import KeyPair
 
 from paradex_py._client_base import _ClientBase
 from paradex_py.account.evm_account import EvmAccount

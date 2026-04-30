@@ -12,6 +12,7 @@ Comprehensive example demonstrating all simulator-friendly features:
 
 Perfect starting point for backtesting and simulation systems.
 """
+
 import asyncio
 import json
 import time
@@ -150,7 +151,7 @@ async def demo_websocket_injection():
 
     print(f"✅ Processed {len(received)} messages in {processing_time:.4f}s")
     print(f"✅ Rate: {rate:.0f} messages/second")
-    print(f"✅ Average latency: {(processing_time/len(received))*1000:.2f}ms per message")
+    print(f"✅ Average latency: {(processing_time / len(received)) * 1000:.2f}ms per message")
 
     await ws_client._close_connection()
 

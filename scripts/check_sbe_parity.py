@@ -11,6 +11,7 @@ and exits. Any mismatches are reported as FAIL.
 Usage:
     uv run python scripts/check_sbe_parity.py [--env testnet|prod] [--market BTC-USD-PERP] [--samples 5]
 """
+
 import argparse
 import asyncio
 import sys
@@ -160,9 +161,9 @@ async def run_parity(env: Environment, market: str, n_samples: int) -> bool:  # 
         ("TRADES", "trades", _json_samples["trades"], _sbe_samples["trades"]),
         ("MARKETS_SUMMARY", "ms", _json_samples["ms"], _sbe_samples["ms"]),
     ]:
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"  {label}  (json={len(json_s)} samples, sbe={len(sbe_s)} samples)")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
         if not json_s or not sbe_s:
             print("  SKIP — no samples collected")
             continue
@@ -180,9 +181,9 @@ async def run_parity(env: Environment, market: str, n_samples: int) -> bool:  # 
             suffix = f"  # {note}" if note else ""
             print(f"  {tag}  {key:30s}  json={jv!r:<30}  sbe={sv!r}{suffix}")
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"  OVERALL: {'PASS ✓' if ok else 'FAIL ✗'}")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
     return ok
 
 

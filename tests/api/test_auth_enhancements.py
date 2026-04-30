@@ -189,8 +189,7 @@ class TestAuthenticationEnhancements:
 
     @patch.object(ParadexApiClient, "fetch_system_config", return_value=MagicMock())
     def test_init_account_with_auto_auth_not_onboarded(self, mock_config):
-        """Test account initialization when not onboarded (auth fails with NOT_ONBOARDED, then succeeds after onboarding).
-        """
+        """Test account initialization when not onboarded (auth fails with NOT_ONBOARDED, then succeeds after onboarding)."""
         client = ParadexApiClient(env=TESTNET, auto_auth=True)
         mock_account = MagicMock()
 

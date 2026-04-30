@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 from eth_account import Account
 from eth_account.messages import encode_defunct
-from eth_keys import keys as eth_keys
+from eth_keys.datatypes import PrivateKey
 from starknet_py.common import int_from_hex
 
 from paradex_py.account.utils import derive_l2_address_eip191
@@ -68,7 +68,7 @@ class EvmAccount:
         self.evm_address = self.l1_address
 
         # Uncompressed secp256k1 public key: "0x04" + 128-char hex (x || y)
-        _priv_key_obj = eth_keys.PrivateKey(bytes(self._eth_account.key))
+        _priv_key_obj = PrivateKey(bytes(self._eth_account.key))
         self.evm_public_key_uncompressed = "0x04" + _priv_key_obj.public_key.to_bytes().hex()
 
         if l2_address is not None:

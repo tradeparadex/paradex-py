@@ -147,7 +147,7 @@ def test_trade_event_channel_and_type():
 
 
 def test_trade_event_fields():
-    channel, model = decode_frame(_make_trade_frame())
+    _channel, model = decode_frame(_make_trade_frame())
     assert model.timestamp == 1710000000123
     assert model.seq_no == 42
     assert model.trade_id == 999
