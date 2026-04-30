@@ -175,9 +175,12 @@ def create_block_trade_order(
     )
 
 
-def _leaf_order_from_dto(dto, account: str) -> BlockTradeOrder:
-    """Convert a BlockTradeOrder DTO from a request payload into a leaf BlockTradeOrder
-    (the rev2 signing-leaf type — no timestamp, no market, account inside)."""
+def _build_signing_block_trade_order(dto, account: str) -> BlockTradeOrder:
+    """Build a signing-side BlockTradeOrder from a request-payload BlockTradeOrder DTO.
+
+    Note: `BlockTradeOrder` here is the signing struct from `paradex_py.message.block_trades`
+    (the import at the top of this file shadows the request/response DTO of the same name).
+    """
     side_value = ""
     if dto and getattr(dto, "side", None) is not None:
         side_value = dto.side.value if hasattr(dto.side, "value") else str(dto.side)
@@ -198,17 +201,19 @@ def _leaf_order_from_dto(dto, account: str) -> BlockTradeOrder:
 
 
 def _build_trade_from_info(market_symbol: str, trade_info, initiator_addr: str, counterparty_addr: str) -> Trade:
-    """Build a signing-shape Trade leaf from a request BlockTradeInfo. Direct create:
-    both maker and taker DTOs are present. Offer-based create: only maker is set; taker
-    leaf is None (encoded as empty/zero leaf in the merkle)."""
-    maker_leaf = _leaf_order_from_dto(trade_info.maker_order, initiator_addr)
-    taker_leaf = _leaf_order_from_dto(trade_info.taker_order, counterparty_addr) if trade_info.taker_order else None
+    """Build a signing-shape Trade from a request BlockTradeInfo. Direct create: both maker
+    and taker orders are present. Offer-based create: only maker is set; taker is None
+    (encoded as empty/zero in the merkle)."""
+    maker_order = _build_signing_block_trade_order(trade_info.maker_order, initiator_addr)
+    taker_order = (
+        _build_signing_block_trade_order(trade_info.taker_order, counterparty_addr) if trade_info.taker_order else None
+    )
     return Trade.fill(
         market=market_symbol,
         price=Decimal(str(trade_info.price)) if trade_info.price else Decimal("0"),
         size=Decimal(str(trade_info.size)) if trade_info.size else Decimal("0"),
-        maker_order=maker_leaf,
-        taker_order=taker_leaf,
+        maker_order=maker_order,
+        taker_order=taker_order,
     )
 
 
@@ -232,21 +237,21 @@ def sign_block_trade_request(client, request: BlockTradeRequest, signer_account:
 
 
 def sign_block_offer_request(client, request: BlockOfferRequest, signer_account: str) -> BlockOfferRequest:
-    """Sign a BlockOfferRequest using the rev2 BlockTradeOffer typed-data (distinct primary
-    type from BlockTrade). The offerer commits only to their own fills + the parent block
-    reference — the merkle leaves carry the offerer's side filled and the counter-side empty.
+    """Sign a BlockOfferRequest using the BlockTradeOffer typed-data (distinct primary type
+    from BlockTrade). The offerer commits only to their own fills + the parent block
+    reference — each Trade carries the offerer's side filled and the counter-side empty.
     """
     parent_block_id = getattr(request, "parent_block_id", None) or getattr(request, "block_trade_id", "") or ""
     expiration = int(time.time() * 1000) + (5 * 60 * 1000)
     trades = []
     for market_symbol, offer_info in request.trades.items():
-        offerer_leaf = _leaf_order_from_dto(offer_info.offerer_order, signer_account)
+        offerer_order = _build_signing_block_trade_order(offer_info.offerer_order, signer_account)
         trades.append(
             Trade.fill(
                 market=market_symbol,
                 price=Decimal(offer_info.price),
                 size=Decimal(offer_info.size),
-                maker_order=offerer_leaf,
+                maker_order=offerer_order,
                 taker_order=None,
             )
         )

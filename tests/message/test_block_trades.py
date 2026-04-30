@@ -13,7 +13,7 @@ from paradex_py.message.block_trades import (
 
 
 def _eth_perp_orders():
-    """Two BlockTradeOrder leaves on ETH-USD-PERP — matched maker/taker."""
+    """Two BlockTradeOrders on ETH-USD-PERP — matched maker/taker."""
     maker = BlockTradeOrder(
         account="0xMAKER",
         side="BUY",
@@ -32,28 +32,28 @@ def _eth_perp_orders():
 
 
 def test_block_trade_order_class():
-    leaf = BlockTradeOrder(
+    order = BlockTradeOrder(
         account="0xABC",
         side="BUY",
         order_type="LIMIT",
         size=Decimal("0.5"),
         price=Decimal("100"),
     )
-    assert leaf.account == "0xABC"
-    assert leaf.side == "BUY"
-    assert leaf.order_type == "LIMIT"
-    assert leaf.size == Decimal("0.5")
-    assert leaf.price == Decimal("100")
+    assert order.account == "0xABC"
+    assert order.side == "BUY"
+    assert order.order_type == "LIMIT"
+    assert order.size == Decimal("0.5")
+    assert order.price == Decimal("100")
 
 
 def test_block_trade_order_defaults():
-    """Empty leaf — used when one side of a Trade is unfilled (e.g. offer-based parent)."""
-    leaf = BlockTradeOrder()
-    assert leaf.account == ""
-    assert leaf.side == ""
-    assert leaf.order_type == ""
-    assert leaf.size == Decimal(0)
-    assert leaf.price == Decimal(0)
+    """Empty BlockTradeOrder — used when one side of a Trade is unfilled (e.g. offer-based parent)."""
+    order = BlockTradeOrder()
+    assert order.account == ""
+    assert order.side == ""
+    assert order.order_type == ""
+    assert order.size == Decimal(0)
+    assert order.price == Decimal(0)
 
 
 def test_trade_fill_helper():
@@ -130,7 +130,7 @@ def test_block_trade_offer_class():
 
 
 def test_build_block_trade_message_fill():
-    """Single-leg fill leaf — verify the SNIP-12 rev1 typed-data structure end-to-end."""
+    """Single-leg fill Trade — verify the SNIP-12 rev1 typed-data structure end-to-end."""
     maker, taker = _eth_perp_orders()
     trade = Trade.fill(
         market="ETH-USD-PERP",
@@ -220,7 +220,7 @@ def test_build_block_trade_message_fill():
 
 
 def test_build_block_trade_message_constraint_only():
-    """Offer-based parent block: leaves carry constraints, fill fields zero."""
+    """Offer-based parent block: Trades carry constraints, fill fields zero."""
     trade = Trade.constraint(
         market="BTC-USD-PERP",
         min_size=Decimal("0.05"),
@@ -232,20 +232,20 @@ def test_build_block_trade_message_constraint_only():
     block_trade = BlockTrade(nonce="99", expiration=1700000000000, trades=[trade])
     message = build_block_trade_message(1, block_trade)
 
-    leaf = message["message"]["trades"][0]
+    trade_msg = message["message"]["trades"][0]
     # Constraint fields populated
-    assert leaf["market"] == "BTC-USD-PERP"
-    assert leaf["min_size"] == "5000000"  # 0.05 * 1e8
-    assert leaf["max_size"] == "100000000"  # 1.0 * 1e8
-    assert leaf["min_price"] == "2900000000000"
-    assert leaf["max_price"] == "3100000000000"
-    assert leaf["oracle_tolerance"] == "2000000"
+    assert trade_msg["market"] == "BTC-USD-PERP"
+    assert trade_msg["min_size"] == "5000000"  # 0.05 * 1e8
+    assert trade_msg["max_size"] == "100000000"  # 1.0 * 1e8
+    assert trade_msg["min_price"] == "2900000000000"
+    assert trade_msg["max_price"] == "3100000000000"
+    assert trade_msg["oracle_tolerance"] == "2000000"
     # Fill fields zero
-    assert leaf["price"] == "0"
-    assert leaf["size"] == "0"
-    # Empty BlockTradeOrder leaves on both sides — encoded with all "0"
+    assert trade_msg["price"] == "0"
+    assert trade_msg["size"] == "0"
+    # Empty BlockTradeOrders on both sides — encoded with all "0"
     for side_key in ("maker_order", "taker_order"):
-        assert leaf[side_key] == {
+        assert trade_msg[side_key] == {
             "account": "0",
             "side": "0",
             "type": "0",
@@ -267,9 +267,9 @@ def test_build_block_trade_message_offer_based_one_side():
     block_trade = BlockTrade(nonce="n", expiration=1700000000000, trades=[trade])
     message = build_block_trade_message(1, block_trade)
 
-    leaf = message["message"]["trades"][0]
-    assert leaf["maker_order"]["account"] == "0xMAKER"
-    assert leaf["taker_order"] == {
+    trade_msg = message["message"]["trades"][0]
+    assert trade_msg["maker_order"]["account"] == "0xMAKER"
+    assert trade_msg["taker_order"] == {
         "account": "0",
         "side": "0",
         "type": "0",
@@ -279,7 +279,7 @@ def test_build_block_trade_message_offer_based_one_side():
 
 
 def test_build_block_trade_message_sorts_by_market():
-    """Leaves are canonically sorted by market (alphabetical) regardless of input order.
+    """Trades are canonically sorted by market (alphabetical) regardless of input order.
     Without this the merkle root diverges from the server, which sorts independently."""
     maker, taker = _eth_perp_orders()
     eth = Trade.fill("ETH-USD-PERP", Decimal("1500"), Decimal("0.1"), maker, taker)
@@ -340,8 +340,8 @@ def test_build_block_trade_offer_message_schema():
 
 def test_block_trade_offer_distinct_primary_type():
     """BlockTrade and BlockTradeOffer are cryptographically domain-separated by primaryType.
-    Even with identical trade leaves, the typed-data messages differ — so signatures
-    cannot be replayed across the two flows."""
+    Even with identical Trades, the typed-data messages differ — so signatures cannot be
+    replayed across the two flows."""
     maker, taker = _eth_perp_orders()
     trade = Trade.fill("ETH-USD-PERP", Decimal("1500"), Decimal("0.1"), maker, taker)
 
@@ -357,7 +357,7 @@ def test_block_trade_offer_distinct_primary_type():
 
 
 class _FakeOrder:
-    """Minimal stand-in for a server-returned BlockTradeOrder DTO (Pydantic-like)."""
+    """Minimal stand-in for a server-returned BlockTradeOrder"""
 
     def __init__(self, account, side_value, type_value, size, price):
         self.account = account
@@ -398,17 +398,17 @@ def test_block_trade_from_response_fill():
     assert bt.nonce == "executor_nonce"
     assert bt.expiration == 1700000000000
     assert len(bt.trades) == 1
-    leaf = bt.trades[0]
-    assert leaf.market == "ETH-USD-PERP"
-    assert leaf.price == Decimal("1500")
-    assert leaf.size == Decimal("0.1")
-    assert leaf.maker_order.account == "0xMAKER"
-    assert leaf.maker_order.side == "SELL"
-    assert leaf.taker_order.account == "0xTAKER"
-    assert leaf.taker_order.side == "BUY"
-    # Constraints zero (fill leaf)
-    assert leaf.min_size == Decimal(0)
-    assert leaf.max_size == Decimal(0)
+    trade = bt.trades[0]
+    assert trade.market == "ETH-USD-PERP"
+    assert trade.price == Decimal("1500")
+    assert trade.size == Decimal("0.1")
+    assert trade.maker_order.account == "0xMAKER"
+    assert trade.maker_order.side == "SELL"
+    assert trade.taker_order.account == "0xTAKER"
+    assert trade.taker_order.side == "BUY"
+    # Constraints zero (fill Trade)
+    assert trade.min_size == Decimal(0)
+    assert trade.max_size == Decimal(0)
 
 
 class _FakeConstraints:
@@ -419,7 +419,7 @@ class _FakeConstraints:
 
 def test_block_trade_message_hash_pinned():
     """Pin the messageHash for a fixed BlockTrade input. Tied to the schema, encoding,
-    leaf-sort, and domain definitions — any change to any of those flips this hash, so
+    trade sort, and domain definitions — any change to any of those flips this hash, so
     an equivalent verifier (e.g. a server) producing the same hash for the same inputs
     confirms the two implementations stay aligned."""
     from starknet_py.utils.typed_data import TypedData
@@ -455,7 +455,7 @@ def test_block_trade_offer_message_hash_pinned():
     maker_address = "0x1111"
     maker_btc = BlockTradeOrder(maker_address, "SELL", "LIMIT", Decimal("0.1"), Decimal("73000"))
     maker_eth = BlockTradeOrder(maker_address, "SELL", "LIMIT", Decimal("1"), Decimal("3000"))
-    # Offerer occupies maker side only; taker side is None (empty leaf, encoded as zero).
+    # Offerer occupies maker side only; taker side is None (encoded as zero BlockTradeOrder).
     offer = BlockTradeOffer(
         nonce="offer_nonce_1",
         expiration=1700000300000,
@@ -480,9 +480,9 @@ def test_block_trade_from_response_constraint_only():
 
     bt = block_trade_from_response(response, nonce="n", expiration=1700000000000)
     assert len(bt.trades) == 1
-    leaf = bt.trades[0]
-    assert leaf.market == "BTC-USD-PERP"
-    assert leaf.min_size == Decimal("0.05")
-    assert leaf.max_price == Decimal("31000")
-    assert leaf.maker_order is None
-    assert leaf.taker_order is None
+    trade = bt.trades[0]
+    assert trade.market == "BTC-USD-PERP"
+    assert trade.min_size == Decimal("0.05")
+    assert trade.max_price == Decimal("31000")
+    assert trade.maker_order is None
+    assert trade.taker_order is None
