@@ -19,7 +19,10 @@ from paradex_py.margin import (
     _live_frac,
     _scenario_price,
     _xm_option_margin,
+    bs_delta,
+    bs_gamma,
     bs_price,
+    bs_vega,
     compute,
     compute_pm,
     delta_hedge_size,
@@ -40,7 +43,7 @@ from paradex_py.margin import (
     synthetic_margin_at_spot,
     xm_position,
 )
-from paradex_py.margin.adapters import fee_rate_for_market, infer_underlying, normalise_market_data
+from paradex_py.margin.adapters import fee_rate_for_market, infer_underlying, normalise_market_data, normalise_orders
 from paradex_py.margin.config import normalise_option_margin_side_params
 from paradex_py.margin.cross_margin import compute_xm
 
@@ -204,6 +207,27 @@ def test_bs_put_call_parity():
     assert_close(call - put, S - K * math.exp(-r * T), tol=1e-6, label="put-call parity")
 
 
+def test_bs_inputs_validate_domain():
+    import pytest
+
+    invalid_inputs = [
+        (0.0, 100.0, 1.0, 0.0, 0.2),
+        (100.0, 0.0, 1.0, 0.0, 0.2),
+        (100.0, 100.0, -1e-9, 0.0, 0.2),
+        (100.0, 100.0, 1.0, 0.0, -0.2),
+        (math.inf, 100.0, 1.0, 0.0, 0.2),
+    ]
+    for S, K, T, r, sigma in invalid_inputs:
+        with pytest.raises(ValueError):
+            bs_price(S, K, T, r, sigma, True)
+        with pytest.raises(ValueError):
+            bs_delta(S, K, T, r, sigma, True)
+        with pytest.raises(ValueError):
+            bs_gamma(S, K, T, r, sigma)
+        with pytest.raises(ValueError):
+            bs_vega(S, K, T, r, sigma)
+
+
 # ── Market parsing ─────────────────────────────────────────────────────────
 
 
@@ -263,17 +287,54 @@ def test_xm_total():
     assert_close(result["MMR"], 1.6339, tol=0.02, label="total MMR vs exchange")
 
 
-def test_xm_total_includes_orders():
+def test_xm_total_includes_order_imr_but_not_mmr():
+    result = compute_xm(
+        [],
+        [{"market": "BTC-USD-PERP", "side": "BUY", "size": 0.1, "price": MARKET_DATA["BTC-USD-PERP"]["mark_price"]}],
+        MARKET_DATA,
+        MARKET_SPECS,
+    )
+    assert_close(result["IMR"], 155.77768, tol=0.001, label="order IMR")
+    assert_close(result["MMR"], 0.0, tol=0.001, label="order MMR")
+    assert result["portfolio_delta"] > 0
+    assert len(result["orders"]) == 1
+
+
+def test_xm_perp_orders_net_by_market_side_and_charge_open_loss():
+    result = compute_xm(
+        [{"market": "BTC-USD-PERP", "side": "SELL", "size": 1.0}],
+        [
+            {"market": "BTC-USD-PERP", "side": "BUY", "size": 3.0, "price": 90000.0},
+            {"market": "BTC-USD-PERP", "side": "SELL", "size": 2.0, "price": 88000.0},
+        ],
+        {
+            "BTC-USD-PERP": {
+                **MARKET_DATA["BTC-USD-PERP"],
+                "mark_price": 90000.0,
+                "underlying_price": 90000.0,
+                "fee_rate": 0.0003,
+            }
+        },
+        MARKET_SPECS,
+    )
+    market = result["markets"]["BTC-USD-PERP"]
+    assert_close(market["buy_open_size"], 2.0, tol=1e-9, label="buy open size")
+    assert_close(market["sell_open_size"], 3.0, tol=1e-9, label="sell open size")
+    assert_close(result["net_imr"], 5400.0, tol=0.001, label="side-netted net IMR")
+    assert_close(result["fee_provision_imr"], 81.0, tol=0.001, label="IMR fee on open size")
+    assert_close(result["MMR"], 927.0, tol=0.001, label="MMR excludes open orders")
+
+
+def test_xm_aggressive_order_charges_open_loss():
     result = compute_xm(
         [],
         [{"market": "BTC-USD-PERP", "side": "BUY", "size": 0.1, "price": 80000.0}],
         MARKET_DATA,
         MARKET_SPECS,
     )
-    assert_close(result["IMR"], 160.0, tol=0.001, label="order IMR")
-    assert_close(result["MMR"], 80.0, tol=0.001, label="order MMR")
-    assert result["portfolio_delta"] > 0
-    assert len(result["orders"]) == 1
+    expected_open_loss = (80000.0 - MARKET_DATA["BTC-USD-PERP"]["mark_price"]) * 0.1
+    assert_close(result["open_loss"], expected_open_loss, tol=0.001, label="open loss")
+    assert result["IMR"] > result["net_imr"]
 
 
 def test_spot_balance_margin_usdc_excluded():
@@ -369,6 +430,18 @@ def test_compute_pm_worst_scenario_is_vol_crush():
     assert (
         worst_sc[1] < 0
     ), f"Expected negative vol shock for long-vol position, got scenario #{r['worst_idx']+1}: {worst_sc}"
+
+
+def test_compute_pm_portfolio_delta_includes_orders():
+    r = compute_pm(
+        POSITIONS,
+        [{"market": "BTC-USD-PERP", "side": "BUY", "size": 0.01, "price": 78000.0}],
+        MARKET_DATA,
+        MARKET_SPECS,
+        PM_CONFIG,
+    )
+    assert_close(r["order_delta"], MARKET_DATA["BTC-USD-PERP"]["delta"] * 0.01, tol=1e-9, label="order delta")
+    assert_close(r["portfolio_delta"], r["position_delta"] + r["order_delta"], tol=1e-9, label="portfolio delta")
 
 
 def test_compute_what_if_increases_imr():
@@ -558,7 +631,7 @@ def test_live_frac_inside_twap_window():
 
 def test_live_frac_at_expiry():
     exp = datetime(2026, 5, 8, 8, 0, 0, tzinfo=timezone.utc)
-    assert _live_frac(exp, exp) == 1.0
+    assert _live_frac(exp, exp) == 0.0
 
 
 # ── PM funding netting ───────────────────────────────────────────────────
@@ -736,6 +809,29 @@ def test_margin_inputs_from_api_responses_builds_compute_kwargs():
     assert len(mi.orders) == 1
     assert mi.pm_config["base_asset"] == "BTC"
     assert set(mi.compute_kwargs()) >= {"positions", "orders", "market_data", "market_specs", "balances", "pm_config"}
+
+
+def test_normalise_orders_filters_inactive_statuses():
+    orders = normalise_orders(
+        [
+            {"market": "BTC-USD-PERP", "side": "BUY", "remaining_size": "0.1", "price": "80000"},
+            {"market": "BTC-USD-PERP", "side": "BUY", "remaining_size": "0.2", "price": "80000", "status": "NEW"},
+            {"market": "BTC-USD-PERP", "side": "SELL", "remaining_size": "0.3", "price": "81000", "status": "OPEN"},
+            {
+                "market": "BTC-USD-PERP",
+                "side": "SELL",
+                "remaining_size": "0.4",
+                "price": "82000",
+                "status": "UNTRIGGERED",
+            },
+            {"market": "BTC-USD-PERP", "side": "SELL", "remaining_size": "0.5", "price": "83000", "status": "CLOSED"},
+        ]
+    )
+    assert orders == [
+        {"market": "BTC-USD-PERP", "side": "BUY", "size": 0.1, "price": 80000.0},
+        {"market": "BTC-USD-PERP", "side": "BUY", "size": 0.2, "price": 80000.0},
+        {"market": "BTC-USD-PERP", "side": "SELL", "size": 0.3, "price": 81000.0},
+    ]
 
 
 def test_margin_inputs_accepts_pydantic_payloads():

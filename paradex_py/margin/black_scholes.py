@@ -8,6 +8,21 @@ differences vs. the reference implementation; we keep A-S for byte-equality.
 import math
 
 
+def _validate_bs_inputs(S: float, K: float, T: float, r: float, sigma: float, *, ctx: str) -> None:
+    values = {"S": S, "K": K, "T": T, "r": r, "sigma": sigma}
+    for name, value in values.items():
+        if not math.isfinite(value):
+            raise ValueError(f"{ctx} input {name} must be finite")
+    if S <= 0:
+        raise ValueError(f"{ctx} input S must be positive")
+    if K <= 0:
+        raise ValueError(f"{ctx} input K must be positive")
+    if T < 0:
+        raise ValueError(f"{ctx} input T must be non-negative")
+    if sigma < 0:
+        raise ValueError(f"{ctx} input sigma must be non-negative")
+
+
 def norm_cdf(x: float) -> float:
     a1, a2, a3, a4, a5, p = (
         0.254829592,
@@ -30,7 +45,8 @@ def norm_pdf(x: float) -> float:
 
 def bs_price(S: float, K: float, T: float, r: float, sigma: float, is_call: bool) -> float:
     """European Black-Scholes option price."""
-    if T <= 0 or sigma <= 0:
+    _validate_bs_inputs(S, K, T, r, sigma, ctx="Black-Scholes price")
+    if T == 0 or sigma == 0:
         return max(0.0, S - K if is_call else K - S)
     cp = 1 if is_call else -1
     d1 = (math.log(S / K) + (r + 0.5 * sigma**2) * T) / (sigma * math.sqrt(T))
@@ -39,7 +55,8 @@ def bs_price(S: float, K: float, T: float, r: float, sigma: float, is_call: bool
 
 
 def bs_delta(S: float, K: float, T: float, r: float, sigma: float, is_call: bool) -> float:
-    if T <= 1e-10 or sigma <= 0:
+    _validate_bs_inputs(S, K, T, r, sigma, ctx="Black-Scholes delta")
+    if T <= 1e-10 or sigma == 0:
         if is_call:
             return 1.0 if S > K else 0.0
         return -1.0 if S < K else 0.0
@@ -48,7 +65,8 @@ def bs_delta(S: float, K: float, T: float, r: float, sigma: float, is_call: bool
 
 
 def bs_gamma(S: float, K: float, T: float, r: float, sigma: float) -> float:
-    if T <= 1e-10 or sigma <= 0:
+    _validate_bs_inputs(S, K, T, r, sigma, ctx="Black-Scholes gamma")
+    if T <= 1e-10 or sigma == 0:
         return 0.0
     sqT = math.sqrt(T)
     d1 = (math.log(S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * sqT)
@@ -57,7 +75,8 @@ def bs_gamma(S: float, K: float, T: float, r: float, sigma: float) -> float:
 
 def bs_vega(S: float, K: float, T: float, r: float, sigma: float) -> float:
     """Vega per 1% change in IV (i.e. divided by 100)."""
-    if T <= 1e-10 or sigma <= 0:
+    _validate_bs_inputs(S, K, T, r, sigma, ctx="Black-Scholes vega")
+    if T <= 1e-10 or sigma == 0:
         return 0.0
     sqT = math.sqrt(T)
     d1 = (math.log(S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * sqT)

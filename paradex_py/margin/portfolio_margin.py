@@ -8,7 +8,9 @@ directly). The engine raises ``ValueError`` if the required fields are
 missing rather than silently using stale local defaults.
 """
 
+import math
 from datetime import datetime, timezone
+from typing import TypedDict
 
 from .black_scholes import bs_price
 from .config import normalise_pm_config
@@ -16,6 +18,14 @@ from .constants import OPTION_FEE_CAP, TWAP_SETTLEMENT_MIN, YEAR_IN_DAYS
 from .cross_margin import spot_balance_margin
 from .markets import parse_market
 from .types import Balance, MarketData, MarketSpec, Order, PMConfig, Position, RawDict
+
+
+class PMParams(TypedDict):
+    interest_rate: float
+    dte_floor: float
+    vp_short: float
+    vp_long: float
+    min_vol_shock_up: float
 
 
 def _live_frac(expiry: datetime, now: datetime) -> float:
@@ -27,7 +37,9 @@ def _live_frac(expiry: datetime, now: datetime) -> float:
     """
     ste = (expiry - now).total_seconds()
     tw = TWAP_SETTLEMENT_MIN * 60
-    if ste <= 0 or ste > tw:
+    if ste <= 0:
+        return 0.0
+    if ste > tw:
         return 1.0
     return ste / tw
 
@@ -41,7 +53,7 @@ def _scenario_price(
     ss: float,
     vs: float,
     now: datetime,
-    pm_params: dict[str, float],
+    pm_params: PMParams,
 ) -> float:
     """Reprice a single instrument under a (spot_shock, vol_shock) scenario.
 
@@ -58,6 +70,8 @@ def _scenario_price(
         raise ValueError(f"cannot parse market symbol for PM scenario pricing: {symbol!r}")
 
     s_shock = spot * (1 + ss)
+    if s_shock <= 0:
+        raise ValueError(f"shocked spot must be positive for PM scenario pricing: {symbol!r}")
 
     if p["type"] == "perp":
         return s_shock * (1 + basis)
@@ -67,16 +81,18 @@ def _scenario_price(
         if not exp:
             raise ValueError(f"missing option expiry for PM scenario pricing: {symbol!r}")
         dte = (exp - now).total_seconds() / 86400
-        tte = dte / YEAR_IN_DAYS
+        tte = max(0.0, dte / YEAR_IN_DAYS)
         iv = md["mark_iv"]
         if iv is None:
             raise ValueError(f"missing mark_iv for PM option scenario pricing: {symbol!r}")
         vp = pm_params["vp_short"] if dte < 30 else pm_params["vp_long"]
-        mult = (30 / max(pm_params["dte_floor"], dte)) ** vp
-        iv_shocked = iv * (1 + vs * mult)
+        mult = math.pow(30 / max(pm_params["dte_floor"], dte), vp)
+        iv_shocked: float = iv * (1 + vs * mult)
         # Spec §2.3: upward vol shocks are floored at vol_shock_params.min_vol_shock_up
         if vs > 0:
             iv_shocked = max(iv_shocked, pm_params["min_vol_shock_up"])
+        if iv_shocked < 0:
+            raise ValueError(f"shocked implied volatility must be non-negative for PM scenario pricing: {symbol!r}")
         return bs_price(s_shock, p["strike"], tte, pm_params["interest_rate"], iv_shocked, p["is_call"])
 
     raise ValueError(f"unsupported market type for PM scenario pricing: {symbol!r}")
@@ -112,7 +128,7 @@ def compute_pm(  # noqa: C901
     orders: list[Order],
     market_data: dict[str, MarketData],
     market_specs: dict[str, MarketSpec],
-    pm_config: PMConfig | RawDict,
+    pm_config: PMConfig | RawDict | None,
     balances: list[Balance] | None = None,
     now: datetime | None = None,
 ) -> dict[str, object]:
@@ -129,7 +145,7 @@ def compute_pm(  # noqa: C901
     if pm_config is None:
         raise ValueError(
             "compute_pm requires pm_config from /system/portfolio-margin-config; "
-            "see paradex_py.margin.config.pm_config_for_compute"
+            + "see paradex_py.margin.config.pm_config_for_compute"
         )
     if now is None:
         now = datetime.now(timezone.utc)
@@ -139,11 +155,13 @@ def compute_pm(  # noqa: C901
     hedged_mf = typed_pm_config["hedged_margin_factor"]
     unhedged_mf = typed_pm_config["unhedged_margin_factor"]
     mmr_factor_eff = typed_pm_config["mmf_factor"]
-    scenarios_eff = [[s["spot_shock"], s["vol_shock"], s["weight"]] for s in typed_pm_config["scenarios"]]
-    weights_eff = [s[2] for s in scenarios_eff]
+    scenarios_eff: list[list[float]] = [
+        [s["spot_shock"], s["vol_shock"], s["weight"]] for s in typed_pm_config["scenarios"]
+    ]
+    weights_eff: list[float] = [s[2] for s in scenarios_eff]
     n_sc_eff = len(scenarios_eff)
 
-    pm_params = {
+    pm_params: PMParams = {
         "interest_rate": 0.0,
         "dte_floor": vsp["dte_floor_days"],
         "vp_short": vsp["vega_power_short_dte"],
@@ -181,7 +199,7 @@ def compute_pm(  # noqa: C901
     pm_params["interest_rate"] = perp_md["interest_rate"]
 
     all_markets = {p["market"] for p in positions} | {o["market"] for o in orders}
-    sc_prices = {
+    sc_prices: dict[str, list[float]] = {
         sym: [
             _scenario_price(sym, market_data, market_specs, spot, basis, ss, vs, now, pm_params)
             for (ss, vs, _) in scenarios_eff
@@ -191,7 +209,7 @@ def compute_pm(  # noqa: C901
 
     # Step 1: scenario scan
     pos_pnls = [0.0] * n_sc_eff
-    pos_deltas = []
+    pos_deltas: list[float] = []
     for pos in positions:
         sym = pos["market"]
         try:
@@ -203,14 +221,14 @@ def compute_pm(  # noqa: C901
         signed = size if pos["side"] in ("BUY", "LONG") else -size
         sc = sc_prices.get(sym, [mark] * n_sc_eff)
         parsed = parse_market(sym, market_specs.get(sym))
-        exp = parsed.get("expiry") if parsed else None
+        exp = parsed["expiry"] if parsed and parsed["type"] == "dated_option" else None
         lf = _live_frac(exp, now) if exp else 1.0
         for i in range(n_sc_eff):
             pos_pnls[i] += lf * (sc[i] - mark) * weights_eff[i] * signed
         pos_deltas.append(md["delta"] * signed)
 
     ord_pnls = [0.0] * n_sc_eff
-    ord_deltas = []
+    ord_deltas: list[float] = []
     for o in orders:
         sym = o["market"]
         try:
@@ -222,7 +240,7 @@ def compute_pm(  # noqa: C901
         is_buy = o["side"] == "BUY"
         sc = sc_prices.get(sym, [price] * n_sc_eff)
         parsed = parse_market(sym, market_specs.get(sym))
-        exp = parsed.get("expiry") if parsed else None
+        exp = parsed["expiry"] if parsed and parsed["type"] == "dated_option" else None
         lf = _live_frac(exp, now) if exp else 1.0
         for i in range(n_sc_eff):
             gap = (price - sc[i]) if is_buy else (sc[i] - price)
@@ -270,6 +288,8 @@ def compute_pm(  # noqa: C901
     pos_losses = [max(0.0, -p) for p in pos_pnls]
     pos_worst = max(pos_losses) if pos_losses else 0.0
     p_nd = sum(pos_deltas)
+    order_delta = sum(ord_deltas)
+    portfolio_delta = p_nd + order_delta
     p_gd = sum(abs(d) for d in pos_deltas)
     pH = (p_gd - abs(p_nd)) / 2
     p_dm = (unhedged_mf * abs(p_nd) + hedged_mf * pH) * spot
@@ -279,7 +299,9 @@ def compute_pm(  # noqa: C901
     return {
         "IMR": IMR,
         "MMR": MMR,
-        "portfolio_delta": sum(pos_deltas),
+        "portfolio_delta": portfolio_delta,
+        "position_delta": p_nd,
+        "order_delta": order_delta,
         "spot_balance_margin": spot_bm,
         "worst_loss": worst_loss,
         "worst_idx": worst_idx,

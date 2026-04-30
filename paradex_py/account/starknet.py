@@ -147,9 +147,10 @@ class Account(StarknetAccount):
 
     def sign_message(self, typed_data: TypedData | TypedDataDict) -> list[int]:
         msg_hash = typed_data_to_message_hash(typed_data, self.address)
-        r, s = message_signature(
-            msg_hash=msg_hash, priv_key=self.signer.key_pair.private_key
-        )  # ty: ignore[unresolved-attribute]
+        private_key = getattr(self.signer, "private_key", None)
+        if not isinstance(private_key, int):
+            raise TypeError("sign_message requires a signer with a private_key")  # noqa: TRY003
+        r, s = message_signature(msg_hash=msg_hash, priv_key=private_key)
         return [r, s]
 
 

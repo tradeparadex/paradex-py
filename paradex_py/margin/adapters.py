@@ -5,6 +5,8 @@ does not fetch auth/account state. This module is the reusable glue for SDK
 examples, skills, and MCP tools that already have API responses in hand.
 """
 
+# pyright: reportPrivateUsage=false, reportUnnecessaryCast=false
+
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
@@ -14,6 +16,8 @@ from typing import cast
 from ._utils import _opt_f, _req_f, _req_str
 from .config import fee_rate_for_market, select_pm_config
 from .types import Balance, MarketData, MarketSpec, Order, Position, RawDict, Side
+
+ACTIVE_MARGIN_ORDER_STATUSES = {None, "NEW", "OPEN"}
 
 __all__ = [
     "MarginInputs",
@@ -118,7 +122,11 @@ def _results(payload: object | None) -> list[RawDict]:
     if isinstance(payload, Sequence) and not isinstance(payload, str | bytes | bytearray):
         return [_asdict(item) for item in payload]
     data = _asdict(payload)
-    results = data.get("results") or data.get("result") or []
+    results = data.get("results")
+    if results in (None, ""):
+        results = data.get("result")
+    if results in (None, ""):
+        return []
     if isinstance(results, Sequence) and not isinstance(results, str | bytes | bytearray):
         return [_asdict(item) for item in results]
     return [_asdict(results)] if results else []
@@ -154,6 +162,8 @@ def normalise_positions(raw: list[RawDict], *, require_open_status: bool = True)
 def normalise_orders(raw: list[RawDict]) -> list[Order]:
     out: list[Order] = []
     for order in raw:
+        if order.get("status") not in ACTIVE_MARGIN_ORDER_STATUSES:
+            continue
         market = _req_str(order, "market", "order")
         size_key = "remaining_size" if order.get("remaining_size") not in (None, "") else "size"
         size = _optional_positive_size(order, size_key, ctx=f"order {market}")
@@ -181,7 +191,7 @@ def normalise_balances(raw: list[RawDict]) -> list[Balance]:
 
 
 def market_specs_by_symbol(raw_markets: list[RawDict]) -> dict[str, MarketSpec]:
-    return {str(m["symbol"]): cast(MarketSpec, m) for m in raw_markets if m.get("symbol")}
+    return {str(m["symbol"]): cast(MarketSpec, cast(object, m)) for m in raw_markets if m.get("symbol")}
 
 
 def normalise_market_data(
@@ -200,9 +210,10 @@ def normalise_market_data(
         symbol = str(sym)
         spec = specs.get(symbol, {})
         greeks = summary.get("greeks")
-        greeks_map = cast(Mapping[str, object], greeks) if isinstance(greeks, Mapping) else {}
-        greek_delta = greeks_map.get("delta")
-        delta_value = greek_delta if greek_delta not in (None, "") else summary.get("delta")
+        empty_greeks: Mapping[str, object] = {}
+        greeks_map = cast(Mapping[str, object], greeks) if isinstance(greeks, Mapping) else empty_greeks
+        greek_delta: object | None = greeks_map.get("delta")
+        delta_value: object | None = greek_delta if greek_delta not in (None, "") else summary.get("delta")
         asset_kind = str(spec.get("asset_kind") or "")
         if delta_value in (None, "") and asset_kind in ("PERP", "FUTURE"):
             delta = 1.0

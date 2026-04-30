@@ -1,10 +1,12 @@
 """Market metadata and symbol parsing helpers."""
 
+# ruff: noqa: A003
+
 import re
 from collections.abc import Mapping
 from datetime import datetime, timezone
 from types import MappingProxyType
-from typing import Any, Final
+from typing import Final, Literal, SupportsFloat, SupportsIndex, TypeAlias, TypedDict, cast
 
 from .constants import OPTION_EXPIRY_HOUR
 
@@ -26,13 +28,34 @@ MONTH_MAP: Final[Mapping[str, int]] = MappingProxyType(
 )
 
 
-def _get_field(obj: Any, key: str) -> Any:
+class PerpMarket(TypedDict):
+    type: Literal["perp"]
+
+
+class DatedOptionMarket(TypedDict):
+    type: Literal["dated_option"]
+    is_call: bool
+    strike: float
+    expiry: datetime | None
+
+
+class PerpOptionMarket(TypedDict):
+    type: Literal["perp_option"]
+    is_call: bool
+    strike: float
+
+
+ParsedMarket: TypeAlias = PerpMarket | DatedOptionMarket | PerpOptionMarket
+FloatLike: TypeAlias = str | bytes | bytearray | SupportsFloat | SupportsIndex
+
+
+def _get_field(obj: object | None, key: str) -> object | None:
     if isinstance(obj, Mapping):
-        return obj.get(key)
+        return cast(Mapping[str, object], obj).get(key)
     return getattr(obj, key, None)
 
 
-def market_expiry(market_spec: Any | None) -> datetime | None:
+def market_expiry(market_spec: object | None) -> datetime | None:
     """Return exchange-published expiry from market metadata, if present.
 
     Paradex market responses expose ``expiry_at``. Prefer that value when live
@@ -42,7 +65,7 @@ def market_expiry(market_spec: Any | None) -> datetime | None:
     if raw in (None, "", 0, "0"):
         return None
     try:
-        ts = float(raw)
+        ts = float(cast(FloatLike, raw))
     except (TypeError, ValueError):
         return None
     if ts > 10_000_000_000:
@@ -61,7 +84,7 @@ def parse_expiry(s: str) -> datetime | None:
     return datetime(2000 + int(match.group(3)), mon, int(match.group(1)), OPTION_EXPIRY_HOUR, tzinfo=timezone.utc)
 
 
-def parse_market(symbol: str, market_spec: Any | None = None) -> dict | None:
+def parse_market(symbol: str, market_spec: object | None = None) -> ParsedMarket | None:
     """Parse a Paradex market symbol into its components.
 
     ``market_spec`` may be a dict or generated ``MarketResp``. When supplied,
