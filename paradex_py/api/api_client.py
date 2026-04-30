@@ -875,6 +875,24 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         """
         return self._get(path="system/time")
 
+    def fetch_portfolio_margin_config(self, params: dict | None = None) -> dict:
+        """Fetch Portfolio Margin configuration (per underlying).
+
+        The response is the input expected by
+        :func:`paradex_py.margin.compute` when
+        ``margin_methodology="portfolio_margin"`` — it contains the live
+        scenario set, vol-shock parameters, and hedged/unhedged margin factors
+        that the engine refuses to default locally.
+
+        Examples:
+            >>> paradex.api_client.fetch_portfolio_margin_config()
+            >>> { "results": [{"base_asset": "BTC", "scenarios": [...], ...}] }
+
+        Returns:
+            results (list): One entry per underlying.
+        """
+        return self._get(path="system/portfolio-margin-config", params=params)
+
     def fetch_markets(self, params: dict | None = None) -> dict:
         """Fetch all markets information.
 

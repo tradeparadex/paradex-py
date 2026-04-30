@@ -1,8 +1,8 @@
 from typing import cast
 
 from poseidon_py.poseidon_hash import poseidon_hash_many
+from starknet_py.net.models.typed_data import TypedDataDict
 from starknet_py.serialization.data_serializers.byte_array_serializer import ByteArraySerializer
-from starknet_py.utils.typed_data import TypedDataDict
 
 
 def build_auth_message(chain_id: int, timestamp: int, expiry: int) -> TypedDataDict:

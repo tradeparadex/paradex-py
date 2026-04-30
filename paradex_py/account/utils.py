@@ -16,8 +16,9 @@ from starknet_py.common import int_from_hex
 from starknet_py.constants import EC_ORDER
 from starknet_py.hash.address import compute_address
 from starknet_py.hash.selector import get_selector_from_name
-from starknet_py.net.signer.stark_curve_signer import KeyPair
-from starknet_py.utils.typed_data import TypedData, TypedDataDict
+from starknet_py.net.models.typed_data import TypedDataDict
+from starknet_py.net.signer.key_pair import KeyPair
+from starknet_py.utils.typed_data import TypedData
 
 from paradex_py.utils import raise_value_error
 
@@ -89,7 +90,7 @@ def derive_stark_key(l1_private_key: int, stark_key_msg: TypedDataDict) -> int:
 
 
 def derive_stark_key_from_ledger(eth_account_address: str, stark_key_msg: TypedDataDict) -> int:
-    signable_message = encode_typed_data(full_message=stark_key_msg)  # type: ignore[arg-type]
+    signable_message = encode_typed_data(full_message=stark_key_msg)  # ty: ignore[invalid-argument-type]
     message_signature = _sign_stark_key_message_ledger(signable_message, eth_account_address)
     l2_private_key = _get_private_key_from_eth_signature(message_signature)
     return l2_private_key

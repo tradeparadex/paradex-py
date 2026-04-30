@@ -1,5 +1,5 @@
 from starknet_py.common import int_from_hex
-from starknet_py.net.signer.stark_curve_signer import KeyPair
+from starknet_py.net.signer.key_pair import KeyPair
 
 from paradex_py.account.account import ParadexAccount
 from paradex_py.account.subkey_account import SubkeyAccount

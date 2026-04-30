@@ -24,7 +24,7 @@ if TYPE_CHECKING:
         WebSocketConnector,
     )
 
-_UNSET: "RetryStrategy | None" = object()  # type: ignore[assignment]
+_UNSET: "RetryStrategy | None" = object()  # ty: ignore[invalid-assignment]
 
 
 class Paradex(_ClientBase):

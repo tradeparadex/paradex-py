@@ -781,4 +781,4 @@ def decode_frame(data: bytes) -> tuple[str | None, BaseModel | None]:
     dec = _DECODERS.get(tmpl_id)
     if dec is None:
         raise SbeDecodeError(f"Unknown templateId {tmpl_id}")
-    return dec(data[8:], block_len)  # type: ignore[operator]
+    return dec(data[8:], block_len)  # ty: ignore[call-non-callable]
