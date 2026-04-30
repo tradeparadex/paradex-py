@@ -13,22 +13,22 @@ from paradex_py.message.block_trades import (
 
 
 def _eth_perp_orders():
-    """Two BlockTradeOrders on ETH-USD-PERP — matched maker/taker."""
-    maker = BlockTradeOrder(
+    """Two matched BlockTradeOrders on ETH-USD-PERP — maker (BUY) and taker (SELL)."""
+    maker_order = BlockTradeOrder(
         account="0xMAKER",
         side="BUY",
         order_type="LIMIT",
         size=Decimal("0.1"),
         price=Decimal("1500"),
     )
-    taker = BlockTradeOrder(
+    taker_order = BlockTradeOrder(
         account="0xTAKER",
         side="SELL",
         order_type="LIMIT",
         size=Decimal("0.1"),
         price=Decimal("1500"),
     )
-    return maker, taker
+    return maker_order, taker_order
 
 
 def test_block_trade_order_class():
@@ -57,20 +57,20 @@ def test_block_trade_order_defaults():
 
 
 def test_trade_fill_helper():
-    maker, taker = _eth_perp_orders()
+    maker_order, taker_order = _eth_perp_orders()
     trade = Trade.fill(
         market="ETH-USD-PERP",
         price=Decimal("1500.50"),
         size=Decimal("0.1"),
-        maker_order=maker,
-        taker_order=taker,
+        maker_order=maker_order,
+        taker_order=taker_order,
     )
 
     assert trade.market == "ETH-USD-PERP"
     assert trade.price == Decimal("1500.50")
     assert trade.size == Decimal("0.1")
-    assert trade.maker_order is maker
-    assert trade.taker_order is taker
+    assert trade.maker_order is maker_order
+    assert trade.taker_order is taker_order
     assert trade.min_size == Decimal(0)
     assert trade.max_size == Decimal(0)
 
@@ -97,14 +97,14 @@ def test_trade_constraint_helper():
 
 
 def test_block_trade_class():
-    maker, taker = _eth_perp_orders()
+    maker_order, taker_order = _eth_perp_orders()
     trades = [
         Trade.fill(
             market="ETH-USD-PERP",
             price=Decimal("1500.50"),
             size=Decimal("0.1"),
-            maker_order=maker,
-            taker_order=taker,
+            maker_order=maker_order,
+            taker_order=taker_order,
         ),
     ]
 
@@ -116,8 +116,8 @@ def test_block_trade_class():
 
 
 def test_block_trade_offer_class():
-    maker, _ = _eth_perp_orders()
-    trades = [Trade.fill("ETH-USD-PERP", Decimal("1500"), Decimal("0.1"), maker, None)]
+    maker_order, _ = _eth_perp_orders()
+    trades = [Trade.fill("ETH-USD-PERP", Decimal("1500"), Decimal("0.1"), maker_order, None)]
     offer = BlockTradeOffer(
         nonce="off1",
         expiration=1700000000000,
@@ -131,13 +131,13 @@ def test_block_trade_offer_class():
 
 def test_build_block_trade_message_fill():
     """Single-leg fill Trade — verify the SNIP-12 rev1 typed-data structure end-to-end."""
-    maker, taker = _eth_perp_orders()
+    maker_order, taker_order = _eth_perp_orders()
     trade = Trade.fill(
         market="ETH-USD-PERP",
         price=Decimal("1500.50"),
         size=Decimal("0.1"),
-        maker_order=maker,
-        taker_order=taker,
+        maker_order=maker_order,
+        taker_order=taker_order,
     )
     block_trade = BlockTrade(nonce="42", expiration=1700000000000, trades=[trade])
     message = build_block_trade_message(1, block_trade)
@@ -256,12 +256,12 @@ def test_build_block_trade_message_constraint_only():
 
 def test_build_block_trade_message_offer_based_one_side():
     """Offer-based create with one side filled (initiator) and the other empty (offer fills later)."""
-    maker, _ = _eth_perp_orders()
+    maker_order, _ = _eth_perp_orders()
     trade = Trade.fill(
         market="ETH-USD-PERP",
         price=Decimal("1500"),
         size=Decimal("0.1"),
-        maker_order=maker,
+        maker_order=maker_order,
         taker_order=None,
     )
     block_trade = BlockTrade(nonce="n", expiration=1700000000000, trades=[trade])
@@ -281,9 +281,9 @@ def test_build_block_trade_message_offer_based_one_side():
 def test_build_block_trade_message_sorts_by_market():
     """Trades are canonically sorted by market (alphabetical) regardless of input order.
     Without this the merkle root diverges from the server, which sorts independently."""
-    maker, taker = _eth_perp_orders()
-    eth = Trade.fill("ETH-USD-PERP", Decimal("1500"), Decimal("0.1"), maker, taker)
-    btc = Trade.fill("BTC-USD-PERP", Decimal("45000"), Decimal("0.01"), maker, taker)
+    maker_order, taker_order = _eth_perp_orders()
+    eth = Trade.fill("ETH-USD-PERP", Decimal("1500"), Decimal("0.1"), maker_order, taker_order)
+    btc = Trade.fill("BTC-USD-PERP", Decimal("45000"), Decimal("0.01"), maker_order, taker_order)
 
     bt_eth_first = BlockTrade(nonce="n", expiration=1700000000000, trades=[eth, btc])
     bt_btc_first = BlockTrade(nonce="n", expiration=1700000000000, trades=[btc, eth])
@@ -299,9 +299,9 @@ def test_build_block_trade_message_sorts_by_market():
 
 
 def test_build_block_trade_offer_message_sorts_by_market():
-    maker, _ = _eth_perp_orders()
-    eth = Trade.fill("ETH-USD-PERP", Decimal("1500"), Decimal("0.1"), maker, None)
-    btc = Trade.fill("BTC-USD-PERP", Decimal("45000"), Decimal("0.01"), maker, None)
+    maker_order, _ = _eth_perp_orders()
+    eth = Trade.fill("ETH-USD-PERP", Decimal("1500"), Decimal("0.1"), maker_order, None)
+    btc = Trade.fill("BTC-USD-PERP", Decimal("45000"), Decimal("0.01"), maker_order, None)
 
     offer_eth_first = BlockTradeOffer(nonce="o", expiration=1700000000000, block_trade_id="P", trades=[eth, btc])
     offer_btc_first = BlockTradeOffer(nonce="o", expiration=1700000000000, block_trade_id="P", trades=[btc, eth])
@@ -315,8 +315,8 @@ def test_build_block_trade_offer_message_sorts_by_market():
 
 def test_build_block_trade_offer_message_schema():
     """Offer typed-data has primaryType BlockTradeOffer and binds block_trade_id."""
-    maker, _ = _eth_perp_orders()
-    trade = Trade.fill("ETH-USD-PERP", Decimal("1500"), Decimal("0.1"), maker, None)
+    maker_order, _ = _eth_perp_orders()
+    trade = Trade.fill("ETH-USD-PERP", Decimal("1500"), Decimal("0.1"), maker_order, None)
     offer = BlockTradeOffer(
         nonce="o1",
         expiration=1700000000000,
@@ -342,8 +342,8 @@ def test_block_trade_offer_distinct_primary_type():
     """BlockTrade and BlockTradeOffer are cryptographically domain-separated by primaryType.
     Even with identical Trades, the typed-data messages differ — so signatures cannot be
     replayed across the two flows."""
-    maker, taker = _eth_perp_orders()
-    trade = Trade.fill("ETH-USD-PERP", Decimal("1500"), Decimal("0.1"), maker, taker)
+    maker_order, taker_order = _eth_perp_orders()
+    trade = Trade.fill("ETH-USD-PERP", Decimal("1500"), Decimal("0.1"), maker_order, taker_order)
 
     bt = BlockTrade(nonce="x", expiration=1700000000000, trades=[trade])
     offer = BlockTradeOffer(nonce="x", expiration=1700000000000, block_trade_id="P", trades=[trade])

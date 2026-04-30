@@ -301,10 +301,8 @@ def _build_block_typed_data(
 ) -> TypedDataDict:
     """Build SNIP-12 revision 1 (Poseidon) typed data for a block-trade-shaped payload.
 
-    Leaves are sorted alphabetically by market — the canonical ordering both client and
-    server agree on. The Go server iterates the request map in sorted order too; without
-    this, randomized Go map iteration would silently break multi-market flows because the
-    merkle root would only match by chance.
+    Trades are sorted alphabetically by market — the canonical ordering both client and
+    server agree on. Without this merkle root would not be deterministic.
     """
     sorted_trades = sorted(trades, key=lambda t: t.market)
     message = {
