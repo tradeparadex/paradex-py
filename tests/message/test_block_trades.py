@@ -1,178 +1,216 @@
 from decimal import Decimal
 
-from paradex_py.common.order import Order, OrderSide, OrderType
-from paradex_py.message.block_trades import BlockTrade, Trade, build_block_trade_message
+from paradex_py.message.block_trades import (
+    BLOCK_TRADE_PAYLOAD_VERSION,
+    BlockTrade,
+    BlockTradeOffer,
+    BlockTradeOrder,
+    Trade,
+    block_trade_from_response,
+    build_block_trade_message,
+    build_block_trade_offer_message,
+)
 
 
-def test_trade_class():
-    # Create test orders
-    maker_order = Order(
-        market="ETH-USD-PERP",
-        order_type=OrderType.Limit,
-        order_side=OrderSide.Buy,
+def _eth_perp_orders():
+    """Two matched BlockTradeOrders on ETH-USD-PERP — maker (BUY) and taker (SELL)."""
+    maker_order = BlockTradeOrder(
+        account="0xMAKER",
+        side="BUY",
+        order_type="LIMIT",
         size=Decimal("0.1"),
-        limit_price=Decimal("1500"),
-        signature_timestamp=1634736000000,
+        price=Decimal("1500"),
     )
-
-    taker_order = Order(
-        market="ETH-USD-PERP",
-        order_type=OrderType.Limit,
-        order_side=OrderSide.Sell,
+    taker_order = BlockTradeOrder(
+        account="0xTAKER",
+        side="SELL",
+        order_type="LIMIT",
         size=Decimal("0.1"),
-        limit_price=Decimal("1500"),
-        signature_timestamp=1634736000001,
+        price=Decimal("1500"),
     )
+    return maker_order, taker_order
 
-    # Create trade
-    trade = Trade(
+
+def test_block_trade_order_class():
+    order = BlockTradeOrder(
+        account="0xABC",
+        side="BUY",
+        order_type="LIMIT",
+        size=Decimal("0.5"),
+        price=Decimal("100"),
+    )
+    assert order.account == "0xABC"
+    assert order.side == "BUY"
+    assert order.order_type == "LIMIT"
+    assert order.size == Decimal("0.5")
+    assert order.price == Decimal("100")
+
+
+def test_block_trade_order_defaults():
+    """Empty BlockTradeOrder — used when one side of a Trade is unfilled (e.g. offer-based parent)."""
+    order = BlockTradeOrder()
+    assert order.account == ""
+    assert order.side == ""
+    assert order.order_type == ""
+    assert order.size == Decimal(0)
+    assert order.price == Decimal(0)
+
+
+def test_trade_fill_helper():
+    maker_order, taker_order = _eth_perp_orders()
+    trade = Trade.fill(
+        market="ETH-USD-PERP",
         price=Decimal("1500.50"),
         size=Decimal("0.1"),
         maker_order=maker_order,
         taker_order=taker_order,
     )
 
-    # Test properties
+    assert trade.market == "ETH-USD-PERP"
     assert trade.price == Decimal("1500.50")
     assert trade.size == Decimal("0.1")
-    assert trade.maker_order == maker_order
-    assert trade.taker_order == taker_order
+    assert trade.maker_order is maker_order
+    assert trade.taker_order is taker_order
+    assert trade.min_size == Decimal(0)
+    assert trade.max_size == Decimal(0)
 
-    # Test chain formatting
-    assert trade.chain_price() == "150050000000"  # 1500.50 * 10^8
-    assert trade.chain_size() == "10000000"  # 0.1 * 10^8
+
+def test_trade_constraint_helper():
+    trade = Trade.constraint(
+        market="ETH-USD-PERP",
+        min_size=Decimal("0.05"),
+        max_size=Decimal("1.0"),
+        min_price=Decimal("1400"),
+        max_price=Decimal("1600"),
+        oracle_tolerance=Decimal("0.02"),
+    )
+
+    assert trade.market == "ETH-USD-PERP"
+    assert trade.price == Decimal(0)
+    assert trade.size == Decimal(0)
+    assert trade.maker_order is None
+    assert trade.taker_order is None
+    assert trade.min_size == Decimal("0.05")
+    assert trade.max_size == Decimal("1.0")
+    assert trade.max_price == Decimal("1600")
+    assert trade.oracle_tolerance == Decimal("0.02")
 
 
 def test_block_trade_class():
-    # Create test orders
-    maker_order = Order(
-        market="ETH-USD-PERP",
-        order_type=OrderType.Limit,
-        order_side=OrderSide.Buy,
-        size=Decimal("0.1"),
-        limit_price=Decimal("1500"),
-        signature_timestamp=1634736000000,
-    )
-
-    taker_order = Order(
-        market="ETH-USD-PERP",
-        order_type=OrderType.Limit,
-        order_side=OrderSide.Sell,
-        size=Decimal("0.1"),
-        limit_price=Decimal("1500"),
-        signature_timestamp=1634736000001,
-    )
-
-    # Create trades
+    maker_order, taker_order = _eth_perp_orders()
     trades = [
-        Trade(
+        Trade.fill(
+            market="ETH-USD-PERP",
             price=Decimal("1500.50"),
             size=Decimal("0.1"),
             maker_order=maker_order,
             taker_order=taker_order,
         ),
-        Trade(
-            price=Decimal("1501.00"),
-            size=Decimal("0.05"),
-            maker_order=maker_order,
-            taker_order=taker_order,
-        ),
     ]
 
-    # Create block trade
-    block_trade = BlockTrade(version="1.0", trades=trades)
-
-    # Test properties
-    assert block_trade.version == "1.0"
-    assert len(block_trade.trades) == 2
-    assert block_trade.trades[0].price == Decimal("1500.50")
-    assert block_trade.trades[1].price == Decimal("1501.00")
+    block_trade = BlockTrade(nonce="n1", expiration=1700000000000, trades=trades)
+    assert block_trade.version == BLOCK_TRADE_PAYLOAD_VERSION
+    assert block_trade.nonce == "n1"
+    assert block_trade.expiration == 1700000000000
+    assert len(block_trade.trades) == 1
 
 
-def test_build_block_trade_message():
-    # Create test orders
-    maker_order = Order(
-        market="ETH-USD-PERP",
-        order_type=OrderType.Limit,
-        order_side=OrderSide.Buy,
-        size=Decimal("0.1"),
-        limit_price=Decimal("1500"),
-        signature_timestamp=1634736000000,
+def test_block_trade_offer_class():
+    maker_order, _ = _eth_perp_orders()
+    trades = [Trade.fill("ETH-USD-PERP", Decimal("1500"), Decimal("0.1"), maker_order, None)]
+    offer = BlockTradeOffer(
+        nonce="off1",
+        expiration=1700000000000,
+        block_trade_id="parent_id_123",
+        trades=trades,
     )
+    assert offer.version == BLOCK_TRADE_PAYLOAD_VERSION
+    assert offer.block_trade_id == "parent_id_123"
+    assert len(offer.trades) == 1
 
-    taker_order = Order(
+
+def test_build_block_trade_message_fill():
+    """Single-leg fill Trade — verify the SNIP-12 rev1 typed-data structure end-to-end."""
+    maker_order, taker_order = _eth_perp_orders()
+    trade = Trade.fill(
         market="ETH-USD-PERP",
-        order_type=OrderType.Limit,
-        order_side=OrderSide.Sell,
-        size=Decimal("0.1"),
-        limit_price=Decimal("1500"),
-        signature_timestamp=1634736000001,
-    )
-
-    # Create trade
-    trade = Trade(
         price=Decimal("1500.50"),
         size=Decimal("0.1"),
         maker_order=maker_order,
         taker_order=taker_order,
     )
-
-    # Create block trade
-    block_trade = BlockTrade(version="1.0", trades=[trade])
-
-    # Test message building
+    block_trade = BlockTrade(nonce="42", expiration=1700000000000, trades=[trade])
     message = build_block_trade_message(1, block_trade)
 
     expected = {
-        "domain": {"name": "Paradex", "chainId": "0x1", "version": "1"},
+        "domain": {
+            "name": "Paradex",
+            "chainId": "0x1",
+            "version": "1",
+            "revision": "1",
+        },
         "primaryType": "BlockTrade",
         "types": {
-            "StarkNetDomain": [
-                {"name": "name", "type": "felt"},
-                {"name": "chainId", "type": "felt"},
-                {"name": "version", "type": "felt"},
+            "StarknetDomain": [
+                {"name": "name", "type": "shortstring"},
+                {"name": "version", "type": "shortstring"},
+                {"name": "chainId", "type": "shortstring"},
+                {"name": "revision", "type": "shortstring"},
             ],
             "BlockTrade": [
                 {"name": "version", "type": "shortstring"},
-                {"name": "trades", "type": "Trade*"},
+                {"name": "nonce", "type": "felt"},
+                {"name": "expiration", "type": "felt"},
+                {"name": "trades", "type": "merkletree", "contains": "Trade"},
             ],
             "Trade": [
+                {"name": "market", "type": "shortstring"},
                 {"name": "price", "type": "felt"},
                 {"name": "size", "type": "felt"},
-                {"name": "maker_order", "type": "Order"},
-                {"name": "taker_order", "type": "Order"},
+                {"name": "maker_order", "type": "BlockTradeOrder"},
+                {"name": "taker_order", "type": "BlockTradeOrder"},
+                {"name": "min_size", "type": "felt"},
+                {"name": "max_size", "type": "felt"},
+                {"name": "min_price", "type": "felt"},
+                {"name": "max_price", "type": "felt"},
+                {"name": "oracle_tolerance", "type": "felt"},
             ],
-            "Order": [
-                {"name": "timestamp", "type": "felt"},
-                {"name": "market", "type": "felt"},
-                {"name": "side", "type": "felt"},
-                {"name": "orderType", "type": "felt"},
+            "BlockTradeOrder": [
+                {"name": "account", "type": "felt"},
+                {"name": "side", "type": "shortstring"},
+                {"name": "type", "type": "shortstring"},
                 {"name": "size", "type": "felt"},
                 {"name": "price", "type": "felt"},
             ],
         },
         "message": {
-            "version": "1.0",
+            "version": "2",
+            "nonce": "42",
+            "expiration": "1700000000000",
             "trades": [
                 {
-                    "price": "150050000000",  # 1500.50 * 10^8
-                    "size": "10000000",  # 0.1 * 10^8
+                    "market": "ETH-USD-PERP",
+                    "price": "150050000000",
+                    "size": "10000000",
                     "maker_order": {
-                        "timestamp": "1634736000000",
-                        "market": "ETH-USD-PERP",
-                        "side": "1",  # Buy
-                        "orderType": "LIMIT",
-                        "size": "10000000",  # 0.1 * 10^8
-                        "price": "150000000000",  # 1500 * 10^8
+                        "account": "0xMAKER",
+                        "side": "1",  # BUY → "1"
+                        "type": "LIMIT",
+                        "size": "10000000",
+                        "price": "150000000000",
                     },
                     "taker_order": {
-                        "timestamp": "1634736000001",
-                        "market": "ETH-USD-PERP",
-                        "side": "2",  # Sell
-                        "orderType": "LIMIT",
-                        "size": "10000000",  # 0.1 * 10^8
-                        "price": "150000000000",  # 1500 * 10^8
+                        "account": "0xTAKER",
+                        "side": "2",  # SELL → "2"
+                        "type": "LIMIT",
+                        "size": "10000000",
+                        "price": "150000000000",
                     },
+                    "min_size": "0",
+                    "max_size": "0",
+                    "min_price": "0",
+                    "max_price": "0",
+                    "oracle_tolerance": "0",
                 }
             ],
         },
@@ -181,86 +219,270 @@ def test_build_block_trade_message():
     assert message == expected
 
 
-def test_build_block_trade_message_multiple_trades():
-    # Create test orders
-    maker_order1 = Order(
-        market="ETH-USD-PERP",
-        order_type=OrderType.Limit,
-        order_side=OrderSide.Buy,
-        size=Decimal("0.1"),
-        limit_price=Decimal("1500"),
-        signature_timestamp=1634736000000,
-    )
-
-    taker_order1 = Order(
-        market="ETH-USD-PERP",
-        order_type=OrderType.Limit,
-        order_side=OrderSide.Sell,
-        size=Decimal("0.1"),
-        limit_price=Decimal("1500"),
-        signature_timestamp=1634736000001,
-    )
-
-    maker_order2 = Order(
+def test_build_block_trade_message_constraint_only():
+    """Offer-based parent block: Trades carry constraints, fill fields zero."""
+    trade = Trade.constraint(
         market="BTC-USD-PERP",
-        order_type=OrderType.Market,
-        order_side=OrderSide.Sell,
-        size=Decimal("0.01"),
-        limit_price=Decimal("0"),  # Market order
-        signature_timestamp=1634736000002,
+        min_size=Decimal("0.05"),
+        max_size=Decimal("1.0"),
+        min_price=Decimal("29000"),
+        max_price=Decimal("31000"),
+        oracle_tolerance=Decimal("0.02"),
     )
+    block_trade = BlockTrade(nonce="99", expiration=1700000000000, trades=[trade])
+    message = build_block_trade_message(1, block_trade)
 
-    taker_order2 = Order(
-        market="BTC-USD-PERP",
-        order_type=OrderType.Market,
-        order_side=OrderSide.Buy,
-        size=Decimal("0.01"),
-        limit_price=Decimal("0"),  # Market order
-        signature_timestamp=1634736000003,
+    trade_msg = message["message"]["trades"][0]
+    # Constraint fields populated
+    assert trade_msg["market"] == "BTC-USD-PERP"
+    assert trade_msg["min_size"] == "5000000"  # 0.05 * 1e8
+    assert trade_msg["max_size"] == "100000000"  # 1.0 * 1e8
+    assert trade_msg["min_price"] == "2900000000000"
+    assert trade_msg["max_price"] == "3100000000000"
+    assert trade_msg["oracle_tolerance"] == "2000000"
+    # Fill fields zero
+    assert trade_msg["price"] == "0"
+    assert trade_msg["size"] == "0"
+    # Empty BlockTradeOrders on both sides — encoded with all "0"
+    for side_key in ("maker_order", "taker_order"):
+        assert trade_msg[side_key] == {
+            "account": "0",
+            "side": "0",
+            "type": "0",
+            "size": "0",
+            "price": "0",
+        }
+
+
+def test_build_block_trade_message_offer_based_one_side():
+    """Offer-based create with one side filled (initiator) and the other empty (offer fills later)."""
+    maker_order, _ = _eth_perp_orders()
+    trade = Trade.fill(
+        market="ETH-USD-PERP",
+        price=Decimal("1500"),
+        size=Decimal("0.1"),
+        maker_order=maker_order,
+        taker_order=None,
     )
+    block_trade = BlockTrade(nonce="n", expiration=1700000000000, trades=[trade])
+    message = build_block_trade_message(1, block_trade)
 
-    # Create trades
-    trades = [
-        Trade(
-            price=Decimal("1500.50"),
-            size=Decimal("0.1"),
-            maker_order=maker_order1,
-            taker_order=taker_order1,
-        ),
-        Trade(
-            price=Decimal("45000.75"),
-            size=Decimal("0.01"),
-            maker_order=maker_order2,
-            taker_order=taker_order2,
-        ),
+    trade_msg = message["message"]["trades"][0]
+    assert trade_msg["maker_order"]["account"] == "0xMAKER"
+    assert trade_msg["taker_order"] == {
+        "account": "0",
+        "side": "0",
+        "type": "0",
+        "size": "0",
+        "price": "0",
+    }
+
+
+def test_build_block_trade_message_sorts_by_market():
+    """Trades are canonically sorted by market (alphabetical) regardless of input order.
+    Without this the merkle root diverges from the server, which sorts independently."""
+    maker_order, taker_order = _eth_perp_orders()
+    eth = Trade.fill("ETH-USD-PERP", Decimal("1500"), Decimal("0.1"), maker_order, taker_order)
+    btc = Trade.fill("BTC-USD-PERP", Decimal("45000"), Decimal("0.01"), maker_order, taker_order)
+
+    bt_eth_first = BlockTrade(nonce="n", expiration=1700000000000, trades=[eth, btc])
+    bt_btc_first = BlockTrade(nonce="n", expiration=1700000000000, trades=[btc, eth])
+
+    msg_eth_first = build_block_trade_message(1, bt_eth_first)
+    msg_btc_first = build_block_trade_message(1, bt_btc_first)
+
+    # Same trades, different input order — canonical sort produces the SAME message.
+    assert msg_eth_first == msg_btc_first
+    # And the canonical order is alphabetical: BTC before ETH.
+    assert msg_eth_first["message"]["trades"][0]["market"] == "BTC-USD-PERP"
+    assert msg_eth_first["message"]["trades"][1]["market"] == "ETH-USD-PERP"
+
+
+def test_build_block_trade_offer_message_sorts_by_market():
+    maker_order, _ = _eth_perp_orders()
+    eth = Trade.fill("ETH-USD-PERP", Decimal("1500"), Decimal("0.1"), maker_order, None)
+    btc = Trade.fill("BTC-USD-PERP", Decimal("45000"), Decimal("0.01"), maker_order, None)
+
+    offer_eth_first = BlockTradeOffer(nonce="o", expiration=1700000000000, block_trade_id="P", trades=[eth, btc])
+    offer_btc_first = BlockTradeOffer(nonce="o", expiration=1700000000000, block_trade_id="P", trades=[btc, eth])
+
+    msg_a = build_block_trade_offer_message(1, offer_eth_first)
+    msg_b = build_block_trade_offer_message(1, offer_btc_first)
+
+    assert msg_a == msg_b
+    assert msg_a["message"]["trades"][0]["market"] == "BTC-USD-PERP"
+
+
+def test_build_block_trade_offer_message_schema():
+    """Offer typed-data has primaryType BlockTradeOffer and binds block_trade_id."""
+    maker_order, _ = _eth_perp_orders()
+    trade = Trade.fill("ETH-USD-PERP", Decimal("1500"), Decimal("0.1"), maker_order, None)
+    offer = BlockTradeOffer(
+        nonce="o1",
+        expiration=1700000000000,
+        block_trade_id="parent_block_xyz",
+        trades=[trade],
+    )
+    message = build_block_trade_offer_message(7, offer)
+
+    assert message["primaryType"] == "BlockTradeOffer"
+    assert message["domain"]["chainId"] == "0x7"
+    assert message["domain"]["revision"] == "1"
+    assert message["message"]["block_trade_id"] == "parent_block_xyz"
+    assert message["types"]["BlockTradeOffer"] == [
+        {"name": "version", "type": "shortstring"},
+        {"name": "nonce", "type": "felt"},
+        {"name": "expiration", "type": "felt"},
+        {"name": "block_trade_id", "type": "felt"},
+        {"name": "trades", "type": "merkletree", "contains": "Trade"},
     ]
 
-    # Create block trade
-    block_trade = BlockTrade(version="2.0", trades=trades)
 
-    # Test message building
-    message = build_block_trade_message(5, block_trade)
+def test_block_trade_offer_distinct_primary_type():
+    """BlockTrade and BlockTradeOffer are cryptographically domain-separated by primaryType.
+    Even with identical Trades, the typed-data messages differ — so signatures cannot be
+    replayed across the two flows."""
+    maker_order, taker_order = _eth_perp_orders()
+    trade = Trade.fill("ETH-USD-PERP", Decimal("1500"), Decimal("0.1"), maker_order, taker_order)
 
-    # Verify structure
-    assert message["domain"]["chainId"] == "0x5"
-    assert message["primaryType"] == "BlockTrade"
-    assert message["message"]["version"] == "2.0"
-    assert len(message["message"]["trades"]) == 2
+    bt = BlockTrade(nonce="x", expiration=1700000000000, trades=[trade])
+    offer = BlockTradeOffer(nonce="x", expiration=1700000000000, block_trade_id="P", trades=[trade])
 
-    # Verify first trade
-    trade1 = message["message"]["trades"][0]
-    assert trade1["price"] == "150050000000"  # 1500.50 * 10^8
-    assert trade1["size"] == "10000000"  # 0.1 * 10^8
-    assert trade1["maker_order"]["market"] == "ETH-USD-PERP"
-    assert trade1["maker_order"]["side"] == "1"  # Buy
-    assert trade1["taker_order"]["side"] == "2"  # Sell
+    bt_msg = build_block_trade_message(1, bt)
+    offer_msg = build_block_trade_offer_message(1, offer)
 
-    # Verify second trade
-    trade2 = message["message"]["trades"][1]
-    assert trade2["price"] == "4500075000000"  # 45000.75 * 10^8
-    assert trade2["size"] == "1000000"  # 0.01 * 10^8
-    assert trade2["maker_order"]["market"] == "BTC-USD-PERP"
-    assert trade2["maker_order"]["side"] == "2"  # Sell
-    assert trade2["maker_order"]["orderType"] == "MARKET"
-    assert trade2["maker_order"]["price"] == "0"  # Market order
-    assert trade2["taker_order"]["side"] == "1"  # Buy
+    assert bt_msg["primaryType"] != offer_msg["primaryType"]
+    # The trades arrays would match if we strip primary-type-specific fields, but the
+    # TYPE_HASH derived from primaryType differs, so messageHash is domain-separated.
+
+
+class _FakeOrder:
+    """Minimal stand-in for a server-returned BlockTradeOrder"""
+
+    def __init__(self, account, side_value, type_value, size, price):
+        self.account = account
+
+        class _Enum:
+            def __init__(self, value):
+                self.value = value
+
+        self.side = _Enum(side_value)
+        self.type = _Enum(type_value)
+        self.size = size
+        self.price = price
+
+
+class _FakeTradeDetail:
+    def __init__(self, *, maker_order=None, taker_order=None, price="0", size="0", trade_constraints=None):
+        self.maker_order = maker_order
+        self.taker_order = taker_order
+        self.price = price
+        self.size = size
+        self.trade_constraints = trade_constraints
+
+
+class _FakeBlockResponse:
+    def __init__(self, trades_dict):
+        self.trades = trades_dict
+
+
+def test_block_trade_from_response_fill():
+    """Reconstruct a signing-shape BlockTrade from a server response containing fill trades."""
+    maker_dto = _FakeOrder("0xMAKER", "SELL", "LIMIT", "0.1", "1500")
+    taker_dto = _FakeOrder("0xTAKER", "BUY", "LIMIT", "0.1", "1500")
+    response = _FakeBlockResponse(
+        {"ETH-USD-PERP": _FakeTradeDetail(maker_order=maker_dto, taker_order=taker_dto, price="1500", size="0.1")}
+    )
+
+    bt = block_trade_from_response(response, nonce="executor_nonce", expiration=1700000000000)
+    assert bt.nonce == "executor_nonce"
+    assert bt.expiration == 1700000000000
+    assert len(bt.trades) == 1
+    trade = bt.trades[0]
+    assert trade.market == "ETH-USD-PERP"
+    assert trade.price == Decimal("1500")
+    assert trade.size == Decimal("0.1")
+    assert trade.maker_order.account == "0xMAKER"
+    assert trade.maker_order.side == "SELL"
+    assert trade.taker_order.account == "0xTAKER"
+    assert trade.taker_order.side == "BUY"
+    # Constraints zero (fill Trade)
+    assert trade.min_size == Decimal(0)
+    assert trade.max_size == Decimal(0)
+
+
+class _FakeConstraints:
+    def __init__(self, **kwargs):
+        for k, v in kwargs.items():
+            setattr(self, k, v)
+
+
+def test_block_trade_message_hash_pinned():
+    """Pin the messageHash for a fixed BlockTrade input. Tied to the schema, encoding,
+    trade sort, and domain definitions — any change to any of those flips this hash, so
+    an equivalent verifier (e.g. a server) producing the same hash for the same inputs
+    confirms the two implementations stay aligned."""
+    from starknet_py.utils.typed_data import TypedData
+
+    maker_address = "0x1111"
+    taker_address = "0x2222"
+    maker_btc = BlockTradeOrder(maker_address, "SELL", "LIMIT", Decimal("0.1"), Decimal("73000"))
+    taker_btc = BlockTradeOrder(taker_address, "BUY", "LIMIT", Decimal("0.1"), Decimal("73000"))
+    maker_eth = BlockTradeOrder(maker_address, "SELL", "LIMIT", Decimal("1"), Decimal("3000"))
+    taker_eth = BlockTradeOrder(taker_address, "BUY", "LIMIT", Decimal("1"), Decimal("3000"))
+    # Trades intentionally in non-canonical (ETH before BTC) input order — the sort happens
+    # at the cryptographic boundary, so the hash is invariant to input order.
+    block_trade = BlockTrade(
+        nonce="1234567890",
+        expiration=1700000000000,
+        trades=[
+            Trade.fill("ETH-USD-PERP", Decimal("3000"), Decimal("1"), maker_eth, taker_eth),
+            Trade.fill("BTC-USD-PERP", Decimal("73000"), Decimal("0.1"), maker_btc, taker_btc),
+        ],
+    )
+
+    typed_data = TypedData.from_dict(build_block_trade_message(1, block_trade))
+    actual = f"0x{typed_data.message_hash(int(maker_address, 16)):x}"
+    assert actual == "0x426f5dd572deed472db9aa9ac2469f4a456a3a72854b723065daf3ccc350812"
+
+
+def test_block_trade_offer_message_hash_pinned():
+    """Pin the messageHash for a fixed BlockTradeOffer input. Distinct from the BlockTrade
+    hash — domain-separated by primaryType + the block_trade_id binding. Same pinning
+    rationale as above."""
+    from starknet_py.utils.typed_data import TypedData
+
+    maker_address = "0x1111"
+    maker_btc = BlockTradeOrder(maker_address, "SELL", "LIMIT", Decimal("0.1"), Decimal("73000"))
+    maker_eth = BlockTradeOrder(maker_address, "SELL", "LIMIT", Decimal("1"), Decimal("3000"))
+    # Offerer occupies maker side only; taker side is None (encoded as zero BlockTradeOrder).
+    offer = BlockTradeOffer(
+        nonce="offer_nonce_1",
+        expiration=1700000300000,
+        block_trade_id="parent_block_xyz",
+        trades=[
+            Trade.fill("ETH-USD-PERP", Decimal("3000"), Decimal("1"), maker_eth, None),
+            Trade.fill("BTC-USD-PERP", Decimal("73000"), Decimal("0.1"), maker_btc, None),
+        ],
+    )
+
+    typed_data = TypedData.from_dict(build_block_trade_offer_message(1, offer))
+    actual = f"0x{typed_data.message_hash(int(maker_address, 16)):x}"
+    assert actual == "0x3d43168f6def95bf9371aae3b20a2e9713e91a773b1a192f5e0729e96b7b139"
+
+
+def test_block_trade_from_response_constraint_only():
+    """Offer-based parent: server returns trade_constraints, no maker/taker orders."""
+    constraints = _FakeConstraints(
+        min_size="0.05", max_size="1.0", min_price="29000", max_price="31000", oracle_tolerance="0.02"
+    )
+    response = _FakeBlockResponse({"BTC-USD-PERP": _FakeTradeDetail(trade_constraints=constraints)})
+
+    bt = block_trade_from_response(response, nonce="n", expiration=1700000000000)
+    assert len(bt.trades) == 1
+    trade = bt.trades[0]
+    assert trade.market == "BTC-USD-PERP"
+    assert trade.min_size == Decimal("0.05")
+    assert trade.max_price == Decimal("31000")
+    assert trade.maker_order is None
+    assert trade.taker_order is None

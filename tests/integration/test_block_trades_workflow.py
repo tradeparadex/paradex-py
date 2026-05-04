@@ -77,7 +77,12 @@ from paradex_py.api.generated.responses import (
 from paradex_py.common.order import Order
 from paradex_py.common.order import OrderSide as CommonOrderSide
 from paradex_py.common.order import OrderType as CommonOrderType
-from paradex_py.message.block_trades import BlockTrade, Trade
+from paradex_py.message.block_trades import (
+    BlockTrade,
+    BlockTradeOffer,
+    BlockTradeOrder,
+    Trade,
+)
 
 # Set up logging with better console formatting
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)-8s | %(message)s", datefmt="%H:%M:%S")
@@ -170,123 +175,93 @@ def create_block_trade_order(
     )
 
 
-def sign_block_trade_request(client, request: BlockTradeRequest, signer_account: str) -> BlockTradeRequest:
+def _build_signing_block_trade_order(dto, account: str) -> BlockTradeOrder:
+    """Build a signing-side BlockTradeOrder from a request-payload BlockTradeOrder DTO.
+
+    Note: `BlockTradeOrder` here is the signing struct from `paradex_py.message.block_trades`
+    (the import at the top of this file shadows the request/response DTO of the same name).
     """
-    Sign a BlockTradeRequest by creating the necessary BlockTrade object and adding signatures.
-    Supports multiple markets in the request.
-    """
-    # Create list of Trade objects from the request
-    trades = []
-
-    for market_symbol, trade_info in request.trades.items():
-        # Extract order details from the trade info
-        maker_order_data = trade_info.maker_order
-
-        # Create Order object for signing
-        maker_order = Order(
-            market=market_symbol,
-            order_type=CommonOrderType.Limit,
-            order_side=(
-                CommonOrderSide.Buy
-                if maker_order_data and maker_order_data.side == OrderSide.order_side_buy
-                else CommonOrderSide.Sell
-            ),
-            size=Decimal(str(trade_info.size)) if trade_info.size else Decimal("0"),
-            limit_price=Decimal(str(trade_info.price)) if trade_info.price else Decimal("0"),
-            client_id=maker_order_data.client_id if maker_order_data and maker_order_data.client_id else "",
-            signature_timestamp=(
-                maker_order_data.signature_timestamp if maker_order_data and maker_order_data.signature_timestamp else 0
-            ),
-            instruction="GTC",
-        )
-
-        # For simplicity, use maker order for both maker and taker
-        trade = Trade(
-            price=Decimal(str(trade_info.price)) if trade_info.price else Decimal("0"),
-            size=Decimal(str(trade_info.size)) if trade_info.size else Decimal("0"),
-            maker_order=maker_order,
-            taker_order=maker_order,
-        )
-        trades.append(trade)
-
-    # Create BlockTrade object
-    block_trade = BlockTrade(version="1.0", trades=trades)
-
-    # Sign the block trade
-    signature = client.account.sign_block_trade(block_trade)
-
-    # Create BlockTradeSignature
-    current_time = int(time.time() * 1000)
-    block_signature = BlockTradeSignature(
-        nonce=f"bt_sig_{current_time}",
-        signature_data=signature,
-        signature_expiration=current_time + (5 * 60 * 1000),  # 5 minutes
-        signature_timestamp=current_time,
-        signature_type=SignatureType.starknet,
-        signer_account=signer_account,
+    side_value = ""
+    if dto and getattr(dto, "side", None) is not None:
+        side_value = dto.side.value if hasattr(dto.side, "value") else str(dto.side)
+        if side_value == OrderSide.order_side_buy.value or side_value == "BUY":
+            side_value = "BUY"
+        elif side_value == OrderSide.order_side_sell.value or side_value == "SELL":
+            side_value = "SELL"
+    type_value = ""
+    if dto and getattr(dto, "type", None) is not None:
+        type_value = dto.type.value if hasattr(dto.type, "value") else str(dto.type)
+    return BlockTradeOrder(
+        account=account,
+        side=side_value,
+        order_type=type_value or "LIMIT",
+        size=Decimal(str(dto.size)) if dto and dto.size else Decimal("0"),
+        price=Decimal(str(dto.price)) if dto and dto.price else Decimal("0"),
     )
 
-    # Add signature to request
-    request.signatures[signer_account] = block_signature
 
+def _build_trade_from_info(market_symbol: str, trade_info, initiator_addr: str, counterparty_addr: str) -> Trade:
+    """Build a signing-shape Trade from a request BlockTradeInfo. Direct create: both maker
+    and taker orders are present. Offer-based create: only maker is set; taker is None
+    (encoded as empty/zero in the merkle)."""
+    maker_order = _build_signing_block_trade_order(trade_info.maker_order, initiator_addr)
+    taker_order = (
+        _build_signing_block_trade_order(trade_info.taker_order, counterparty_addr) if trade_info.taker_order else None
+    )
+    return Trade.fill(
+        market=market_symbol,
+        price=Decimal(str(trade_info.price)) if trade_info.price else Decimal("0"),
+        size=Decimal(str(trade_info.size)) if trade_info.size else Decimal("0"),
+        maker_order=maker_order,
+        taker_order=taker_order,
+    )
+
+
+def sign_block_trade_request(client, request: BlockTradeRequest, signer_account: str) -> BlockTradeRequest:
+    """Sign a BlockTradeRequest using the SDK's high-level helper.
+
+    The block-level nonce and expiration come from the request itself — every required signer
+    of the same block produces a signature over the same merkle messageHash.
+    """
+    counterparty = next((s for s in request.required_signers if s != signer_account), signer_account)
+    trades = [
+        _build_trade_from_info(market, info, signer_account, counterparty) for market, info in request.trades.items()
+    ]
+    block_trade = BlockTrade(
+        nonce=request.nonce,
+        expiration=request.block_expiration,
+        trades=trades,
+    )
+    request.signatures[signer_account] = client.account.build_block_trade_signature(block_trade)
     return request
 
 
 def sign_block_offer_request(client, request: BlockOfferRequest, signer_account: str) -> BlockOfferRequest:
+    """Sign a BlockOfferRequest using the BlockTradeOffer typed-data (distinct primary type
+    from BlockTrade). The offerer commits only to their own fills + the parent block
+    reference — each Trade carries the offerer's side filled and the counter-side empty.
     """
-    Sign a BlockOfferRequest by creating the necessary BlockTrade object.
-    Supports multiple markets in the request.
-    """
-    # Create list of Trade objects from the request
+    parent_block_id = getattr(request, "parent_block_id", None) or getattr(request, "block_trade_id", "") or ""
+    expiration = int(time.time() * 1000) + (5 * 60 * 1000)
     trades = []
-
     for market_symbol, offer_info in request.trades.items():
-        # Extract order details from the offer info
-        offerer_order_data = offer_info.offerer_order
-
-        # Create Order object for signing
-        offerer_order = Order(
-            market=market_symbol,
-            order_type=CommonOrderType.Limit,
-            order_side=(
-                CommonOrderSide.Buy if offerer_order_data.side == OrderSide.order_side_buy else CommonOrderSide.Sell
-            ),
-            size=Decimal(str(offer_info.size)) if offer_info.size else Decimal("0"),
-            limit_price=Decimal(str(offer_info.price)) if offer_info.price else Decimal("0"),
-            client_id=offerer_order_data.client_id if offerer_order_data and offerer_order_data.client_id else "",
-            signature_timestamp=offerer_order_data.signature_timestamp,
-            instruction="GTC",
+        offerer_order = _build_signing_block_trade_order(offer_info.offerer_order, signer_account)
+        trades.append(
+            Trade.fill(
+                market=market_symbol,
+                price=Decimal(offer_info.price),
+                size=Decimal(offer_info.size),
+                maker_order=offerer_order,
+                taker_order=None,
+            )
         )
-
-        # For offers, use the same order for both maker and taker
-        trade = Trade(
-            price=Decimal(offer_info.price),
-            size=Decimal(offer_info.size),
-            maker_order=offerer_order,
-            taker_order=offerer_order,
-        )
-        trades.append(trade)
-
-    # Create BlockTrade object
-    block_trade = BlockTrade(version="1.0", trades=trades)
-
-    # Sign the block offer
-    signature = client.account.sign_block_offer(block_trade)
-
-    # Create BlockTradeSignature
-    current_time = int(time.time() * 1000)
-    offer_signature = BlockTradeSignature(
-        nonce=f"offer_sig_{current_time}",
-        signature_data=signature,
-        signature_expiration=current_time + (5 * 60 * 1000),  # 5 minutes
-        signature_timestamp=current_time,
-        signature_type=SignatureType.starknet,
-        signer_account=signer_account,
+    offer = BlockTradeOffer(
+        nonce=request.nonce,
+        expiration=expiration,
+        block_trade_id=parent_block_id,
+        trades=trades,
     )
-
-    # Set signature on request
-    request.signature = offer_signature
-
+    request.signature = client.account.build_block_trade_offer_signature(offer)
     return request
 
 
@@ -1020,92 +995,23 @@ def test_execute_block_trade(client, block_trade_id, account_summaries, selected
         logger.warning("⚠️ Executor account lacks sufficient funds or info - execution may fail")
         return None
     current_time = int(time.time() * 1000)
-    expiration_time = current_time + (5 * 60 * 1000)  # 5 minutes
-    # For execution, we need to sign each selected offer individually
     signatures = {}
     selected_offers = selected_offers or []
     if selected_offers:
         try:
-            # Get the offers to extract their trade details for signing
-            offers_response = client.api_client.get_block_trade_offers(block_trade_id)
-            offers = offers_response.results or []
-            if not offers:
-                logger.warning("No offers found to execute")
-                return None
-
-            # Process each selected offer individually
+            offer_responses = []
             for offer_id in selected_offers:
-                # Find the specific offer details
-                offer = next((o for o in offers if o.get("id") == offer_id or o.get("block_id") == offer_id), None)
-                if not offer:
-                    logger.warning(f"Offer {offer_id} not found")
-                    continue
-
-                # Create individual trades for this specific offer
-                offer_trades = []
-
-                # Extract trade details from this offer
-                for market_symbol, offer_info in offer.get("trades", {}).items():
-                    offerer_order = offer_info.get("offerer_order", {})
-
-                    # Create Order objects for this offer's trade
-                    maker_order = Order(
-                        market=market_symbol,
-                        order_type=CommonOrderType.Limit,
-                        order_side=CommonOrderSide.Buy if offerer_order.get("side") == "BUY" else CommonOrderSide.Sell,
-                        size=Decimal(offer_info.get("size", "0")),
-                        limit_price=Decimal(offer_info.get("price", "0")),
-                        client_id=offerer_order.get("client_id", f"exec_{current_time}"),
-                        signature_timestamp=current_time,
-                        instruction="GTC",
-                    )
-
-                    taker_order = Order(
-                        market=market_symbol,
-                        order_type=CommonOrderType.Limit,
-                        order_side=CommonOrderSide.Sell if offerer_order.get("side") == "BUY" else CommonOrderSide.Buy,
-                        size=Decimal(offer_info.get("size", "0")),
-                        limit_price=Decimal(offer_info.get("price", "0")),
-                        client_id=f"taker_{current_time}",
-                        signature_timestamp=current_time,
-                        instruction="GTC",
-                    )
-
-                    # Create Trade object for this specific offer
-                    trade = Trade(
-                        price=Decimal(offer_info.get("price", "0")),
-                        size=Decimal(offer_info.get("size", "0")),
-                        maker_order=maker_order,
-                        taker_order=taker_order,
-                    )
-                    offer_trades.append(trade)
-
-                if offer_trades:
-                    # Create BlockTrade for this specific offer
-                    offer_block_trade = BlockTrade(version="1.0", trades=offer_trades)
-
-                    # Sign this specific offer as the initiator
-                    offer_signature_str = client.account.sign_block_trade(offer_block_trade)
-
-                    # Create signature for this offer
-                    offer_signature = BlockTradeSignature(
-                        nonce=f"exec_offer_{offer_id}_{current_time}",
-                        signature_data=offer_signature_str,
-                        signature_expiration=expiration_time,
-                        signature_timestamp=current_time,
-                        signature_type=SignatureType.starknet,
-                        signer_account=executor_account,
-                    )
-
-                    # Store signature with offer ID as key
-                    signatures[offer_id] = offer_signature
-                    log_info(f"Signed offer {offer_id} for execution")
-
+                try:
+                    offer_responses.append(client.api_client.get_block_trade(offer_id))
+                except Exception as e:
+                    logger.warning(f"Could not fetch offer {offer_id}: {e}")
+            if offer_responses:
+                signatures = client.account.build_executor_signatures_for_offers(offer_responses)
+                log_info(f"Signed {len(signatures)} offers for execution")
         except Exception as e:
             logger.error(f"Failed to create execution signatures: {e}")
             return None
 
-    # Create execute request
     request = BlockExecuteRequest(
         execution_nonce=f"execute_{current_time}", selected_offers=selected_offers, signatures=signatures
     )
