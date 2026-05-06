@@ -273,7 +273,7 @@ class ParadexAccount:
         `build_executor_signatures_for_offers` instead.
         """
         if not block_response.block_id:
-            raise ValueError("block_response.block_id is required")
+            raise ValueError("block_response.block_id is required")  # noqa: TRY003
         nonce, expiration = self._executor_nonce_expiration(nonce, expiration_minutes)
         bt = block_trade_from_response(block_response, nonce, expiration)
         return {block_response.block_id: self.build_block_trade_signature(bt)}
@@ -295,7 +295,7 @@ class ParadexAccount:
         sigs: dict[str, BlockTradeSignature] = {}
         for offer in offer_responses:
             if not offer.block_id:
-                raise ValueError("each offer_response must have block_id set")
+                raise ValueError("each offer_response must have block_id set")  # noqa: TRY003
             bt = block_trade_from_response(offer, nonce, expiration)
             sigs[offer.block_id] = self.build_block_trade_signature(bt)
         return sigs
