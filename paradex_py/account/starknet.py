@@ -11,12 +11,15 @@ from starknet_py.net.account.account import Account as StarknetAccount
 from starknet_py.net.client import Client
 from starknet_py.net.client_errors import ClientError
 from starknet_py.net.client_models import Call, Calls, ResourceBoundsMapping, SentTransactionResponse
-from starknet_py.net.models import Address, AddressRepresentation, InvokeV3, StarknetChainId
-from starknet_py.net.signer import BaseSigner
-from starknet_py.net.signer.stark_curve_signer import KeyPair
+from starknet_py.net.models.address import Address, AddressRepresentation
+from starknet_py.net.models.chains import StarknetChainId
+from starknet_py.net.models.transaction import InvokeV3
+from starknet_py.net.models.typed_data import TypedDataDict
+from starknet_py.net.signer.base_signer import BaseSigner
+from starknet_py.net.signer.key_pair import KeyPair
 from starknet_py.proxy.contract_abi_resolver import ProxyConfig
 from starknet_py.proxy.proxy_check import ArgentProxyCheck, OpenZeppelinProxyCheck, ProxyCheck
-from starknet_py.utils.typed_data import TypedData, TypedDataDict
+from starknet_py.utils.typed_data import TypedData
 
 from .utils import message_signature, typed_data_to_message_hash
 
@@ -79,8 +82,8 @@ class Account(StarknetAccount):
         try:
             proxy_config = get_proxy_config() if is_cairo0_contract else False
             contract = await Contract.from_address(address=address, provider=self, proxy_config=proxy_config)
-        except Exception as e:
-            logging.exception(f"Error loading contract at address {hex(int(address))}: {e}")
+        except Exception:
+            logging.exception(f"Error loading contract at address {hex(int(address))}")
             raise
         else:
             return contract
@@ -88,20 +91,20 @@ class Account(StarknetAccount):
     async def check_multisig_required(self, contract: Contract) -> bool:
         try:
             get_signer_call = await contract.functions["getSigner"].call()
-            current_signer = hex(get_signer_call.signer)  # type: ignore[union-attr]
+            current_signer = hex(get_signer_call.signer)  # ty: ignore[unresolved-attribute]
             logging.info(f"Current signer: {current_signer}")
 
             get_guardian_call = await contract.functions["getGuardian"].call()
-            current_guardian = hex(get_guardian_call.guardian)  # type: ignore[union-attr]
+            current_guardian = hex(get_guardian_call.guardian)  # ty: ignore[unresolved-attribute]
             logging.info(f"Current guardian: {current_guardian}")
 
             get_guardian_backup_call = await contract.functions["getGuardianBackup"].call()
-            current_guardian_backup = hex(get_guardian_backup_call.guardianBackup)  # type: ignore[union-attr]
+            current_guardian_backup = hex(get_guardian_backup_call.guardianBackup)  # ty: ignore[unresolved-attribute]
             logging.info(f"Current guardian backup: {current_guardian_backup}")
 
             need_multisig = current_guardian != "0x0" or current_guardian_backup != "0x0"
-        except Exception as e:
-            logging.exception(f"Error checking multisig requirement: {e}")
+        except Exception:
+            logging.exception("Error checking multisig requirement")
             raise
         else:
             return need_multisig
@@ -132,8 +135,8 @@ class Account(StarknetAccount):
                     "Please sign the transaction with the sign-invoke-tx command and submit with the submit-invoke-tx"
                     " command."
                 )
-        except Exception as e:
-            logging.exception(f"Error processing invoke: {e}")
+        except Exception:
+            logging.exception("Error processing invoke")
             raise
 
     def print_invoke(self, invoke: InvokeV3):
@@ -144,7 +147,10 @@ class Account(StarknetAccount):
 
     def sign_message(self, typed_data: TypedData | TypedDataDict) -> list[int]:
         msg_hash = typed_data_to_message_hash(typed_data, self.address)
-        r, s = message_signature(msg_hash=msg_hash, priv_key=self.signer.key_pair.private_key)  # type: ignore[attr-defined]
+        private_key = getattr(self.signer, "private_key", None)
+        if not isinstance(private_key, int):
+            raise TypeError("sign_message requires a signer with a private_key")  # noqa: TRY003
+        r, s = message_signature(msg_hash=msg_hash, priv_key=private_key)
         return [r, s]
 
 
@@ -177,7 +183,7 @@ class StarkwareETHProxyCheck(ProxyCheck):
         except ClientError as err:
             if re.search(err_msg, err.message, re.IGNORECASE) or err.code == RPC_CONTRACT_ERROR:
                 return None
-            raise err
+            raise
         return implementation
 
     @staticmethod

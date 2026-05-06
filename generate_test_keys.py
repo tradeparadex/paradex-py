@@ -34,9 +34,9 @@ def main():
     accounts = []
     for i in range(3):
         private_key, address = generate_ethereum_keypair()
-        account = {"name": f"account_{i+1}", "l1_private_key": private_key, "l1_address": address}
+        account = {"name": f"account_{i + 1}", "l1_private_key": private_key, "l1_address": address}
         accounts.append(account)
-        print(f"Account {i+1}: {address}")
+        print(f"Account {i + 1}: {address}")
 
     # Save to JSON file
     with open("test_accounts.json", "w") as f:

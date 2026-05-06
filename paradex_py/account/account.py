@@ -102,7 +102,7 @@ class ParadexAccount:
             client=client,
             address=self.l2_address,
             key_pair=key_pair,
-            chain=CustomStarknetChainId(self.l2_chain_id),  # type: ignore[arg-type]
+            chain=CustomStarknetChainId(self.l2_chain_id),  # ty: ignore[invalid-argument-type]
         )
 
         # Apply the fullnode headers patch
@@ -258,7 +258,7 @@ class ParadexAccount:
             prepared_invoke = await self.starknet.prepare_invoke(calls=calls, auto_estimate=True)
             await self.starknet.process_invoke(account_contract, need_multisig, prepared_invoke, func_name)
 
-        except Exception as e:
-            logging.exception(f"Error during transfer_on_l2: {e}")
+        except Exception:
+            logging.exception("Error during transfer_on_l2")
             # Re-raise the exception to handle it upstream if necessary
             raise

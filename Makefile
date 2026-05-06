@@ -39,8 +39,8 @@ check: ## Run code quality tools
 	@echo "✅ uv.lock is consistent with pyproject.toml."
 	@echo "🚀 Linting code: Running pre-commit"
 	@$(UV) run pre-commit run -a
-	@echo "🚀 Static type checking: Running mypy"
-	@$(UV) run mypy --check-untyped-defs paradex_py # Specify target explicitly
+	@echo "🚀 Static type checking: Running ty"
+	@$(UV) run ty check paradex_py
 	@echo "🚀 Checking for unused dependencies: Running deptry"
 	@$(UV) run deptry .
 
@@ -48,7 +48,7 @@ check: ## Run code quality tools
 ci: ## Run the same checks as GitHub CI (quality + tox + docs)
 	@$(MAKE) check
 	@$(MAKE) docs-test
-	@echo "🚀 Running tox (pytest + mypy per Python version)"
+	@echo "🚀 Running tox (pytest + ty per Python version)"
 	@$(UV) run tox
 
 .PHONY: test

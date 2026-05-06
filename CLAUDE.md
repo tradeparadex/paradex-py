@@ -28,7 +28,7 @@ uv run pytest tests/path/to/test_file.py::test_function_name
 uv run pre-commit run -a
 
 # Type checking
-uv run mypy --check-untyped-defs paradex_py
+uv run ty check paradex_py
 ```
 
 ### Build and Documentation

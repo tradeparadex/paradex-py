@@ -535,6 +535,7 @@ class TestWebSocketReconnect:
 
     async def _run_concurrent_pump_test(self, client, tracking_ws):
         """Run concurrent pump operations and verify no race conditions."""
+
         # Launch multiple concurrent pump_once calls
         async def pump_task():
             return await client.pump_once()
@@ -851,7 +852,7 @@ class TestnetLikeWebSocket:
 
             # Verify message structure
             if received_messages:
-                channel, message = received_messages[0]
+                _channel, message = received_messages[0]
                 assert "params" in message, f"Invalid message structure: {message}"
                 assert "data" in message["params"], f"Invalid message params: {message['params']}"
 

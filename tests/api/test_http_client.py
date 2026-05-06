@@ -66,8 +66,9 @@ class TestHttpClient:
         mock_response.text = '{"error": "Bad Request"}'
         mock_request.return_value = mock_response
 
-        with patch.object(ApiErrorSchema, "loads", return_value="Bad Request"), pytest.raises(
-            Exception, match="Bad Request"
+        with (
+            patch.object(ApiErrorSchema, "loads", return_value="Bad Request"),
+            pytest.raises(Exception, match="Bad Request"),
         ):
             self.http_client.request(url="https://api.example.com/test", http_method=HttpMethod.POST)
 

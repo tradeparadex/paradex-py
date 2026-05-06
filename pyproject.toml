@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 # Add project metadata for PEP 621 needed for building
 [project]
 name = "paradex_py"
-version = "0.5.6"
+version = "0.6.0"
 description = "Paradex Python SDK"
 readme = "README.md"
 requires-python = ">=3.10,<3.14"
@@ -47,7 +47,8 @@ dev = [
     "pytest>=8.0.2,<9.0.0",
     "pytest-cov>=4.0.0,<5.0.0",
     "deptry>=0.12.0,<0.13.0",
-    "mypy>=1.5.1,<2.0.0",
+    "ruff>=0.14.0",
+    "ty>=0.0.30",
     "pre-commit>=3.4.0,<4.0.0",
     "tox>=4.11.1,<5.0.0",
     "mkdocs==1.6.0",
@@ -65,22 +66,8 @@ line-length = 120
 target-version = ['py310']
 preview = true
 
-[tool.mypy]
-files = ["paradex_py"]
-disallow_incomplete_defs = false
-disallow_untyped_defs = false
-no_implicit_optional = false
-show_error_codes = true
-warn_return_any = false
-warn_unused_ignores = true
-
-[[tool.mypy.overrides]]
-module = [
-    "starknet_py.*",
-    "starkware.*",
-    "poseidon_py.*",
-]
-ignore_missing_imports = true
+[tool.ty.environment]
+python-version = "3.10"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -90,6 +77,8 @@ addopts = "--ignore=tests/integration/test_block_trades_workflow.py"
 target-version = "py310"
 line-length = 120
 fix = true
+
+[tool.ruff.lint]
 select = [
     # flake8-2020
     "YTT",
@@ -136,6 +125,18 @@ skip_empty = true
 branch = true
 source = ["paradex_py"]
 
-[tool.ruff.per-file-ignores]
+[tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S101"]
 "paradex_py/api/generated/*" = ["F403", "A003", "S105", "UP006"]
+"paradex_py/margin/*" = ["TRY"]
+"examples/*" = ["TRY"]
+"scripts/*" = ["S306", "S314", "S603", "TRY003"]
+"tests/integration/*" = ["RUF015", "S311", "TRY"]
+"tests/api/test_account_httpx.py" = ["TRY003"]
+"paradex_py/api/api_client.py" = ["TRY003"]
+"paradex_py/api/block_trades_api.py" = ["TRY003"]
+"paradex_py/api/protocols.py" = ["RUF022", "S311"]
+"paradex_py/api/sbe/codec.py" = ["TRY003"]
+"paradex_py/api/ws_client.py" = ["TRY003"]
+"paradex_py/api/ws_models.py" = ["RUF022"]
+"paradex_py/margin/__init__.py" = ["RUF022", "TRY"]

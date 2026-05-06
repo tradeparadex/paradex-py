@@ -221,9 +221,9 @@ class BalanceResp(BaseModel):
     ] = None
     cost: Annotated[str | None, Field(description="Balance cost", examples=["105.4623"])] = None
     cost_usd: Annotated[str | None, Field(description="Balance cost in USD", examples=["105.8311"])] = None
-    last_updated_at: Annotated[
-        int | None, Field(description="Balance last updated time", examples=[1681462770114])
-    ] = None
+    last_updated_at: Annotated[int | None, Field(description="Balance last updated time", examples=[1681462770114])] = (
+        None
+    )
     size: Annotated[
         str | None,
         Field(
@@ -355,9 +355,9 @@ class Delta1CrossMarginParams(BaseModel):
     )
     imf_base: Annotated[str | None, Field(description="Initial Margin Base", examples=["0.11"])] = None
     imf_factor: Annotated[str | None, Field(description="Initial Margin Factor, always 0.", examples=["0"])] = None
-    imf_shift: Annotated[
-        str | None, Field(description="Initial Margin Shift, unused, always 0.", examples=["0"])
-    ] = None
+    imf_shift: Annotated[str | None, Field(description="Initial Margin Shift, unused, always 0.", examples=["0"])] = (
+        None
+    )
     mmf_factor: Annotated[str | None, Field(description="Maintenance Margin Factor", examples=["0.51"])] = None
 
 
@@ -545,9 +545,9 @@ class FundingDataResult(BaseModel):
     funding_rate: Annotated[
         str | None, Field(description="Raw funding rate for the actual funding period as a decimal string")
     ] = None
-    funding_rate_8h: Annotated[
-        str | None, Field(description="Normalized 8-hour funding rate as a decimal string")
-    ] = None
+    funding_rate_8h: Annotated[str | None, Field(description="Normalized 8-hour funding rate as a decimal string")] = (
+        None
+    )
     market: Annotated[str | None, Field(description="Market represents the market identifier")] = None
 
 
@@ -571,9 +571,9 @@ class FundingPayment(BaseModel):
     market: Annotated[
         str | None, Field(description="Market against which payment is made", examples=["BTC-USD-PERP"])
     ] = None
-    payment: Annotated[
-        str | None, Field(description="Payment amount in settlement asset", examples=["34.4490622"])
-    ] = None
+    payment: Annotated[str | None, Field(description="Payment amount in settlement asset", examples=["34.4490622"])] = (
+        None
+    )
 
 
 class GetAccountMarginConfigsResp(BaseModel):
@@ -598,9 +598,9 @@ class GetXPBalanceResponseV2(BaseModel):
     earned_xp: Annotated[
         int | None, Field(description="XP earned through trading (from leaderboard, immutable)", examples=[1000])
     ] = None
-    transferrable_xp: Annotated[
-        int | None, Field(description="Maximum XP that can be transferred", examples=[700])
-    ] = None
+    transferrable_xp: Annotated[int | None, Field(description="Maximum XP that can be transferred", examples=[700])] = (
+        None
+    )
     xp_delta: Annotated[int | None, Field(description="Net XP from transfers", examples=[200])] = None
 
 
@@ -699,9 +699,9 @@ class MarketChainDetails(BaseModel):
     )
     collateral_address: Annotated[str | None, Field(description="Collateral address", examples=["0x1234567890"])] = None
     contract_address: Annotated[str | None, Field(description="Contract address", examples=["0x1234567890"])] = None
-    fee_account_address: Annotated[
-        str | None, Field(description="Fee account address", examples=["0x1234567890"])
-    ] = None
+    fee_account_address: Annotated[str | None, Field(description="Fee account address", examples=["0x1234567890"])] = (
+        None
+    )
     fee_maker: Annotated[str | None, Field(description="Maker fee", examples=["0.01"])] = None
     fee_taker: Annotated[str | None, Field(description="Taker fee", examples=["0.01"])] = None
     insurance_fund_address: Annotated[
@@ -783,12 +783,12 @@ class OptionMarginParams(BaseModel):
     premium_multiplier: Annotated[
         str | None, Field(description="Multiplier for margin fraction for premium", examples=["1.2"])
     ] = None
-    short_itm: Annotated[
-        str | None, Field(description="Margin fraction for short ITM options", examples=["0.4"])
-    ] = None
-    short_otm: Annotated[
-        str | None, Field(description="Margin fraction for short OTM options", examples=["0.25"])
-    ] = None
+    short_itm: Annotated[str | None, Field(description="Margin fraction for short ITM options", examples=["0.4"])] = (
+        None
+    )
+    short_otm: Annotated[str | None, Field(description="Margin fraction for short OTM options", examples=["0.25"])] = (
+        None
+    )
     short_put_cap: Annotated[
         str | None, Field(description="Cap for margin fraction for short put options", examples=["0.5"])
     ] = None
@@ -904,9 +904,9 @@ class PositionResp(BaseModel):
     last_fill_id: Annotated[
         str | None, Field(description="Last fill ID to which the position is referring", examples=["1234234"])
     ] = None
-    last_updated_at: Annotated[
-        int | None, Field(description="Position last update time", examples=[1681493939981])
-    ] = None
+    last_updated_at: Annotated[int | None, Field(description="Position last update time", examples=[1681493939981])] = (
+        None
+    )
     leverage: Annotated[str | None, Field(description="Leverage of the position")] = None
     liquidation_price: Annotated[str | None, Field(description="Liquidation price of the position")] = None
     market: Annotated[str | None, Field(description="Market for position", examples=["BTC-USD-PERP"])] = None
@@ -964,16 +964,16 @@ class ReferralConfigResp(BaseModel):
         extra="allow",
         populate_by_name=True,
     )
-    commission_rate: Annotated[
-        str | None, Field(description="Commission rate for the referer", examples=["0.1"])
-    ] = None
+    commission_rate: Annotated[str | None, Field(description="Commission rate for the referer", examples=["0.1"])] = (
+        None
+    )
     commission_volume_cap: Annotated[
         str | None, Field(description="Volume cap for commission", examples=["1000000000"])
     ] = None
     discount_rate: Annotated[str | None, Field(description="Discount rate for the referee", examples=["0.1"])] = None
-    discount_volume_cap: Annotated[
-        str | None, Field(description="Volume cap for discount", examples=["30000000"])
-    ] = None
+    discount_volume_cap: Annotated[str | None, Field(description="Volume cap for discount", examples=["30000000"])] = (
+        None
+    )
     minimum_volume: Annotated[
         str | None, Field(description="Minimum volume required to be eligible for Program", examples=["0.123"])
     ] = None
@@ -1039,9 +1039,9 @@ class RevokeTokenResponse(BaseModel):
         extra="allow",
         populate_by_name=True,
     )
-    lookup_id: Annotated[
-        str | None, Field(description="The lookup ID of the revoked token", examples=["uuid-123"])
-    ] = None
+    lookup_id: Annotated[str | None, Field(description="The lookup ID of the revoked token", examples=["uuid-123"])] = (
+        None
+    )
 
 
 class RollingDetailsResp(BaseModel):
@@ -1109,9 +1109,9 @@ class Subkey(BaseModel):
     ] = None
     id: Annotated[int | None, Field(description="Unique subkey identifier", examples=[1])] = None
     name: Annotated[str | None, Field(description="User-provided subkey name", examples=["My Subkey"])] = None
-    public_key: Annotated[
-        str | None, Field(description="Subkey public key", examples=["0xabcdef1234567890abcdef"])
-    ] = None
+    public_key: Annotated[str | None, Field(description="Subkey public key", examples=["0xabcdef1234567890abcdef"])] = (
+        None
+    )
     revoked_at: Annotated[
         int | None, Field(description="Revocation timestamp (nanoseconds since epoch, 0 if not revoked)", examples=[0])
     ] = None
@@ -1143,9 +1143,9 @@ class SystemConfigResponse(BaseModel):
         ),
     ] = None
     dime_staking_contract_address: Annotated[str | None, Field(description="DIME Staking contract address")] = None
-    environment: Annotated[
-        str | None, Field(description="Environment of the Paradex Instance", examples=["local"])
-    ] = None
+    environment: Annotated[str | None, Field(description="Environment of the Paradex Instance", examples=["local"])] = (
+        None
+    )
     l1_chain_id: Annotated[str | None, Field(description="L1 chain ID value", examples=["5"])] = None
     l1_core_contract_address: Annotated[
         str | None,
@@ -1263,9 +1263,9 @@ class TradeResult(BaseModel):
         int | None, Field(description="Unix Millisecond timestamp at which trade was done", examples=[1681497002041])
     ] = None
     id: Annotated[str | None, Field(description="Unique Trade ID per TradeType", examples=["12345643"])] = None
-    market: Annotated[
-        str | None, Field(description="Market for which trade was done", examples=["BTC-USD-PERP"])
-    ] = None
+    market: Annotated[str | None, Field(description="Market for which trade was done", examples=["BTC-USD-PERP"])] = (
+        None
+    )
     price: Annotated[str | None, Field(description="Trade price", examples=["30001.2"])] = None
     side: Annotated[OrderSide | None, Field(description="Taker side")] = None
     size: Annotated[str | None, Field(description="Trade size", examples=["0.01"])] = None
@@ -1286,9 +1286,9 @@ class TradebustResult(BaseModel):
             examples=["0x495d2eb5236a12b8b4ad7d3849ce6a203ce21c43f473c248dfd5ce70d9454fa"],
         ),
     ] = None
-    busted_fill_id: Annotated[
-        str | None, Field(description="Unique ID of the busted fill", examples=["12342345"])
-    ] = None
+    busted_fill_id: Annotated[str | None, Field(description="Unique ID of the busted fill", examples=["12342345"])] = (
+        None
+    )
     created_at: Annotated[
         int | None, Field(description="Unix timestamp in milliseconds when bust was created", examples=[1681497002041])
     ] = None
@@ -1722,9 +1722,9 @@ class AlgoOrderResp(BaseModel):
     ] = None
     algo_params: Annotated[dict[str, str] | None, Field(description="Type-specific algo parameters")] = None
     algo_type: Annotated[AlgoType | None, Field(description="Algo type", examples=["TWAP"])] = None
-    avg_fill_price: Annotated[
-        str | None, Field(description="Average fill price of the order", examples=["26000"])
-    ] = None
+    avg_fill_price: Annotated[str | None, Field(description="Average fill price of the order", examples=["26000"])] = (
+        None
+    )
     cancel_reason: Annotated[
         str | None,
         Field(description="Reason for algo cancellation if it was closed by cancel", examples=["NOT_ENOUGH_MARGIN"]),
@@ -1792,9 +1792,9 @@ class BlockTradeOrder(BaseModel):
     ] = None
     side: Annotated[OrderSide, Field(description="Order side")]
     signature: Annotated[str | None, Field(description="Order signature", examples=["0xabc123..."])] = None
-    signature_timestamp: Annotated[
-        int | None, Field(description="When order was signed", examples=[1640995200000])
-    ] = None
+    signature_timestamp: Annotated[int | None, Field(description="When order was signed", examples=[1640995200000])] = (
+        None
+    )
     size: Annotated[str | None, Field(description="Order size", examples=["10.5"])] = None
     type: Annotated[OrderType, Field(description="Order type")]
 
@@ -1985,9 +1985,9 @@ class OrderResp(BaseModel):
             examples=["0x4638e3041366aa71720be63e32e53e1223316c7f0d56f7aa617542ed1e7512x"],
         ),
     ] = None
-    avg_fill_price: Annotated[
-        str | None, Field(description="Average fill price of the order", examples=["26000"])
-    ] = None
+    avg_fill_price: Annotated[str | None, Field(description="Average fill price of the order", examples=["26000"])] = (
+        None
+    )
     cancel_reason: Annotated[
         str | None,
         Field(description="Reason for order cancellation if it was closed by cancel", examples=["NOT_ENOUGH_MARGIN"]),
@@ -2159,9 +2159,9 @@ class VaultResp(BaseModel):
         int | None,
         Field(description="Unix timestamp in milliseconds of when the vault has been created", examples=[1517171717]),
     ] = None
-    description: Annotated[
-        str | None, Field(description="Description of the vault", examples=["My description"])
-    ] = None
+    description: Annotated[str | None, Field(description="Description of the vault", examples=["My description"])] = (
+        None
+    )
     kind: Annotated[
         VaultKind | None,
         Field(
@@ -2208,9 +2208,9 @@ class BlockTradeDetailResponse(BaseModel):
         extra="allow",
         populate_by_name=True,
     )
-    executed_at: Annotated[
-        int | None, Field(description="When this trade was executed", examples=[1640995500000])
-    ] = None
+    executed_at: Annotated[int | None, Field(description="When this trade was executed", examples=[1640995500000])] = (
+        None
+    )
     failure_reason: Annotated[str | None, Field(description="Reason for failure (if failed)")] = None
     maker_account: Annotated[
         str | None, Field(description="Maker account (if fully executable)", examples=["0x123...abc"])

@@ -1,4 +1,5 @@
 """Tests for simulator-friendly injection points in paradex_py."""
+
 import asyncio
 import json
 from unittest.mock import MagicMock, patch
@@ -478,6 +479,7 @@ class TestSimulatorUseCases:
     @pytest.mark.asyncio
     async def test_combined_simulator_integration(self):
         """Test combined REST + WebSocket simulator integration."""
+
         # REST simulator
         def rest_handler(request: httpx.Request) -> httpx.Response:
             if request.url.path.endswith("/v1/system/config"):

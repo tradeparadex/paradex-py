@@ -34,11 +34,11 @@ from .paradex_l2 import ParadexL2
 from .paradex_subkey import ParadexSubkey
 
 __all__ = [
-    "AuthLevel",
-    "Environment",
     "NIGHTLY",
     "PROD",
     "TESTNET",
+    "AuthLevel",
+    "Environment",
     "Paradex",
     "ParadexApiKey",
     "ParadexEvm",
