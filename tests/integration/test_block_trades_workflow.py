@@ -80,8 +80,10 @@ from paradex_py.common.order import OrderType as CommonOrderType
 from paradex_py.message.block_trades import (
     BlockTrade,
     BlockTradeOffer,
-    BlockTradeOrder,
     Trade,
+)
+from paradex_py.message.block_trades import (
+    BlockTradeOrder as BlockTradeOrderSignPayload,
 )
 
 # Set up logging with better console formatting
@@ -175,7 +177,7 @@ def create_block_trade_order(
     )
 
 
-def _build_signing_block_trade_order(dto, account: str) -> BlockTradeOrder:
+def _build_signing_block_trade_order(dto, account: str) -> BlockTradeOrderSignPayload:
     """Build a signing-side BlockTradeOrder from a request-payload BlockTradeOrder DTO.
 
     Note: `BlockTradeOrder` here is the signing struct from `paradex_py.message.block_trades`
@@ -191,7 +193,7 @@ def _build_signing_block_trade_order(dto, account: str) -> BlockTradeOrder:
     type_value = ""
     if dto and getattr(dto, "type", None) is not None:
         type_value = dto.type.value if hasattr(dto.type, "value") else str(dto.type)
-    return BlockTradeOrder(
+    return BlockTradeOrderSignPayload(
         account=account,
         side=side_value,
         order_type=type_value or "LIMIT",
