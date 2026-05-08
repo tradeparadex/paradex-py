@@ -1,11 +1,12 @@
-# Generated from Paradex API spec version 1.114.2
+# Generated from Paradex API spec version 1.119.0
 
-"""Generated API models from Paradex OpenAPI spec v1.114.2."""
+"""Generated API models from Paradex OpenAPI spec v1.119.0."""
 
-# ruff: noqa: F403, A003
 # Import all generated models
+from .messagesv1 import *
 from .requests import *
 from .responses import *
+from .services import *
 
 __all__: list[str] = [
     # Re-export everything from sub-modules

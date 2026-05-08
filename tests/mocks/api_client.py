@@ -29,9 +29,40 @@ MOCK_CONFIG = {
 }
 
 
+MOCK_ONBOARDING_STARKNET = {
+    "account_signer_type": "starknet",
+    "address": "0x129c135ed63df9353885e292be4426b8ed6122b13c6c0e1bb787288a1f5adfa",
+    "exists": True,
+    "derivation_info": {
+        "class_hash": "0x41cb0280ebadaa75f996d8d92c6f265f6d040bb3ba442e5f86a554f1765244e",
+        "proxy_class_hash": "0x3530cc4759d78042f1b543bf797f5f3d647cde0388c33734cf91b7f7b9314a9",
+    },
+}
+
+MOCK_ONBOARDING_EIP191 = {
+    "account_signer_type": "eip191",
+    "address": "0x7d32afc77ded2e21821e2db7474183131f3d9de0da94ffbb4111efe5b91e37a",
+    "exists": True,
+    "derivation_info": {
+        "class_hash": "0x073414441639dcd11d1846f287650a00c60c416b9d3ba45d31c651672125b2c2",
+    },
+}
+
+
 class MockApiClient:
+    def __init__(self, onboarding_response: dict | None = None):
+        # Default to the starknet fixture; callers can override per-test with either
+        # MOCK_ONBOARDING_EIP191 or a custom dict (e.g. exists=False variants).
+        self._onboarding_response = onboarding_response or MOCK_ONBOARDING_STARKNET
+        self.fetch_onboarding_calls: list[dict | None] = []
+
     def fetch_system_config(self) -> SystemConfig:
         return SystemConfigSchema().load(MOCK_CONFIG)
+
+    def fetch_onboarding(self, params: dict | None = None) -> dict:
+        """Mock GET /onboarding returning a canned response."""
+        self.fetch_onboarding_calls.append(params)
+        return dict(self._onboarding_response)
 
     def init_account(self, account):
         """Mock init_account method for testing."""

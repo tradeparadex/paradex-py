@@ -7,22 +7,25 @@ from enum import IntEnum
 
 from httpx import AsyncClient
 from starknet_py.common import int_from_bytes, int_from_hex
-from starknet_py.hash.address import compute_address
-from starknet_py.hash.selector import get_selector_from_name
 from starknet_py.net.full_node_client import FullNodeClient
 from starknet_py.net.http_client import HttpMethod
-from starknet_py.net.signer.stark_curve_signer import KeyPair
 
 from paradex_py.account.starknet import Account as StarknetAccount
-from paradex_py.account.utils import derive_stark_key, derive_stark_key_from_ledger, flatten_signature
+from paradex_py.account.utils import derive_l2_address_starknet, flatten_signature, resolve_l2_keypair
+from paradex_py.api.generated.responses import BlockTradeDetailFullResponse, BlockTradeSignature, SignatureType
 from paradex_py.api.models import SystemConfig
 from paradex_py.common.order import Order
 from paradex_py.message.auth import build_auth_message, build_fullnode_message
-from paradex_py.message.block_trades import BlockTrade, build_block_trade_message
+from paradex_py.message.block_trades import (
+    BlockTrade,
+    BlockTradeOffer,
+    block_trade_from_response,
+    build_block_trade_message,
+    build_block_trade_offer_message,
+)
 from paradex_py.message.onboarding import build_onboarding_message
 from paradex_py.message.order import build_modify_order_message, build_order_message
-from paradex_py.message.stark_key import build_stark_key_message
-from paradex_py.utils import raise_value_error
+from paradex_py.utils import raise_value_error, time_now_milli_secs
 
 FULLNODE_SIGNATURE_VERSION = "1.0.0"
 
@@ -63,6 +66,8 @@ class ParadexAccount:
         l1_private_key: str | None = None,
         l2_private_key: str | None = None,
         rpc_version: str | None = None,
+        l2_address: str | None = None,
+        is_onboarded: bool | None = None,
     ):
         self.config = config
 
@@ -72,19 +77,26 @@ class ParadexAccount:
 
         if l1_private_key is not None:
             self.l1_private_key = int_from_hex(l1_private_key)
-            stark_key_msg = build_stark_key_message(int(config.l1_chain_id))
-            self.l2_private_key = derive_stark_key(self.l1_private_key, stark_key_msg)
-        elif l1_private_key_from_ledger:
-            stark_key_msg = build_stark_key_message(int(config.l1_chain_id))
-            self.l2_private_key = derive_stark_key_from_ledger(l1_address, stark_key_msg)
-        elif l2_private_key is not None:
-            self.l2_private_key = int_from_hex(l2_private_key)
-        else:
-            raise_value_error("Paradex: Provide Ethereum or Paradex private key")
 
-        key_pair = KeyPair.from_private_key(self.l2_private_key)
+        key_pair = resolve_l2_keypair(
+            config=config,
+            l1_address=l1_address,
+            l1_private_key=l1_private_key,
+            l1_private_key_from_ledger=bool(l1_private_key_from_ledger),
+            l2_private_key=l2_private_key,
+        )
+        self.l2_private_key = key_pair.private_key
         self.l2_public_key = key_pair.public_key
-        self.l2_address = self._account_address()
+        if l2_address is not None:
+            self.l2_address = int_from_hex(l2_address)
+        else:
+            # Backwards-compat fallback: callers that construct ParadexAccount directly
+            # (without going through the Paradex orchestrator) still get their address
+            # derived for them. The Paradex orchestrator always resolves the address
+            # outside via the same helper, so this branch is only hit for direct
+            # construction and is intended for eventual removal.
+            self.l2_address = derive_l2_address_starknet(config, self.l2_public_key)
+        self.is_onboarded = is_onboarded
 
         # Create starknet account
         if rpc_version:
@@ -97,7 +109,7 @@ class ParadexAccount:
             client=client,
             address=self.l2_address,
             key_pair=key_pair,
-            chain=CustomStarknetChainId(self.l2_chain_id),  # type: ignore[arg-type]
+            chain=CustomStarknetChainId(self.l2_chain_id),  # ty: ignore[invalid-argument-type]
         )
 
         # Apply the fullnode headers patch
@@ -133,22 +145,6 @@ class ParadexAccount:
             return await response.json()
 
         client._client._make_request = types.MethodType(monkey_patched_make_request, client._client)
-
-    def _account_address(self) -> int:
-        calldata = [
-            int_from_hex(self.config.paraclear_account_hash),
-            get_selector_from_name("initialize"),
-            2,
-            self.l2_public_key,
-            0,
-        ]
-
-        address = compute_address(
-            class_hash=int_from_hex(self.config.paraclear_account_proxy_hash),
-            constructor_calldata=calldata,
-            salt=self.l2_public_key,
-        )
-        return address
 
     def set_jwt_token(self, jwt_token: str) -> None:
         self.jwt_token = jwt_token
@@ -209,28 +205,106 @@ class ParadexAccount:
         return flatten_signature(sig)
 
     def sign_block_trade(self, block_trade_data: BlockTrade) -> str:
-        """Sign block trade data using Starknet account.
-        Args:
-            block_trade_data (dict): Block trade data containing trade details
-        Returns:
-            dict: Signed block trade data
+        """Sign a BlockTrade and return the flattened "[r,s]" signature string.
+
+        Lower-level entrypoint. Most callers should use `build_block_trade_signature` which
+        returns a complete `BlockTradeSignature` with metadata fields populated.
         """
-        # Convert block trade data to TypedData format
         typed_data = build_block_trade_message(self.l2_chain_id, block_trade_data)
         sig = self.starknet.sign_message(typed_data)
         return flatten_signature(sig)
 
-    def sign_block_offer(self, offer_data: BlockTrade) -> str:
-        """Sign block offer data using Starknet account.
-        Args:
-            offer_data (dict): Block offer data containing offer details
-        Returns:
-            dict: Signed block offer data
+    def sign_block_trade_offer(self, offer: BlockTradeOffer) -> str:
+        """Sign a BlockTradeOffer and return the flattened "[r,s]" signature string.
+
+        Lower-level entrypoint. Most callers should use `build_block_trade_offer_signature`
+        which returns a complete `BlockTradeSignature` with metadata fields populated.
         """
-        # Convert block offer data to TypedData format
-        typed_data = build_block_trade_message(self.l2_chain_id, offer_data)
+        typed_data = build_block_trade_offer_message(self.l2_chain_id, offer)
         sig = self.starknet.sign_message(typed_data)
         return flatten_signature(sig)
+
+    def _build_block_trade_signature_dto(self, signature_data: str, nonce: str, expiration: int) -> BlockTradeSignature:
+        """Construct the BlockTradeSignature with all expected metadata"""
+        return BlockTradeSignature(
+            nonce=nonce,
+            signature_data=signature_data,
+            signature_expiration=expiration,
+            signature_timestamp=time_now_milli_secs(),
+            signature_type=SignatureType.starknet,
+            signer_account=hex(self.l2_address),
+            signer_public_key=hex(self.l2_public_key),
+        )
+
+    def build_block_trade_offer_signature(self, offer: BlockTradeOffer) -> BlockTradeSignature:
+        """Sign a BlockTradeOffer and return the full `BlockTradeSignature`.
+
+        For the offerer to attach to a `BlockOfferRequest.signature`. Auto-populates
+        `signer_public_key` with the account's signing key (main or active subkey).
+        """
+        return self._build_block_trade_signature_dto(self.sign_block_trade_offer(offer), offer.nonce, offer.expiration)
+
+    def build_block_trade_signature(self, block_trade: BlockTrade) -> BlockTradeSignature:
+        """Sign a BlockTrade and return the full `BlockTradeSignature` ready to attach to a
+        BlockTradeRequest / BlockOfferRequest / BlockExecuteRequest.
+
+        Auto-populates `signer_public_key` with the account's signing key (main account or
+        subkey, depending on which account class instantiated this). The server uses this
+        hint to look up the right pubkey for verification.
+        """
+        return self._build_block_trade_signature_dto(
+            self.sign_block_trade(block_trade), block_trade.nonce, block_trade.expiration
+        )
+
+    def build_executor_signature_for_block(
+        self,
+        block_response: BlockTradeDetailFullResponse,
+        nonce: str | None = None,
+        expiration_minutes: int = 5,
+    ) -> dict[str, BlockTradeSignature]:
+        """Build the executor-side signature for a DIRECT block trade execute.
+
+        Pass the `BlockTradeDetailFullResponse` returned by `get_block_trade()`. Returns a
+        dict ready to assign to `BlockExecuteRequest.signatures` — keyed by block_id with
+        a single entry. The executor (this account) signs the merkle root of the block's
+        trades using a fresh nonce/expiration.
+
+        Use this for direct block trades. For offer-based blocks, use
+        `build_executor_signatures_for_offers` instead.
+        """
+        if not block_response.block_id:
+            raise ValueError("block_response.block_id is required")  # noqa: TRY003
+        nonce, expiration = self._executor_nonce_expiration(nonce, expiration_minutes)
+        bt = block_trade_from_response(block_response, nonce, expiration)
+        return {block_response.block_id: self.build_block_trade_signature(bt)}
+
+    def build_executor_signatures_for_offers(
+        self,
+        offer_responses: list[BlockTradeDetailFullResponse],
+        nonce: str | None = None,
+        expiration_minutes: int = 5,
+    ) -> dict[str, BlockTradeSignature]:
+        """Build executor-side signatures for an OFFER-BASED block trade execute.
+
+        Pass a list of `BlockTradeDetailFullResponse` objects (one per offer being
+        accepted, fetched via `get_block_trade_offer()`). Returns a dict keyed by
+        offer_id with one signature per offer — each commits the executor (this account)
+        to that specific offer's trade fills.
+        """
+        nonce, expiration = self._executor_nonce_expiration(nonce, expiration_minutes)
+        sigs: dict[str, BlockTradeSignature] = {}
+        for offer in offer_responses:
+            if not offer.block_id:
+                raise ValueError("each offer_response must have block_id set")  # noqa: TRY003
+            bt = block_trade_from_response(offer, nonce, expiration)
+            sigs[offer.block_id] = self.build_block_trade_signature(bt)
+        return sigs
+
+    def _executor_nonce_expiration(self, nonce: str | None, expiration_minutes: int) -> tuple[str, int]:
+        if nonce is None:
+            nonce = str(time.time_ns())
+        expiration = time_now_milli_secs() + expiration_minutes * 60 * 1000
+        return nonce, expiration
 
     async def transfer_on_l2(self, target_l2_address: str, amount_decimal: Decimal):
         try:
@@ -269,7 +343,7 @@ class ParadexAccount:
             prepared_invoke = await self.starknet.prepare_invoke(calls=calls, auto_estimate=True)
             await self.starknet.process_invoke(account_contract, need_multisig, prepared_invoke, func_name)
 
-        except Exception as e:
-            logging.exception(f"Error during transfer_on_l2: {e}")
+        except Exception:
+            logging.exception("Error during transfer_on_l2")
             # Re-raise the exception to handle it upstream if necessary
             raise

@@ -32,6 +32,7 @@ class AuthLevel(IntEnum):
     Typical for ``ParadexSubkey``."""
 
     FULL = 3
-    """Full L2 account key — unrestricted access: order signing + all direct on-chain
-    operations (deposit, withdraw, transfer).
-    Typical for ``ParadexL2`` (main account key) and ``Paradex`` (L1-derived key)."""
+    """Full L2 account — all on-chain operations supported (deposit, withdraw, transfer).
+    Order signing is also available when the account holds a direct Starknet signing key
+    (``Paradex``, ``ParadexL2``).  EVM accounts (``ParadexEvm``) are FULL but require a
+    registered subkey for order signing."""

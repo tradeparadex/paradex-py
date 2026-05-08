@@ -1,4 +1,4 @@
-# Generated from Paradex API spec version 1.114.2
+# Generated from Paradex API spec version 1.119.0
 
 from __future__ import annotations
 
@@ -7,15 +7,7 @@ from typing import Annotated, Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-
-class NftPrice(BaseModel):
-    model_config = ConfigDict(
-        extra="allow",
-        populate_by_name=True,
-    )
-    currency: str | None = None
-    decimals: int | None = None
-    value: str | None = None
+from . import messagesv1
 
 
 class APIResults(BaseModel):
@@ -229,9 +221,9 @@ class BalanceResp(BaseModel):
     ] = None
     cost: Annotated[str | None, Field(description="Balance cost", examples=["105.4623"])] = None
     cost_usd: Annotated[str | None, Field(description="Balance cost in USD", examples=["105.8311"])] = None
-    last_updated_at: Annotated[
-        int | None, Field(description="Balance last updated time", examples=[1681462770114])
-    ] = None
+    last_updated_at: Annotated[int | None, Field(description="Balance last updated time", examples=[1681462770114])] = (
+        None
+    )
     size: Annotated[
         str | None,
         Field(
@@ -287,8 +279,18 @@ class BlockTradeSignature(BaseModel):
         SignatureType, Field(description="Type of cryptographic signature used", examples=["STARKNET"])
     ]
     signer_account: Annotated[
-        str, Field(description="Starknet account address of the signer", examples=["0x1234567890abcdef"])
+        str, Field(description="Paradex account address of the signer", examples=["0x1234567890abcdef"])
     ]
+    signer_public_key: Annotated[
+        str | None,
+        Field(
+            default=None,
+            description=(
+                "Hex pubkey used to sign (main account key or active subkey). Empty defaults to account main key."
+            ),
+            examples=["0xabc..."],
+        ),
+    ] = None
 
 
 class BlockTradeStatus(str, Enum):
@@ -296,6 +298,7 @@ class BlockTradeStatus(str, Enum):
     block_trade_status_offer_collection = "OFFER_COLLECTION"
     block_trade_status_ready_to_execute = "READY_TO_EXECUTE"
     block_trade_status_executing = "EXECUTING"
+    block_trade_status_pending_settlement = "PENDING_SETTLEMENT"
     block_trade_status_completed = "COMPLETED"
     block_trade_status_failed = "FAILED"
     block_trade_status_cancelled = "CANCELLED"
@@ -362,9 +365,9 @@ class Delta1CrossMarginParams(BaseModel):
     )
     imf_base: Annotated[str | None, Field(description="Initial Margin Base", examples=["0.11"])] = None
     imf_factor: Annotated[str | None, Field(description="Initial Margin Factor, always 0.", examples=["0"])] = None
-    imf_shift: Annotated[
-        str | None, Field(description="Initial Margin Shift, unused, always 0.", examples=["0"])
-    ] = None
+    imf_shift: Annotated[str | None, Field(description="Initial Margin Shift, unused, always 0.", examples=["0"])] = (
+        None
+    )
     mmf_factor: Annotated[str | None, Field(description="Maintenance Margin Factor", examples=["0.51"])] = None
 
 
@@ -467,6 +470,22 @@ class ErrorCode(str, Enum):
     error_code_string_insufficient_transferrable_xp = "INSUFFICIENT_TRANSFERRABLE_XP"
     error_code_string_transfer_limit_reached = "TRANSFER_LIMIT_REACHED"
     error_code_string_xp_transfers_disabled = "XP_TRANSFERS_DISABLED"
+    error_code_string_block_trade_not_found = "BLOCK_TRADE_NOT_FOUND"
+    error_code_string_block_trade_not_enabled = "BLOCK_TRADE_NOT_ENABLED"
+    error_code_string_block_trade_expired = "BLOCK_TRADE_EXPIRED"
+    error_code_string_block_trade_already_cancelled = "BLOCK_TRADE_ALREADY_CANCELLED"
+    error_code_string_block_trade_invalid_status = "BLOCK_TRADE_INVALID_STATUS"
+    error_code_string_block_trade_unauthorized = "BLOCK_TRADE_UNAUTHORIZED"
+    error_code_string_block_trade_missing_trades = "BLOCK_TRADE_MISSING_TRADES"
+    error_code_string_block_trade_missing_signers = "BLOCK_TRADE_MISSING_SIGNERS"
+    error_code_string_block_trade_missing_signature = "BLOCK_TRADE_MISSING_SIGNATURE"
+    error_code_string_block_trade_account_mismatch = "BLOCK_TRADE_ACCOUNT_MISMATCH"
+    error_code_string_offer_already_cancelled = "OFFER_ALREADY_CANCELLED"
+    error_code_string_offer_invalid_status = "OFFER_INVALID_STATUS"
+    error_code_string_offer_unauthorized = "OFFER_UNAUTHORIZED"
+    error_code_string_offer_parent_mismatch = "OFFER_PARENT_MISMATCH"
+    error_code_string_offer_parent_not_accepting = "OFFER_PARENT_NOT_ACCEPTING"
+    error_code_string_portfolio_margin_config_not_found = "PORTFOLIO_MARGIN_CONFIG_NOT_FOUND"
 
 
 class ErrorResponse(BaseModel):
@@ -520,15 +539,6 @@ class FillType(str, Enum):
     fill_type_block_trade = "BLOCK_TRADE"
 
 
-class FundBalance(BaseModel):
-    model_config = ConfigDict(
-        extra="allow",
-        populate_by_name=True,
-    )
-    dime_balance: Annotated[str | None, Field(description="Amount of DIME in the fund", examples=["1000000.0"])] = None
-    updated_at: Annotated[int | None, Field(description="Balance last updated time", examples=[1681471234972])] = None
-
-
 class FundingDataResult(BaseModel):
     model_config = ConfigDict(
         extra="allow",
@@ -545,9 +555,9 @@ class FundingDataResult(BaseModel):
     funding_rate: Annotated[
         str | None, Field(description="Raw funding rate for the actual funding period as a decimal string")
     ] = None
-    funding_rate_8h: Annotated[
-        str | None, Field(description="Normalized 8-hour funding rate as a decimal string")
-    ] = None
+    funding_rate_8h: Annotated[str | None, Field(description="Normalized 8-hour funding rate as a decimal string")] = (
+        None
+    )
     market: Annotated[str | None, Field(description="Market represents the market identifier")] = None
 
 
@@ -571,9 +581,9 @@ class FundingPayment(BaseModel):
     market: Annotated[
         str | None, Field(description="Market against which payment is made", examples=["BTC-USD-PERP"])
     ] = None
-    payment: Annotated[
-        str | None, Field(description="Payment amount in settlement asset", examples=["34.4490622"])
-    ] = None
+    payment: Annotated[str | None, Field(description="Payment amount in settlement asset", examples=["34.4490622"])] = (
+        None
+    )
 
 
 class GetAccountMarginConfigsResp(BaseModel):
@@ -598,9 +608,9 @@ class GetXPBalanceResponseV2(BaseModel):
     earned_xp: Annotated[
         int | None, Field(description="XP earned through trading (from leaderboard, immutable)", examples=[1000])
     ] = None
-    transferrable_xp: Annotated[
-        int | None, Field(description="Maximum XP that can be transferred", examples=[700])
-    ] = None
+    transferrable_xp: Annotated[int | None, Field(description="Maximum XP that can be transferred", examples=[700])] = (
+        None
+    )
     xp_delta: Annotated[int | None, Field(description="Net XP from transfers", examples=[200])] = None
 
 
@@ -699,9 +709,9 @@ class MarketChainDetails(BaseModel):
     )
     collateral_address: Annotated[str | None, Field(description="Collateral address", examples=["0x1234567890"])] = None
     contract_address: Annotated[str | None, Field(description="Contract address", examples=["0x1234567890"])] = None
-    fee_account_address: Annotated[
-        str | None, Field(description="Fee account address", examples=["0x1234567890"])
-    ] = None
+    fee_account_address: Annotated[str | None, Field(description="Fee account address", examples=["0x1234567890"])] = (
+        None
+    )
     fee_maker: Annotated[str | None, Field(description="Maker fee", examples=["0.01"])] = None
     fee_taker: Annotated[str | None, Field(description="Taker fee", examples=["0.01"])] = None
     insurance_fund_address: Annotated[
@@ -740,73 +750,6 @@ class OptionType(str, Enum):
     call = "CALL"
 
 
-class MarketSummaryResp(BaseModel):
-    model_config = ConfigDict(
-        extra="allow",
-        populate_by_name=True,
-    )
-    ask: Annotated[str | None, Field(description="Best ask price", examples=["30130.15"])] = None
-    ask_iv: Annotated[str | None, Field(description="Ask implied volatility, for options", examples=["0.2"])] = None
-    ask_size: Annotated[str | None, Field(description="Size at best ask price", examples=["0.05"])] = None
-    bid: Annotated[str | None, Field(description="Best bid price", examples=["30112.22"])] = None
-    bid_iv: Annotated[str | None, Field(description="Bid implied volatility, for options", examples=["0.2"])] = None
-    bid_size: Annotated[str | None, Field(description="Size at best bid price", examples=["0.04"])] = None
-    created_at: Annotated[int | None, Field(description="Market summary creation time")] = None
-    delta: Annotated[str | None, Field(description="Deprecated: Use greeks.delta instead", examples=["1"])] = None
-    external_fair_price: Annotated[
-        str | None,
-        Field(
-            description=(
-                "External fair price, calculated from spot price and an external basis: spot_price * (1 +"
-                " external_basis). where external basis is the median basis rate on different external exchanges"
-            ),
-            examples=["29876.3"],
-        ),
-    ] = None
-    funding_rate: Annotated[
-        str | None,
-        Field(
-            description=(
-                "This raw funding rate corresponds to the actual funding period of the instrument itself. It is not a"
-                " normalized 8h funding rate."
-            ),
-            examples=["0.3"],
-        ),
-    ] = None
-    future_funding_rate: Annotated[
-        str | None, Field(description="For options it's a smoothed version of future's funding rate", examples=["0.3"])
-    ] = None
-    greeks: Annotated[
-        Greeks | None, Field(description="Greeks (delta, gamma, vega). Partial for perpetual futures.")
-    ] = None
-    last_iv: Annotated[
-        str | None, Field(description="Last traded price implied volatility, for options", examples=["0.2"])
-    ] = None
-    last_traded_price: Annotated[str | None, Field(description="Last traded price", examples=["30109.53"])] = None
-    mark_iv: Annotated[str | None, Field(description="Mark implied volatility, for options", examples=["0.2"])] = None
-    mark_price: Annotated[
-        str | None,
-        Field(
-            description="[Mark price](https://docs.paradex.trade/risk-system/mark-price-calculation)",
-            examples=["29799.70877478"],
-        ),
-    ] = None
-    open_interest: Annotated[
-        str | None, Field(description="Open interest in base currency", examples=["6100048.3"])
-    ] = None
-    price_change_rate_24h: Annotated[
-        str | None, Field(description="Price change rate in the last 24 hours", examples=["0.05"])
-    ] = None
-    symbol: Annotated[str | None, Field(description="Market symbol", examples=["BTC-USD-PERP"])] = None
-    total_volume: Annotated[
-        str | None, Field(description="Lifetime total traded volume in USD", examples=["141341.0424"])
-    ] = None
-    underlying_price: Annotated[
-        str | None, Field(description="Underlying asset price (spot price)", examples=["29876.3"])
-    ] = None
-    volume_24h: Annotated[str | None, Field(description="24 hour volume in USD", examples=["47041.0424"])] = None
-
-
 class Nft(BaseModel):
     model_config = ConfigDict(
         extra="allow",
@@ -817,7 +760,7 @@ class Nft(BaseModel):
     id: str | None = None
     image_url: str | None = None
     name: str | None = None
-    price: NftPrice | None = None
+    price: messagesv1.NftPrice | None = None
 
 
 class NotificationPreferencesResp(BaseModel):
@@ -832,6 +775,15 @@ class NotificationPreferencesResp(BaseModel):
     transfers: Annotated[bool | None, Field(examples=[True])] = None
 
 
+class OnboardingDerivationInfo(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        populate_by_name=True,
+    )
+    class_hash: str | None = None
+    proxy_class_hash: str | None = None
+
+
 class OptionMarginParams(BaseModel):
     model_config = ConfigDict(
         extra="allow",
@@ -841,12 +793,12 @@ class OptionMarginParams(BaseModel):
     premium_multiplier: Annotated[
         str | None, Field(description="Multiplier for margin fraction for premium", examples=["1.2"])
     ] = None
-    short_itm: Annotated[
-        str | None, Field(description="Margin fraction for short ITM options", examples=["0.4"])
-    ] = None
-    short_otm: Annotated[
-        str | None, Field(description="Margin fraction for short OTM options", examples=["0.25"])
-    ] = None
+    short_itm: Annotated[str | None, Field(description="Margin fraction for short ITM options", examples=["0.4"])] = (
+        None
+    )
+    short_otm: Annotated[str | None, Field(description="Margin fraction for short OTM options", examples=["0.25"])] = (
+        None
+    )
     short_put_cap: Annotated[
         str | None, Field(description="Cap for margin fraction for short put options", examples=["0.5"])
     ] = None
@@ -912,6 +864,16 @@ class PaginatedAPIResults(BaseModel):
     results: Annotated[list[dict[str, Any]] | None, Field(description="Array of paginated results")] = None
 
 
+class PortfolioMarginScenarioResp(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        populate_by_name=True,
+    )
+    spot_shock: Annotated[float | None, Field(examples=[0.16])] = None
+    vol_shock: Annotated[float | None, Field(examples=[0.4])] = None
+    weight: Annotated[float | None, Field(examples=[1])] = None
+
+
 class Side(str, Enum):
     """
     Position Side : Long or Short
@@ -952,9 +914,9 @@ class PositionResp(BaseModel):
     last_fill_id: Annotated[
         str | None, Field(description="Last fill ID to which the position is referring", examples=["1234234"])
     ] = None
-    last_updated_at: Annotated[
-        int | None, Field(description="Position last update time", examples=[1681493939981])
-    ] = None
+    last_updated_at: Annotated[int | None, Field(description="Position last update time", examples=[1681493939981])] = (
+        None
+    )
     leverage: Annotated[str | None, Field(description="Leverage of the position")] = None
     liquidation_price: Annotated[str | None, Field(description="Liquidation price of the position")] = None
     market: Annotated[str | None, Field(description="Market for position", examples=["BTC-USD-PERP"])] = None
@@ -1012,16 +974,16 @@ class ReferralConfigResp(BaseModel):
         extra="allow",
         populate_by_name=True,
     )
-    commission_rate: Annotated[
-        str | None, Field(description="Commission rate for the referer", examples=["0.1"])
-    ] = None
+    commission_rate: Annotated[str | None, Field(description="Commission rate for the referer", examples=["0.1"])] = (
+        None
+    )
     commission_volume_cap: Annotated[
         str | None, Field(description="Volume cap for commission", examples=["1000000000"])
     ] = None
     discount_rate: Annotated[str | None, Field(description="Discount rate for the referee", examples=["0.1"])] = None
-    discount_volume_cap: Annotated[
-        str | None, Field(description="Volume cap for discount", examples=["30000000"])
-    ] = None
+    discount_volume_cap: Annotated[str | None, Field(description="Volume cap for discount", examples=["30000000"])] = (
+        None
+    )
     minimum_volume: Annotated[
         str | None, Field(description="Minimum volume required to be eligible for Program", examples=["0.123"])
     ] = None
@@ -1087,8 +1049,30 @@ class RevokeTokenResponse(BaseModel):
         extra="allow",
         populate_by_name=True,
     )
-    lookup_id: Annotated[
-        str | None, Field(description="The lookup ID of the revoked token", examples=["uuid-123"])
+    lookup_id: Annotated[str | None, Field(description="The lookup ID of the revoked token", examples=["uuid-123"])] = (
+        None
+    )
+
+
+class RollingDetailsResp(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        populate_by_name=True,
+    )
+    current_active_contract_symbol: Annotated[
+        str | None, Field(description="Current active contract symbol", examples=["Commodities.WTIJ6/USD"])
+    ] = None
+    current_active_contract_weight: Annotated[
+        str | None, Field(description='Front contract weight ("0" to "1")', examples=["0.75"])
+    ] = None
+    next_active_contract_symbol: Annotated[
+        str | None, Field(description="Next active contract symbol", examples=["Commodities.WTIK6/USD"])
+    ] = None
+    period_end: Annotated[
+        int | None, Field(description="UTC millis, end of current rolling period", examples=[1718150400000])
+    ] = None
+    period_start: Annotated[
+        int | None, Field(description="UTC millis, start of current rolling period", examples=[1717545600000])
     ] = None
 
 
@@ -1135,9 +1119,9 @@ class Subkey(BaseModel):
     ] = None
     id: Annotated[int | None, Field(description="Unique subkey identifier", examples=[1])] = None
     name: Annotated[str | None, Field(description="User-provided subkey name", examples=["My Subkey"])] = None
-    public_key: Annotated[
-        str | None, Field(description="Subkey public key", examples=["0xabcdef1234567890abcdef"])
-    ] = None
+    public_key: Annotated[str | None, Field(description="Subkey public key", examples=["0xabcdef1234567890abcdef"])] = (
+        None
+    )
     revoked_at: Annotated[
         int | None, Field(description="Revocation timestamp (nanoseconds since epoch, 0 if not revoked)", examples=[0])
     ] = None
@@ -1169,9 +1153,9 @@ class SystemConfigResponse(BaseModel):
         ),
     ] = None
     dime_staking_contract_address: Annotated[str | None, Field(description="DIME Staking contract address")] = None
-    environment: Annotated[
-        str | None, Field(description="Environment of the Paradex Instance", examples=["local"])
-    ] = None
+    environment: Annotated[str | None, Field(description="Environment of the Paradex Instance", examples=["local"])] = (
+        None
+    )
     l1_chain_id: Annotated[str | None, Field(description="L1 chain ID value", examples=["5"])] = None
     l1_core_contract_address: Annotated[
         str | None,
@@ -1289,9 +1273,9 @@ class TradeResult(BaseModel):
         int | None, Field(description="Unix Millisecond timestamp at which trade was done", examples=[1681497002041])
     ] = None
     id: Annotated[str | None, Field(description="Unique Trade ID per TradeType", examples=["12345643"])] = None
-    market: Annotated[
-        str | None, Field(description="Market for which trade was done", examples=["BTC-USD-PERP"])
-    ] = None
+    market: Annotated[str | None, Field(description="Market for which trade was done", examples=["BTC-USD-PERP"])] = (
+        None
+    )
     price: Annotated[str | None, Field(description="Trade price", examples=["30001.2"])] = None
     side: Annotated[OrderSide | None, Field(description="Taker side")] = None
     size: Annotated[str | None, Field(description="Trade size", examples=["0.01"])] = None
@@ -1312,9 +1296,9 @@ class TradebustResult(BaseModel):
             examples=["0x495d2eb5236a12b8b4ad7d3849ce6a203ce21c43f473c248dfd5ce70d9454fa"],
         ),
     ] = None
-    busted_fill_id: Annotated[
-        str | None, Field(description="Unique ID of the busted fill", examples=["12342345"])
-    ] = None
+    busted_fill_id: Annotated[str | None, Field(description="Unique ID of the busted fill", examples=["12342345"])] = (
+        None
+    )
     created_at: Annotated[
         int | None, Field(description="Unix timestamp in milliseconds when bust was created", examples=[1681497002041])
     ] = None
@@ -1628,6 +1612,17 @@ class VaultsConfigResponse(BaseModel):
     ] = None
 
 
+class VolShockParamsResp(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        populate_by_name=True,
+    )
+    dte_floor_days: Annotated[float | None, Field(examples=[1])] = None
+    min_vol_shock_up: Annotated[float | None, Field(examples=[0.4])] = None
+    vega_power_long_dte: Annotated[float | None, Field(examples=[0.13])] = None
+    vega_power_short_dte: Annotated[float | None, Field(examples=[0.3])] = None
+
+
 class XPTransfer(BaseModel):
     model_config = ConfigDict(
         extra="allow",
@@ -1704,6 +1699,7 @@ class AccountProfileResp(BaseModel):
         extra="allow",
         populate_by_name=True,
     )
+    ai_agent_url: Annotated[str | None, Field(examples=["wss://agent.example.com:18789"])] = None
     discord: DiscordProfile | None = None
     is_username_private: Annotated[bool | None, Field(examples=[True])] = None
     market_max_slippage: dict[str, str] | None = None
@@ -1736,9 +1732,9 @@ class AlgoOrderResp(BaseModel):
     ] = None
     algo_params: Annotated[dict[str, str] | None, Field(description="Type-specific algo parameters")] = None
     algo_type: Annotated[AlgoType | None, Field(description="Algo type", examples=["TWAP"])] = None
-    avg_fill_price: Annotated[
-        str | None, Field(description="Average fill price of the order", examples=["26000"])
-    ] = None
+    avg_fill_price: Annotated[str | None, Field(description="Average fill price of the order", examples=["26000"])] = (
+        None
+    )
     cancel_reason: Annotated[
         str | None,
         Field(description="Reason for algo cancellation if it was closed by cancel", examples=["NOT_ENOUGH_MARGIN"]),
@@ -1799,15 +1795,16 @@ class BlockTradeOrder(BaseModel):
         str | None, Field(description="Starknet account address of the order owner", examples=["0x1234567890abcdef"])
     ] = None
     client_id: Annotated[str | None, Field(description="Client-provided identifier", examples=["order_123"])] = None
+    flags: Annotated[list[OrderFlag] | None, Field(description="Order flags, allow flag: REDUCE_ONLY")] = None
     market: Annotated[str | None, Field(description="Trading pair for this order", examples=["BTC-USD-PERP"])] = None
     price: Annotated[
         str | None, Field(description="Order price (omitted for market orders)", examples=["30000.00"])
     ] = None
     side: Annotated[OrderSide, Field(description="Order side")]
     signature: Annotated[str | None, Field(description="Order signature", examples=["0xabc123..."])] = None
-    signature_timestamp: Annotated[
-        int | None, Field(description="When order was signed", examples=[1640995200000])
-    ] = None
+    signature_timestamp: Annotated[int | None, Field(description="When order was signed", examples=[1640995200000])] = (
+        None
+    )
     size: Annotated[str | None, Field(description="Order size", examples=["10.5"])] = None
     type: Annotated[OrderType, Field(description="Order type")]
 
@@ -1826,20 +1823,6 @@ class CreateTransferResponse(BaseModel):
         populate_by_name=True,
     )
     transfer: Annotated[XPTransfer | None, Field(description="The created XP transfer")] = None
-
-
-class DimeFundResp(BaseModel):
-    model_config = ConfigDict(
-        extra="allow",
-        populate_by_name=True,
-    )
-    dime_balance: Annotated[
-        str | None, Field(description="Amount of DIME in the dime fund", examples=["1000000.0"])
-    ] = None
-    paradigm_buyback_balance: Annotated[FundBalance | None, Field(description="Paradigm buyback balance")] = None
-    updated_at: Annotated[
-        int | None, Field(description="Dime fund balance last updated time", examples=[1681471234972])
-    ] = None
 
 
 class FillResult(BaseModel):
@@ -1899,12 +1882,96 @@ class GetAccountsInfoResponse(BaseModel):
     results: list[AccountInfoResponse] | None = None
 
 
+class GetOnboardingResp(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        populate_by_name=True,
+    )
+    account_signer_type: Annotated[str | None, Field(description='Signer variant: "starknet" or "eip191"')] = None
+    address: Annotated[str | None, Field(description="Paradex Starknet address")] = None
+    derivation_info: Annotated[
+        OnboardingDerivationInfo | None, Field(description="Class hash(es) used for address derivation")
+    ] = None
+    exists: Annotated[bool | None, Field(description="Whether the account is already onboarded")] = None
+
+
 class GetSubAccountsResponse(BaseModel):
     model_config = ConfigDict(
         extra="allow",
         populate_by_name=True,
     )
     results: list[AccountInfoResponse] | None = None
+
+
+class MarketSummaryResp(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        populate_by_name=True,
+    )
+    ask: Annotated[str | None, Field(description="Best ask price", examples=["30130.15"])] = None
+    ask_iv: Annotated[str | None, Field(description="Ask implied volatility, for options", examples=["0.2"])] = None
+    ask_size: Annotated[str | None, Field(description="Size at best ask price", examples=["0.05"])] = None
+    bid: Annotated[str | None, Field(description="Best bid price", examples=["30112.22"])] = None
+    bid_iv: Annotated[str | None, Field(description="Bid implied volatility, for options", examples=["0.2"])] = None
+    bid_size: Annotated[str | None, Field(description="Size at best bid price", examples=["0.04"])] = None
+    created_at: Annotated[int | None, Field(description="Market summary creation time")] = None
+    delta: Annotated[str | None, Field(description="Deprecated: Use greeks.delta instead", examples=["1"])] = None
+    external_fair_price: Annotated[
+        str | None,
+        Field(
+            description=(
+                "External fair price, calculated from spot price and an external basis: spot_price * (1 +"
+                " external_basis). where external basis is the median basis rate on different external exchanges"
+            ),
+            examples=["29876.3"],
+        ),
+    ] = None
+    funding_rate: Annotated[
+        str | None,
+        Field(
+            description=(
+                "This raw funding rate corresponds to the actual funding period of the instrument itself. It is not a"
+                " normalized 8h funding rate."
+            ),
+            examples=["0.3"],
+        ),
+    ] = None
+    future_funding_rate: Annotated[
+        str | None, Field(description="For options it's a smoothed version of future's funding rate", examples=["0.3"])
+    ] = None
+    greeks: Annotated[
+        Greeks | None, Field(description="Greeks (delta, gamma, vega). Partial for perpetual futures.")
+    ] = None
+    last_iv: Annotated[
+        str | None, Field(description="Last traded price implied volatility, for options", examples=["0.2"])
+    ] = None
+    last_traded_price: Annotated[str | None, Field(description="Last traded price", examples=["30109.53"])] = None
+    mark_iv: Annotated[str | None, Field(description="Mark implied volatility, for options", examples=["0.2"])] = None
+    mark_price: Annotated[
+        str | None,
+        Field(
+            description="[Mark price](https://docs.paradex.trade/risk-system/mark-price-calculation)",
+            examples=["29799.70877478"],
+        ),
+    ] = None
+    open_interest: Annotated[
+        str | None, Field(description="Open interest in base currency", examples=["6100048.3"])
+    ] = None
+    price_change_rate_24h: Annotated[
+        str | None, Field(description="Price change rate in the last 24 hours", examples=["0.05"])
+    ] = None
+    rolling_details: Annotated[
+        RollingDetailsResp | None,
+        Field(description="Rolling futures details — only populated for rolling futures markets"),
+    ] = None
+    symbol: Annotated[str | None, Field(description="Market symbol", examples=["BTC-USD-PERP"])] = None
+    total_volume: Annotated[
+        str | None, Field(description="Lifetime total traded volume in USD", examples=["141341.0424"])
+    ] = None
+    underlying_price: Annotated[
+        str | None, Field(description="Underlying asset price (spot price)", examples=["29876.3"])
+    ] = None
+    volume_24h: Annotated[str | None, Field(description="24 hour volume in USD", examples=["47041.0424"])] = None
 
 
 class OptionCrossMarginParams(BaseModel):
@@ -1928,9 +1995,9 @@ class OrderResp(BaseModel):
             examples=["0x4638e3041366aa71720be63e32e53e1223316c7f0d56f7aa617542ed1e7512x"],
         ),
     ] = None
-    avg_fill_price: Annotated[
-        str | None, Field(description="Average fill price of the order", examples=["26000"])
-    ] = None
+    avg_fill_price: Annotated[str | None, Field(description="Average fill price of the order", examples=["26000"])] = (
+        None
+    )
     cancel_reason: Annotated[
         str | None,
         Field(description="Reason for order cancellation if it was closed by cancel", examples=["NOT_ENOUGH_MARGIN"]),
@@ -1980,6 +2047,20 @@ class OrderResp(BaseModel):
     timestamp: Annotated[int | None, Field(description="Order signature timestamp", examples=[1681493746016])] = None
     trigger_price: Annotated[str | None, Field(description="Trigger price for stop order", examples=["26000"])] = None
     type: Annotated[OrderType | None, Field(description="Order type")] = None
+
+
+class PortfolioMarginParamsResp(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        populate_by_name=True,
+    )
+    base_asset: Annotated[str | None, Field(examples=["BTC"])] = None
+    funding_provision_hour: Annotated[float | None, Field(examples=[8])] = None
+    hedged_margin_factor: Annotated[float | None, Field(examples=[0.01])] = None
+    mmf_factor: Annotated[float | None, Field(examples=[0.5])] = None
+    scenarios: list[PortfolioMarginScenarioResp] | None = None
+    unhedged_margin_factor: Annotated[float | None, Field(examples=[0.02])] = None
+    vol_shock_params: VolShockParamsResp | None = None
 
 
 class SystemStateResponse(BaseModel):
@@ -2088,9 +2169,9 @@ class VaultResp(BaseModel):
         int | None,
         Field(description="Unix timestamp in milliseconds of when the vault has been created", examples=[1517171717]),
     ] = None
-    description: Annotated[
-        str | None, Field(description="Description of the vault", examples=["My description"])
-    ] = None
+    description: Annotated[str | None, Field(description="Description of the vault", examples=["My description"])] = (
+        None
+    )
     kind: Annotated[
         VaultKind | None,
         Field(
@@ -2137,9 +2218,9 @@ class BlockTradeDetailResponse(BaseModel):
         extra="allow",
         populate_by_name=True,
     )
-    executed_at: Annotated[
-        int | None, Field(description="When this trade was executed", examples=[1640995500000])
-    ] = None
+    executed_at: Annotated[int | None, Field(description="When this trade was executed", examples=[1640995500000])] = (
+        None
+    )
     failure_reason: Annotated[str | None, Field(description="Reason for failure (if failed)")] = None
     maker_account: Annotated[
         str | None, Field(description="Maker account (if fully executable)", examples=["0x123...abc"])
@@ -2262,6 +2343,7 @@ class BlockTradeDetailFullResponse(BaseModel):
     ] = None
     block_type: Annotated[BlockTradeType | None, Field(description="Block type", examples=["OFFER_BASED"])] = None
     created_at: Annotated[int | None, Field(description="When block was created", examples=[1640995200000])] = None
+    failure_reason: Annotated[str | None, Field(description="Reason for failure (if status is FAILED)")] = None
     initiator: Annotated[
         str | None, Field(description="Account that initiated this block trade", examples=["0x123...abc"])
     ] = None

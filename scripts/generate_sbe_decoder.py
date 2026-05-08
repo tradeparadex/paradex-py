@@ -7,6 +7,7 @@ Usage:
         --schema /path/to/paradex_1_0.xml \\
         --output paradex_py/api/sbe/codec.py
 """
+
 import argparse
 import re
 import sys
@@ -336,7 +337,7 @@ def generate_codec(schema: dict) -> str:  # noqa: C901
             else:
                 parts.append(f'{k}: "{v}"')
         enum_var = f"_ENUM_{enum_name.upper()}"
-        lines.append(f'{enum_var} = {{{", ".join(parts)}}}')
+        lines.append(f"{enum_var} = {{{', '.join(parts)}}}")
     lines += ["", ""]
 
     # Models

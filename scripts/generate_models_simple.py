@@ -124,22 +124,20 @@ def main():
 
         print(f"✅ Models generated successfully in {output_dir}")
 
-        # Update __init__.py to import all models
+        # Update __init__.py to import all generated modules
         init_file = output_dir / "__init__.py"
-        init_content = init_file.read_text() if init_file.exists() else ""
-
-        if "from .model import *" not in init_content:
-            init_file.write_text(
-                f"# Generated from Paradex API spec version {api_version}\n\n"
-                f'"""Generated API models from Paradex OpenAPI spec v{api_version}."""\n\n'
-                "# ruff: noqa: F403, A003\n"
-                "# Import all generated models\n"
-                "from .requests import *\n"
-                "from .responses import *\n\n"
-                "__all__: list[str] = [\n"
-                "    # Re-export everything from sub-modules\n"
-                "]\n"
-            )
+        generated_modules = sorted(p.stem for p in output_dir.glob("*.py") if p.stem != "__init__")
+        imports = "\n".join(f"from .{mod} import *" for mod in generated_modules)
+        init_file.write_text(
+            f"# Generated from Paradex API spec version {api_version}\n\n"
+            f'"""Generated API models from Paradex OpenAPI spec v{api_version}."""\n\n'
+            "# ruff: noqa: F403, A003\n"
+            "# Import all generated models\n"
+            f"{imports}\n\n"
+            "__all__: list[str] = [\n"
+            "    # Re-export everything from sub-modules\n"
+            "]\n"
+        )
 
         print("🎉 Model generation completed successfully!")
 

@@ -2,7 +2,7 @@ from decimal import Decimal
 
 from starknet_py.common import int_from_bytes, int_from_hex
 from starknet_py.net.full_node_client import FullNodeClient
-from starknet_py.net.signer.stark_curve_signer import KeyPair
+from starknet_py.net.signer.key_pair import KeyPair
 
 from paradex_py.account.account import CustomStarknetChainId, ParadexAccount
 from paradex_py.account.starknet import Account as StarknetAccount
@@ -52,6 +52,11 @@ class SubkeyAccount(ParadexAccount):
         # Set L2 credentials
         self.l2_private_key = int_from_hex(l2_private_key)
         self.l2_address = int_from_hex(l2_address)
+        # A subkey can only be created against an already-onboarded parent account, so by
+        # construction it is onboarded. This skips the NOT_ONBOARDED retry branch in
+        # api_client.init_account() — that retry would fail anyway because
+        # `SubkeyAccount.onboarding_headers()` returns {} (subkeys cannot self-onboard).
+        self.is_onboarded: bool | None = True
 
         # Generate public key from private key
         key_pair = KeyPair.from_private_key(self.l2_private_key)
@@ -70,7 +75,7 @@ class SubkeyAccount(ParadexAccount):
             client=client,
             address=self.l2_address,
             key_pair=KeyPair.from_private_key(self.l2_private_key),
-            chain=CustomStarknetChainId(self.l2_chain_id),  # type: ignore[arg-type]
+            chain=CustomStarknetChainId(self.l2_chain_id),  # ty: ignore[invalid-argument-type]
         )
 
         # Apply the same monkey patch as ParadexAccount
