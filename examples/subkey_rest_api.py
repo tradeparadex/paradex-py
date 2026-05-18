@@ -20,25 +20,17 @@ import time
 from datetime import datetime
 from decimal import Decimal
 
+from utils import get_logger
+
 from paradex_py import Paradex, ParadexSubkey
 from paradex_py.common.order import Order, OrderSide, OrderType
 from paradex_py.environment import TESTNET
 
+logger = get_logger(__name__)
+
 # Environment variables
 TEST_L2_ADDRESS = os.getenv("L2_ADDRESS", "")
 TEST_L2_PRIVATE_KEY = os.getenv("L2_PRIVATE_KEY", "")
-LOG_FILE = os.getenv("LOG_FILE", "FALSE").lower() == "true"
-
-if LOG_FILE:
-    from paradex_py.common.file_logging import file_logger
-
-    logger = file_logger
-    logger.info("Using file logger")
-else:
-    from paradex_py.common.console_logging import console_logger
-
-    logger = console_logger
-    logger.info("Using console logger")
 
 # Test Public API calls
 public_paradex = Paradex(env=TESTNET, logger=logger)

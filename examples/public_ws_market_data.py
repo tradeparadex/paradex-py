@@ -20,12 +20,13 @@ import asyncio
 import statistics
 import time
 
+from utils import get_logger
+
 from paradex_py import Paradex
 from paradex_py.api.ws_client import ParadexWebsocketChannel
-from paradex_py.common.console_logging import console_logger
 from paradex_py.environment import NIGHTLY, PROD, TESTNET, Environment
 
-logger = console_logger
+logger = get_logger(__name__)
 
 _ENVS: dict[str, Environment] = {"prod": PROD, "testnet": TESTNET, "nightly": NIGHTLY}
 
