@@ -326,7 +326,7 @@ async def _ws_submit(ws: ParadexWebsocketClient, order: Order, report: TestRepor
 def _rest_submit(paradex: Paradex, order: Order, report: TestReport, label: str) -> str | None:
     try:
         result = paradex.api_client.submit_order(order)
-        oid = result["order"]["id"]
+        oid = result["id"]  # REST POST /orders returns the order dict directly (not wrapped)
         report.ok(f"{label} REST submit id={oid}")
         return oid
     except Exception as exc:
