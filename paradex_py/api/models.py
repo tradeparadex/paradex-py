@@ -23,7 +23,6 @@ class BridgedToken:
 
 @dataclass
 class SystemConfig:
-    starknet_gateway_url: str
     starknet_fullnode_rpc_url: str
     starknet_fullnode_rpc_base_url: str
     starknet_chain_id: str
@@ -39,6 +38,7 @@ class SystemConfig:
     l1_chain_id: str
     liquidation_fee: str
     paraclear_evm_account_hash: str | None = None
+    starknet_gateway_url: str | None = None
 
 
 @dataclass

@@ -167,3 +167,6 @@ cython_debug/
 #.idea/
 .env.local
 .env.testlocal
+
+# Generated testnet keypairs (contain private keys — never commit)
+tests/integration/keypair.json
