@@ -1,12 +1,30 @@
 from decimal import Decimal
 
+from paradex_py.api.generated.requests import (
+    BlockOfferInfo,
+    BlockOfferRequest,
+    BlockTradeInfo,
+    BlockTradeRequest,
+)
+from paradex_py.api.generated.responses import (
+    BlockTradeConstraints,
+)
+from paradex_py.api.generated.responses import BlockTradeOrder as BlockTradeOrderDTO
+from paradex_py.api.generated.responses import (
+    OrderSide as DTOOrderSide,
+)
+from paradex_py.api.generated.responses import (
+    OrderType as DTOOrderType,
+)
 from paradex_py.message.block_trades import (
     BLOCK_TRADE_PAYLOAD_VERSION,
     BlockTrade,
     BlockTradeOffer,
     BlockTradeOrder,
     Trade,
+    block_trade_from_request,
     block_trade_from_response,
+    block_trade_offer_from_request,
     build_block_trade_message,
     build_block_trade_offer_message,
 )
@@ -486,3 +504,89 @@ def test_block_trade_from_response_constraint_only():
     assert trade.max_price == Decimal("31000")
     assert trade.maker_order is None
     assert trade.taker_order is None
+
+
+def _maker_dto(account: str = "0xMAKER") -> BlockTradeOrderDTO:
+    return BlockTradeOrderDTO(
+        account=account,
+        side=DTOOrderSide.order_side_sell,
+        type=DTOOrderType.order_type_limit,
+        price="1500",
+        size="0.1",
+    )
+
+
+def test_block_trade_from_request_reconstructs_signing_payload():
+    """Carries request.nonce/block_expiration into the signing BlockTrade and turns each
+    BlockTradeInfo into a Trade.fill leaf with the maker DTO converted, taker empty when
+    not yet known (offer-based create flow)."""
+    request = BlockTradeRequest(
+        nonce="bt_nonce",
+        block_expiration=1700000300000,
+        required_signers=["0xMAKER", "0xCOUNTER"],
+        signatures={},
+        trades={
+            "ETH-USD-PERP": BlockTradeInfo(
+                maker_order=_maker_dto(),
+                price="1500",
+                size="0.1",
+                taker_order=None,
+                trade_constraints=BlockTradeConstraints(
+                    min_price="1425", max_price="1575", min_size="0.1", max_size="0.5"
+                ),
+            ),
+        },
+    )
+
+    bt = block_trade_from_request(request)
+    assert bt.nonce == "bt_nonce"
+    assert bt.expiration == 1700000300000
+    assert len(bt.trades) == 1
+    trade = bt.trades[0]
+    assert trade.market == "ETH-USD-PERP"
+    assert trade.price == Decimal("1500")
+    assert trade.size == Decimal("0.1")
+    assert trade.maker_order is not None
+    assert trade.maker_order.account == "0xMAKER"
+    assert trade.maker_order.side == "SELL"
+    # Taker absent in the request -> empty (zero-valued) signing leaf
+    assert trade.taker_order is not None
+    assert trade.taker_order.account == ""
+    assert trade.taker_order.size == Decimal(0)
+
+
+def test_block_trade_offer_from_request_binds_block_trade_id_and_empties_taker():
+    """The offerer signs only their own side — taker_order on each leaf must be empty.
+    block_trade_id binds the offer signature to its parent (URL path param, not on body)."""
+    request = BlockOfferRequest.model_construct(
+        nonce="offer_nonce",
+        offering_account="0xOFFERER",
+        trades={
+            "BTC-USD-PERP": BlockOfferInfo(
+                offerer_order=BlockTradeOrderDTO(
+                    account="0xOFFERER",
+                    side=DTOOrderSide.order_side_buy,
+                    type=DTOOrderType.order_type_limit,
+                    price="73000",
+                    size="0.05",
+                ),
+                price="73000",
+                size="0.05",
+            ),
+        },
+    )
+
+    offer = block_trade_offer_from_request(request, block_trade_id="parent_xyz", expiration=1700000999000)
+    assert offer.nonce == "offer_nonce"
+    assert offer.expiration == 1700000999000
+    assert offer.block_trade_id == "parent_xyz"
+    assert len(offer.trades) == 1
+    trade = offer.trades[0]
+    assert trade.market == "BTC-USD-PERP"
+    assert trade.maker_order is not None
+    assert trade.maker_order.account == "0xOFFERER"
+    assert trade.maker_order.side == "BUY"
+    # Counter-side is always empty for offerer-signed payloads
+    assert trade.taker_order is not None
+    assert trade.taker_order.account == ""
+    assert trade.taker_order.size == Decimal(0)

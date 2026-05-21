@@ -3,6 +3,7 @@ from typing import cast
 
 from starknet_py.net.models.typed_data import TypedDataDict
 
+from paradex_py.api.generated.requests import BlockOfferRequest, BlockTradeRequest
 from paradex_py.api.generated.responses import (
     BlockTradeDetailFullResponse,
 )
@@ -260,6 +261,60 @@ def _block_trade_order_from_response(response_order: BlockTradeOrderResponse) ->
         order_type=response_order.type.value,
         size=Decimal(response_order.size or "0"),
         price=Decimal(response_order.price or "0"),
+    )
+
+
+def block_trade_from_request(request: BlockTradeRequest) -> BlockTrade:
+    """Reconstruct the signing BlockTrade from a `BlockTradeRequest`.
+
+    Used by required signers at create time: build the request (with
+    `maker_order` per market), then derive the signing payload here. The
+    block-level nonce/expiration come from the request itself — every required
+    signer of the same block produces a signature over the same merkle root.
+
+    Missing maker/taker sides become empty (zero-valued) `BlockTradeOrder`
+    leaves, so the merkle commits to their absence.
+    """
+    trades: list[Trade] = []
+    for market, info in (request.trades or {}).items():
+        maker_order = _block_trade_order_from_response(info.maker_order) if info.maker_order else BlockTradeOrder()
+        taker_order = _block_trade_order_from_response(info.taker_order) if info.taker_order else BlockTradeOrder()
+        trades.append(
+            Trade.fill(
+                market=market,
+                price=Decimal(info.price or "0"),
+                size=Decimal(info.size or "0"),
+                maker_order=maker_order,
+                taker_order=taker_order,
+            )
+        )
+    return BlockTrade(nonce=request.nonce, expiration=request.block_expiration, trades=trades)
+
+
+def block_trade_offer_from_request(request: BlockOfferRequest, block_trade_id: str, expiration: int) -> BlockTradeOffer:
+    """Reconstruct the signing BlockTradeOffer from a `BlockOfferRequest`.
+
+    `block_trade_id` binds the offer signature to its parent (path parameter
+    of the API call, not present on the request body). The offerer signs only
+    their own fills — the counter-side stays empty in every leaf.
+    """
+    trades: list[Trade] = []
+    for market, info in (request.trades or {}).items():
+        offerer_order = _block_trade_order_from_response(info.offerer_order)
+        trades.append(
+            Trade.fill(
+                market=market,
+                price=Decimal(info.price),
+                size=Decimal(info.size),
+                maker_order=offerer_order,
+                taker_order=BlockTradeOrder(),
+            )
+        )
+    return BlockTradeOffer(
+        nonce=request.nonce,
+        expiration=expiration,
+        block_trade_id=block_trade_id,
+        trades=trades,
     )
 
 

@@ -12,6 +12,7 @@ from starknet_py.net.http_client import HttpMethod
 
 from paradex_py.account.starknet import Account as StarknetAccount
 from paradex_py.account.utils import derive_l2_address_starknet, flatten_signature, resolve_l2_keypair
+from paradex_py.api.generated.requests import BlockOfferRequest, BlockTradeRequest
 from paradex_py.api.generated.responses import BlockTradeDetailFullResponse, BlockTradeSignature, SignatureType
 from paradex_py.api.models import SystemConfig
 from paradex_py.common.order import Order
@@ -19,7 +20,9 @@ from paradex_py.message.auth import build_auth_message, build_fullnode_message
 from paradex_py.message.block_trades import (
     BlockTrade,
     BlockTradeOffer,
+    block_trade_from_request,
     block_trade_from_response,
+    block_trade_offer_from_request,
     build_block_trade_message,
     build_block_trade_offer_message,
 )
@@ -255,6 +258,36 @@ class ParadexAccount:
         return self._build_block_trade_signature_dto(
             self.sign_block_trade(block_trade), block_trade.nonce, block_trade.expiration
         )
+
+    def sign_block_trade_request(self, request: BlockTradeRequest) -> BlockTradeRequest:
+        """Attach this account's signature to a `BlockTradeRequest` in place.
+
+        Reconstructs the signing `BlockTrade` from `request.trades` /
+        `request.nonce` / `request.block_expiration`, signs it, and inserts the
+        resulting `BlockTradeSignature` into `request.signatures` keyed by this
+        account's address. Returns the request (mutated) for chaining.
+        """
+        block_trade = block_trade_from_request(request)
+        request.signatures[hex(self.l2_address)] = self.build_block_trade_signature(block_trade)
+        return request
+
+    def sign_block_offer_request(
+        self,
+        request: BlockOfferRequest,
+        block_trade_id: str,
+        expiration_minutes: int = 5,
+    ) -> BlockOfferRequest:
+        """Attach this account's signature to a `BlockOfferRequest` in place.
+
+        `block_trade_id` is the parent block trade ID (URL path parameter of
+        the API call) and binds the offer signature to that specific parent.
+        The expiration window applies to the offer signature only — the
+        request's offer body has no expiration field of its own.
+        """
+        expiration = time_now_milli_secs() + expiration_minutes * 60 * 1000
+        offer = block_trade_offer_from_request(request, block_trade_id, expiration)
+        request.signature = self.build_block_trade_offer_signature(offer)
+        return request
 
     def build_executor_signature_for_block(
         self,

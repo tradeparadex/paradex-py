@@ -27,7 +27,6 @@ from paradex_py.api.generated.responses import BlockTradeOrder as BlockTradeOrde
 from paradex_py.api.generated.responses import OrderSide as DTOOrderSide  # noqa: E402
 from paradex_py.api.generated.responses import OrderType as DTOOrderType  # noqa: E402
 from paradex_py.environment import Environment  # noqa: E402
-from paradex_py.message.block_trades import BlockTradeOrder  # noqa: E402
 
 logger = get_logger("block_trade")
 
@@ -68,8 +67,3 @@ def dto_order(account: str, side: str, price: Decimal, size: Decimal) -> BlockTr
         price=str(price),
         size=str(size),
     )
-
-
-def signing_order(account: str, side: str, price: Decimal, size: Decimal) -> BlockTradeOrder:
-    """Build the signing-side BlockTradeOrder (from paradex_py.message.block_trades)."""
-    return BlockTradeOrder(account=account, side=side, order_type="LIMIT", price=price, size=size)
