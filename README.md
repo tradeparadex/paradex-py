@@ -41,6 +41,12 @@ print(hex(paradex.account.l2_private_key)) # 0x...
 
 ### WebSocket Usage
 
+The SDK provides two WebSocket client options:
+
+#### Option 1: Async Client (Default)
+
+Use the async client when you're comfortable with asyncio and need maximum performance:
+
 ```python
 async def on_message(ws_channel, message):
     print(ws_channel, message)
@@ -49,13 +55,44 @@ await paradex.ws_client.connect()
 await paradex.ws_client.subscribe(ParadexWebsocketChannel.MARKETS_SUMMARY, callback=on_message)
 ```
 
+#### Option 2: Threaded Client (Synchronous)
+
+Use the threaded client for simpler integration without asyncio knowledge:
+
+```python
+from paradex_py.api.ws_client_threaded import ThreadedParadexWebsocketClient
+from paradex_py.api.ws_client import ParadexWebsocketChannel
+from paradex_py.environment import TESTNET
+
+# Simple synchronous usage - no asyncio required
+ws_client = ThreadedParadexWebsocketClient(env=TESTNET)
+
+with ws_client:
+    ws_client.subscribe(ParadexWebsocketChannel.MARKETS_SUMMARY)
+
+    # Blocking call - waits for messages
+    msg = ws_client.get_updates(timeout=5.0)
+    if msg:
+        print(f"Channel: {msg.channel}, Data: {msg.data}")
+```
+
+**When to use which:**
+| Feature | Async Client | Threaded Client |
+|---------|-------------|-----------------|
+| Asyncio knowledge | Required | Not required |
+| Integration | Async codebases | Synchronous codebases |
+| Performance | Optimal | Good |
+| Complexity | Higher | Lower |
+| Runtime subscription | Via callbacks | Via `subscribe()` anytime |
+
 📖 For complete documentation refer to [tradeparadex.github.io/paradex-py](https://tradeparadex.github.io/paradex-py/)
 
 💻 For comprehensive examples refer to following files:
 
 - API (L1+L2): [examples/call_rest_api.py](examples/call_rest_api.py)
 - API (L2-only): [examples/subkey_rest_api.py](examples/subkey_rest_api.py)
-- WS (L1+L2): [examples/connect_ws_api.py](examples/connect_ws_api.py)
+- WS Async (L1+L2): [examples/connect_ws_api.py](examples/connect_ws_api.py)
+- WS Threaded: [examples/connect_ws_threaded.py](examples/connect_ws_threaded.py)
 - WS (L2-only): [examples/subkey_ws_api.py](examples/subkey_ws_api.py)
 - Transfer: [examples/transfer_l2_usdc.py](examples/transfer_l2_usdc.py)
 
