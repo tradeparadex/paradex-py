@@ -1,6 +1,6 @@
-# Generated from Paradex API spec version 1.119.0
+# Generated from Paradex API spec version 1.121.0
 
-"""Generated API models from Paradex OpenAPI spec v1.119.0."""
+"""Generated API models from Paradex OpenAPI spec v1.121.0."""
 
 # Import all generated models
 from .messagesv1 import *

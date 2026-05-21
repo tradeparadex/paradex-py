@@ -661,6 +661,25 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         """
         self._delete_authorized(path=f"account/keys/subkeys/{public_key}")
 
+    def update_subkey_allowed_cidrs(self, public_key: str, allowed_cidrs: list[str]) -> dict:
+        """Replace the IP CIDR allowlist for a subkey.
+        Private endpoint requires authorization.
+
+        Only callable with the main account; subkeys cannot widen their own allowlist.
+        Pass an empty list to clear the allowlist (unrestricted).
+
+        Args:
+            public_key: Public key of the subkey to update.
+            allowed_cidrs: Full replacement list of CIDR strings (e.g. ["203.0.113.0/24", "198.51.100.42/32"]).
+
+        Returns:
+            Updated Subkey dict.
+        """
+        return self._put_authorized(
+            path=f"account/keys/subkeys/{public_key}/allowed-cidrs",
+            payload={"allowed_cidrs": allowed_cidrs},
+        )
+
     # TOKEN MANAGEMENT
 
     def fetch_tokens(self, params: dict | None = None) -> dict:
