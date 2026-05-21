@@ -126,8 +126,9 @@ branch = true
 source = ["paradex_py"]
 
 [tool.deptry]
-# 'utils' is a local helper module in examples/ — not a PyPI package
-known_first_party = ["utils"]
+# 'utils' is a local helper module in examples/; 'common' is a local helper
+# module in scripts/block_trade/ — neither are PyPI packages.
+known_first_party = ["utils", "common"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S101"]
