@@ -1,7 +1,15 @@
 import logging
 import os
 import sys
+import warnings
 from datetime import datetime
+
+warnings.warn(
+    "paradex_py.common.file_logging is deprecated and will be removed in a future version. "
+    "Use the standard logging module directly.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 LOG_TIMESTAMP = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
 fn = sys.argv[0].split("/")[-1]

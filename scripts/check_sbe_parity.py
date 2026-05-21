@@ -14,15 +14,18 @@ Usage:
 
 import argparse
 import asyncio
+import logging
 import sys
 from collections import defaultdict
 
 from paradex_py import Paradex
 from paradex_py.api.ws_client import ParadexWebsocketChannel
-from paradex_py.common.console_logging import console_logger
 from paradex_py.environment import NIGHTLY, PROD, TESTNET, Environment
 
-logger = console_logger
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s.%(msecs)03d | %(levelname)s | %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
+)
+logger = logging.getLogger(__name__)
 _ENVS: dict[str, Environment] = {"prod": PROD, "testnet": TESTNET, "nightly": NIGHTLY}
 
 # Collected samples: {channel: [{"json": {...}, "sbe": {...}}, ...]}
