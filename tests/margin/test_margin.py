@@ -158,6 +158,13 @@ PM_CONFIG = {
 # what compute_pm builds internally) for the worst-scenario test.
 _SCENARIOS_FLAT = [[s["spot_shock"], s["vol_shock"], s["weight"]] for s in PM_CONFIG["scenarios"]]
 
+# Evaluation timestamp pinned to the market-data snapshot date (2026-04-22).
+# Required because POSITIONS includes the 8MAY26 option — without an explicit
+# `now`, compute() defaults to wall-clock UTC, and any run past 2026-05-08
+# treats the option as expired (DTE ≤ 0), which silences vol shocks and
+# breaks assertions that rely on the option being live.
+_NOW = datetime(2026, 4, 22, tzinfo=timezone.utc)
+
 # pm_params dict for direct _scenario_price calls (mirrors what compute_pm
 # builds from PM_CONFIG.vol_shock_params).
 _PM_PARAMS = {
@@ -403,6 +410,7 @@ def test_compute_pm_routes_to_scenario_scan():
         margin_methodology="portfolio_margin",
         balances=BALANCES,
         pm_config=PM_CONFIG,
+        now=_NOW,
     )
     assert r["margin_methodology"] == "portfolio_margin"
     assert "worst_loss" in r
@@ -425,6 +433,7 @@ def test_compute_pm_worst_scenario_is_vol_crush():
         MARKET_SPECS,
         margin_methodology="portfolio_margin",
         pm_config=PM_CONFIG,
+        now=_NOW,
     )
     worst_sc = _SCENARIOS_FLAT[r["worst_idx"]]
     assert worst_sc[1] < 0, (
@@ -439,6 +448,7 @@ def test_compute_pm_portfolio_delta_includes_orders():
         MARKET_DATA,
         MARKET_SPECS,
         PM_CONFIG,
+        now=_NOW,
     )
     assert_close(r["order_delta"], MARKET_DATA["BTC-USD-PERP"]["delta"] * 0.01, tol=1e-9, label="order delta")
     assert_close(r["portfolio_delta"], r["position_delta"] + r["order_delta"], tol=1e-9, label="portfolio delta")

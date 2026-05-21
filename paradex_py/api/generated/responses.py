@@ -1,4 +1,4 @@
-# Generated from Paradex API spec version 1.119.0
+# Generated from Paradex API spec version 1.121.0
 
 from __future__ import annotations
 
@@ -18,6 +18,15 @@ class APIResults(BaseModel):
     results: Annotated[list[dict[str, Any]] | None, Field(description="Array of results")] = None
 
 
+class AccountDailyPnlPoint(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        populate_by_name=True,
+    )
+    day: Annotated[str | None, Field(examples=["2026-05-05"])] = None
+    value: Annotated[str | None, Field(examples=["1234.56"])] = None
+
+
 class AccountHistoricalDataResp(BaseModel):
     model_config = ConfigDict(
         extra="allow",
@@ -25,6 +34,15 @@ class AccountHistoricalDataResp(BaseModel):
     )
     data: Annotated[list[float] | None, Field(description="Ordered list of datapoints")] = None
     timestamps: Annotated[list[int] | None, Field(description="Ordered list of timestamps")] = None
+
+
+class AccountHourlyPnlPoint(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        populate_by_name=True,
+    )
+    at: Annotated[str | None, Field(examples=["2026-05-05 09:00:00.000"])] = None
+    value: Annotated[str | None, Field(examples=["1234.56"])] = None
 
 
 class AccountKind(str, Enum):
@@ -44,6 +62,15 @@ class AccountMarginEntry(BaseModel):
     leverage: Annotated[int | None, Field(description="Leverage value")] = None
     margin_type: Annotated[str | None, Field(description="Margin type (CROSS/ISOLATED)")] = None
     market: Annotated[str | None, Field(description="Market symbol")] = None
+
+
+class AccountMonthlyPnlEntry(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        populate_by_name=True,
+    )
+    month: Annotated[str | None, Field(examples=["2026-05-01"])] = None
+    month_return_canonical: Annotated[str | None, Field(examples=["0.0123"])] = None
 
 
 class AccountSettingsResp(BaseModel):
@@ -80,6 +107,13 @@ class AccountSummaryResponse(BaseModel):
         str | None,
         Field(description="Amount required to open trade for the existing positions", examples=["63008.59689218"]),
     ] = None
+    last_seen_notification: Annotated[
+        int | None,
+        Field(
+            description="Latest notification event timestamp (ms) the user has seen — used for cross-device dedup",
+            examples=[1713400000000],
+        ),
+    ] = None
     maintenance_margin_requirement: Annotated[
         str | None, Field(description="Amount required to maintain exisiting positions", examples=["31597.25239676"])
     ] = None
@@ -89,10 +123,7 @@ class AccountSummaryResponse(BaseModel):
     seq_no: Annotated[
         int | None,
         Field(
-            description=(
-                "Unique increasing number (non-sequential) that is assigned to this account update. Can be used to"
-                " deduplicate multiple feeds"
-            ),
+            description="Unique increasing number (non-sequential) that is assigned to this account update. Can be used to deduplicate multiple feeds",
             examples=[1681471234972000000],
         ),
     ] = None
@@ -124,6 +155,10 @@ class ApiToken(BaseModel):
         extra="allow",
         populate_by_name=True,
     )
+    allowed_cidrs: Annotated[
+        list[str] | None,
+        Field(description="IP CIDR allowlist; empty means unrestricted", examples=[['["203.0.113.0/24"]']]),
+    ] = None
     created_at: Annotated[
         int | None, Field(description="Token creation timestamp (nanoseconds since epoch)", examples=[1640995200])
     ] = None
@@ -227,10 +262,7 @@ class BalanceResp(BaseModel):
     size: Annotated[
         str | None,
         Field(
-            description=(
-                "Balance amount of settlement token (includes deposits, withdrawals, realized PnL, realized funding,"
-                " and fees)"
-            ),
+            description="Balance amount of settlement token (includes deposits, withdrawals, realized PnL, realized funding, and fees)",
             examples=["123003.620"],
         ),
     ] = None
@@ -284,10 +316,7 @@ class BlockTradeSignature(BaseModel):
     signer_public_key: Annotated[
         str | None,
         Field(
-            default=None,
-            description=(
-                "Hex pubkey used to sign (main account key or active subkey). Empty defaults to account main key."
-            ),
+            description="Hex pubkey used to sign (main account key or active subkey). Empty defaults to account main key.",
             examples=["0xabc..."],
         ),
     ] = None
@@ -394,7 +423,6 @@ class ErrorCode(str, Enum):
     error_code_string_invalid_size_for_modify_order = "INVALID_ORDER_SIZE"
     error_code_string_client_order_id_not_found = "CLIENT_ORDER_ID_NOT_FOUND"
     error_code_string_duplicated_client_order_id = "DUPLICATED_CLIENT_ID"
-    error_code_string_invalid_price_precision = "INVALID_PRICE_PRECISION"
     error_code_string_invalid_symbol = "INVALID_SYMBOL"
     error_code_string_invalid_token = "INVALID_TOKEN"
     error_code_string_bad_eth_address = "INVALID_ETHEREUM_ADDRESS"
@@ -402,7 +430,6 @@ class ErrorCode(str, Enum):
     error_code_string_bad_stark_net_address = "INVALID_STARKNET_ADDRESS"
     error_code_string_bad_stark_net_signature = "INVALID_STARKNET_SIGNATURE"
     error_code_string_starknet_sig_verification_failed = "STARKNET_SIGNATURE_VERIFICATION_FAILED"
-    error_code_string_bad_format_starknet_call = "BAD_STARKNET_REQUEST"
     error_code_string_signer_mismatch = "ETHEREUM_SIGNER_MISMATCH"
     error_code_string_hash_mismatch = "ETHEREUM_HASH_MISMATCH"
     error_code_string_not_onboarded = "NOT_ONBOARDED"
@@ -415,6 +442,7 @@ class ErrorCode(str, Enum):
     error_code_string_unauthorized_eth_address = "UNAUTHORIZED_ETHEREUM_ADDRESS"
     error_code_string_unauthorized_error = "UNAUTHORIZED_ERROR"
     error_code_string_eth_address_already_onboarded = "ETHEREUM_ADDRESS_ALREADY_ONBOARDED"
+    error_code_string_evm_address_already_onboarded = "EVM_ADDRESS_ALREADY_ONBOARDED"
     error_code_string_market_not_found = "MARKET_NOT_FOUND"
     error_code_string_allowlist_not_found = "ALLOWLIST_ENTRY_NOT_FOUND"
     error_code_string_username_in_use = "USERNAME_IN_USE"
@@ -452,7 +480,6 @@ class ErrorCode(str, Enum):
     error_code_string_system_status_post_only = "SYSTEM_STATUS_POST_ONLY"
     error_code_string_system_status_cancel_only = "SYSTEM_STATUS_CANCEL_ONLY"
     error_code_string_invalid_marketing_code = "INVALID_MARKETING_CODE"
-    error_code_string_transaction_not_found = "TRANSACTION_NOT_FOUND"
     error_code_string_offer_not_found = "OFFER_NOT_FOUND"
     error_code_string_market_margin_restricted = "MARKET_MARGIN_RESTRICTED"
     error_code_string_not_unique = "NOT_UNIQUE"
@@ -461,12 +488,16 @@ class ErrorCode(str, Enum):
     error_code_string_onboarding_rate_limited = "ONBOARDING_RATE_LIMITED"
     error_code_string_subaccounts_limit_exceeded = "SUBACCOUNTS_LIMIT_EXCEEDED"
     error_code_string_insufficient_min_chain_balance = "INSUFFICIENT_MIN_CHAIN_BALANCE"
+    error_code_string_insufficient_evm_balance = "INSUFFICIENT_EVM_BALANCE"
+    error_code_string_portfolio_margin_onboarding_disabled = "PORTFOLIO_MARGIN_ONBOARDING_DISABLED"
+    error_code_string_portfolio_margin_invalid_account_kind = "PORTFOLIO_MARGIN_INVALID_ACCOUNT_KIND"
     error_code_string_bad_evm_signature = "INVALID_EVM_SIGNATURE"
     error_code_string_evm_sig_verification_failed = "EVM_SIGNATURE_VERIFICATION_FAILED"
     error_code_string_invalid_subkey = "INVALID_SUBKEY"
     error_code_string_subkey_not_activatable = "SUBKEY_NOT_ACTIVATABLE"
     error_code_string_token_limit_reached = "TOKEN_LIMIT_REACHED"
     error_code_string_invalid_token_scope = "INVALID_TOKEN_SCOPE"
+    error_code_string_ip_not_allowed = "IP_NOT_ALLOWED"
     error_code_string_insufficient_transferrable_xp = "INSUFFICIENT_TRANSFERRABLE_XP"
     error_code_string_transfer_limit_reached = "TRANSFER_LIMIT_REACHED"
     error_code_string_xp_transfers_disabled = "XP_TRANSFERS_DISABLED"
@@ -480,6 +511,8 @@ class ErrorCode(str, Enum):
     error_code_string_block_trade_missing_signers = "BLOCK_TRADE_MISSING_SIGNERS"
     error_code_string_block_trade_missing_signature = "BLOCK_TRADE_MISSING_SIGNATURE"
     error_code_string_block_trade_account_mismatch = "BLOCK_TRADE_ACCOUNT_MISMATCH"
+    error_code_string_block_trade_invalid_signature = "BLOCK_TRADE_INVALID_SIGNATURE"
+    error_code_string_block_trade_signer_key_unauthorized = "BLOCK_TRADE_SIGNER_KEY_UNAUTHORIZED"
     error_code_string_offer_already_cancelled = "OFFER_ALREADY_CANCELLED"
     error_code_string_offer_invalid_status = "OFFER_INVALID_STATUS"
     error_code_string_offer_unauthorized = "OFFER_UNAUTHORIZED"
@@ -930,20 +963,14 @@ class PositionResp(BaseModel):
     realized_positional_pnl: Annotated[
         str | None,
         Field(
-            description=(
-                "Realized PnL including both positional PnL and funding payments. Reset to 0 when position is closed or"
-                " flipped."
-            ),
+            description="Realized PnL including both positional PnL and funding payments. Reset to 0 when position is closed or flipped.",
             examples=["-123.23"],
         ),
     ] = None
     seq_no: Annotated[
         int | None,
         Field(
-            description=(
-                "Unique increasing number (non-sequential) that is assigned to this position update. Can be used to"
-                " deduplicate multiple feeds"
-            ),
+            description="Unique increasing number (non-sequential) that is assigned to this position update. Can be used to deduplicate multiple feeds",
             examples=[1681471234972000000],
         ),
     ] = None
@@ -961,9 +988,7 @@ class PositionResp(BaseModel):
     unrealized_pnl: Annotated[
         str | None,
         Field(
-            description=(
-                "Unrealized P&L of the position in the quote asset. Includes the unrealized running funding P&L."
-            ),
+            description="Unrealized P&L of the position in the quote asset. Includes the unrealized running funding P&L.",
             examples=["-123.23"],
         ),
     ] = None
@@ -1091,6 +1116,74 @@ class ShareRateResp(BaseModel):
     share_rate: Annotated[str | None, Field(examples=["0.2"])] = None
 
 
+class StakingStakeResp(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        populate_by_name=True,
+    )
+    account: Annotated[str | None, Field(description="Owner account address", examples=["0x1234abcd"])] = None
+    amount: Annotated[str | None, Field(description="Staked DIME amount", examples=["50000"])] = None
+    created_at: Annotated[
+        int | None, Field(description="Server timestamp (nanoseconds since epoch)", examples=[1640995200000000000])
+    ] = None
+    last_updated_at: Annotated[
+        int | None, Field(description="Last update timestamp (nanoseconds since epoch)", examples=[1640995200000000000])
+    ] = None
+    lock_duration: Annotated[
+        int | None, Field(description="Lock duration in seconds chosen at stake time", examples=[2592000])
+    ] = None
+    stake_id: Annotated[str | None, Field(description="On-chain stake ID (Pedersen hash)", examples=["0xabc123"])] = (
+        None
+    )
+    stake_txn_hash: Annotated[
+        str | None, Field(description="Transaction hash of the original stake", examples=["0xtxn123"])
+    ] = None
+    staked_at: Annotated[
+        int | None,
+        Field(description="Block timestamp when staked (nanoseconds since epoch)", examples=[1640995200000000000]),
+    ] = None
+    unstake_req_txn_hash: Annotated[
+        str | None, Field(description="Transaction hash of the unstake request", examples=[""])
+    ] = None
+    unstake_requested_at: Annotated[
+        int | None, Field(description="Block timestamp when unstake requested; 0 if not requested", examples=[0])
+    ] = None
+    unstake_txn_hash: Annotated[
+        str | None, Field(description="Transaction hash of the unstake completion", examples=[""])
+    ] = None
+    unstaked_at: Annotated[
+        int | None, Field(description="Block timestamp when unstaked; 0 if still active", examples=[0])
+    ] = None
+
+
+class StakingSummaryResponse(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        populate_by_name=True,
+    )
+    account: Annotated[str | None, Field(description="Account address", examples=["0x1234abcd"])] = None
+    active_stakes: Annotated[int | None, Field(description="Number of active stake entries", examples=[2])] = None
+    staking_tier: Annotated[str | None, Field(description="Current staking tier name", examples=["Silver"])] = None
+    total_staked: Annotated[str | None, Field(description="Total active staked DIME", examples=["50000"])] = None
+
+
+class StakingTierResp(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        populate_by_name=True,
+    )
+    fee_rates: Annotated[
+        dict[str, str] | None, Field(description="Absolute fee rates per asset type and order category")
+    ] = None
+    min_staked: Annotated[
+        str | None, Field(description="Minimum DIME staked to qualify for this tier", examples=["50000"])
+    ] = None
+    tier_name: Annotated[str | None, Field(description="Display name of the staking tier", examples=["Silver"])] = None
+    xp_multiplier: Annotated[
+        str | None, Field(description="XP earnings multiplier for this tier", examples=["1.3"])
+    ] = None
+
+
 class Strategy(BaseModel):
     model_config = ConfigDict(
         extra="allow",
@@ -1113,6 +1206,10 @@ class Subkey(BaseModel):
     )
     account_id: Annotated[
         str | None, Field(description="Account ID that owns this subkey", examples=["0x1234567890abcdef"])
+    ] = None
+    allowed_cidrs: Annotated[
+        list[str] | None,
+        Field(description="IP CIDR allowlist; empty means unrestricted", examples=[['["203.0.113.0/24"]']]),
     ] = None
     created_at: Annotated[
         int | None, Field(description="Subkey creation timestamp (nanoseconds since epoch)", examples=[1640995200])
@@ -1146,10 +1243,7 @@ class SystemConfigResponse(BaseModel):
     bridged_tokens: Annotated[
         list[BridgedToken] | None,
         Field(
-            description=(
-                "bridged tokens"
-                " config\nhttps://github.com/starknet-io/starknet-addresses/blob/master/bridged_tokens/goerli.json"
-            )
+            description="bridged tokens config\nhttps://github.com/starknet-io/starknet-addresses/blob/master/bridged_tokens/goerli.json"
         ),
     ] = None
     dime_staking_contract_address: Annotated[str | None, Field(description="DIME Staking contract address")] = None
@@ -1209,20 +1303,14 @@ class SystemConfigResponse(BaseModel):
     partial_liquidation_buffer: Annotated[
         str | None,
         Field(
-            description=(
-                "Partial liquidation buffer. Account value is supposed to be at least this much above the MMR after"
-                " partial liquidation"
-            ),
+            description="Partial liquidation buffer. Account value is supposed to be at least this much above the MMR after partial liquidation",
             examples=["0.2"],
         ),
     ] = None
     partial_liquidation_share_increment: Annotated[
         str | None,
         Field(
-            description=(
-                "Minimum granularity of partial liquidation share. The share is rounded up to the nearest multiple of"
-                " this value"
-            ),
+            description="Minimum granularity of partial liquidation share. The share is rounded up to the nearest multiple of this value",
             examples=["0.05"],
         ),
     ] = None
@@ -1239,7 +1327,7 @@ class SystemConfigResponse(BaseModel):
         str | None,
         Field(
             description="Full node RPC Proxy URL for Starknet",
-            examples=["https://rpc.api.testnet.paradex.trade/rpc/v0_9"],
+            examples=["https://rpc.api.testnet.paradex.trade/rpc/v0_10"],
         ),
     ] = None
     starknet_gateway_url: Annotated[str | None, Field(description="This field is deprecated")] = None
@@ -1344,18 +1432,14 @@ class TransactionResponse(BaseModel):
     hash: Annotated[
         str | None,
         Field(
-            description=(
-                "Tx Hash of the settled trade                                                // Hash of the transaction"
-            ),
+            description="Tx Hash of the settled trade                                                // Hash of the transaction",
             examples=["0x445c05d6bfb899e39338440d199971c4d7f4cde7878ed3888df3f716efb8df2"],
         ),
     ] = None
     id: Annotated[
         str | None,
         Field(
-            description=(
-                "Unique string ID of the event that triggered the transaction. For example, fill ID or liquidation ID"
-            ),
+            description="Unique string ID of the event that triggered the transaction. For example, fill ID or liquidation ID",
             examples=["12342423"],
         ),
     ] = None
@@ -1456,6 +1540,15 @@ class VaultHistoricalDataResp(BaseModel):
 class VaultKind(str, Enum):
     vault_kind_user = "user"
     vault_kind_protocol = "protocol"
+
+
+class VaultMonthlyPnlEntry(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        populate_by_name=True,
+    )
+    month: Annotated[str | None, Field(examples=["2026-05-01"])] = None
+    month_return_pct: Annotated[str | None, Field(examples=["0.0123"])] = None
 
 
 class VaultStatus(str, Enum):
@@ -1573,6 +1666,16 @@ class VaultSummaryResp(BaseModel):
     ] = None
 
 
+class VaultTopHolder(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        populate_by_name=True,
+    )
+    percentage: Annotated[str | None, Field(examples=["24.6371578053709186"])] = None
+    rank: Annotated[int | None, Field(examples=[1])] = None
+    value_usdc: Annotated[str | None, Field(examples=["3758808.50501487823"])] = None
+
+
 class VaultsConfigResponse(BaseModel):
     model_config = ConfigDict(
         extra="allow",
@@ -1591,9 +1694,7 @@ class VaultsConfigResponse(BaseModel):
     min_initial_deposit: Annotated[
         str | None,
         Field(
-            description=(
-                "Minimum initial collateral deposit (in currency units) at vault creation. Only applies to the owner"
-            ),
+            description="Minimum initial collateral deposit (in currency units) at vault creation. Only applies to the owner",
             examples=["1000"],
         ),
     ] = None
@@ -1621,6 +1722,42 @@ class VolShockParamsResp(BaseModel):
     min_vol_shock_up: Annotated[float | None, Field(examples=[0.4])] = None
     vega_power_long_dte: Annotated[float | None, Field(examples=[0.13])] = None
     vega_power_short_dte: Annotated[float | None, Field(examples=[0.3])] = None
+
+
+class VolumeTierKindInfo(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        populate_by_name=True,
+    )
+    tier: Annotated[str | None, Field(description='Effective tier name, e.g. "VIP 1"')] = None
+    volume: Annotated[str | None, Field(description="Traded volume for the tier's duration window")] = None
+
+
+class VolumeTierResp(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        populate_by_name=True,
+    )
+    fee_rates: dict[str, str] | None = None
+    kind: Annotated[str | None, Field(examples=["retail"])] = None
+    min_volume: Annotated[str | None, Field(examples=["100000"])] = None
+    min_volume_duration: Annotated[str | None, Field(examples=["14d"])] = None
+    nft_min_volume: Annotated[str | None, Field(examples=["0"])] = None
+    sort_order: Annotated[int | None, Field(examples=[1])] = None
+    tier_name: Annotated[str | None, Field(examples=["VIP 1"])] = None
+
+
+class WindowedMetrics(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        populate_by_name=True,
+    )
+    window_1y: str | None = None
+    window_24h: str | None = None
+    window_30d: str | None = None
+    window_7d: str | None = None
+    window_90d: str | None = None
+    window_all: str | None = None
 
 
 class XPTransfer(BaseModel):
@@ -1653,6 +1790,31 @@ class XPTransfer(BaseModel):
     ] = None
 
 
+class AccountAnalytics(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        populate_by_name=True,
+    )
+    account_address: Annotated[str | None, Field(examples=["0x1234567890abcdef"])] = None
+    annualized_volatility: WindowedMetrics | None = None
+    apr: WindowedMetrics | None = None
+    apr_simple_itd: str | None = None
+    cum_return: str | None = None
+    cumulative_pnl_series: list[AccountDailyPnlPoint] | None = None
+    cumulative_pnl_usd: str | None = None
+    end_value: str | None = None
+    hourly_cumulative_pnl_series: list[AccountHourlyPnlPoint] | None = None
+    max_dd: WindowedMetrics | None = None
+    max_drawdown_to_date: str | None = None
+    monthly_pnl_last_12m: list[AccountMonthlyPnlEntry] | None = None
+    pnl: WindowedMetrics | None = None
+    return_: Annotated[WindowedMetrics | None, Field(alias="return")] = None
+    sharpe: WindowedMetrics | None = None
+    sharpe_annualized_itd: str | None = None
+    strategy_name: Annotated[str | None, Field(examples=["Spot LP"])] = None
+    vol_annualized_itd: str | None = None
+
+
 class AccountInfoResponse(BaseModel):
     model_config = ConfigDict(
         extra="allow",
@@ -1674,6 +1836,13 @@ class AccountInfoResponse(BaseModel):
         ),
     ] = None
     fees: Fees | None = None
+    has_ecosystem_nft: Annotated[
+        bool | None,
+        Field(
+            description="True if account owns an ecosystem NFT (Money Badgers / ShizoPunk) — qualifies for the lower retail tier thresholds",
+            examples=[False],
+        ),
+    ] = None
     isolated_market: Annotated[
         str | None, Field(description="Isolated market for the account", examples=["ETHUSD-PERP"])
     ] = None
@@ -1692,6 +1861,7 @@ class AccountInfoResponse(BaseModel):
         ),
     ] = None
     username: Annotated[str | None, Field(description="Username of the account", examples=["username"])] = None
+    volume_tiers: Annotated[dict[str, VolumeTierKindInfo] | None, Field(description="Volume tier info by kind")] = None
 
 
 class AccountProfileResp(BaseModel):
@@ -1702,6 +1872,7 @@ class AccountProfileResp(BaseModel):
     ai_agent_url: Annotated[str | None, Field(examples=["wss://agent.example.com:18789"])] = None
     discord: DiscordProfile | None = None
     is_username_private: Annotated[bool | None, Field(examples=[True])] = None
+    last_seen_notification: Annotated[int | None, Field(examples=[1713400000000])] = None
     market_max_slippage: dict[str, str] | None = None
     marketed_by: Annotated[str | None, Field(examples=["maxDegen"])] = None
     nfts: list[Nft] | None = None
@@ -1792,7 +1963,7 @@ class BlockTradeOrder(BaseModel):
         populate_by_name=True,
     )
     account: Annotated[
-        str | None, Field(description="Starknet account address of the order owner", examples=["0x1234567890abcdef"])
+        str | None, Field(description="Paradex account address of the order owner", examples=["0x1234567890abcdef"])
     ] = None
     client_id: Annotated[str | None, Field(description="Client-provided identifier", examples=["order_123"])] = None
     flags: Annotated[list[OrderFlag] | None, Field(description="Order flags, allow flag: REDUCE_ONLY")] = None
@@ -1856,10 +2027,7 @@ class FillResult(BaseModel):
     orderbook_seq_no: Annotated[
         int | None,
         Field(
-            description=(
-                "Orderbook sequence number after trade execution (post-execution state). Use seqno-1 for pre-execution."
-                " 0 for position transfers (liquidations, settlements)"
-            ),
+            description="Orderbook sequence number after trade execution (post-execution state). Use seqno-1 for pre-execution. 0 for position transfers (liquidations, settlements)",
             examples=[12345],
         ),
     ] = None
@@ -1919,20 +2087,17 @@ class MarketSummaryResp(BaseModel):
     external_fair_price: Annotated[
         str | None,
         Field(
-            description=(
-                "External fair price, calculated from spot price and an external basis: spot_price * (1 +"
-                " external_basis). where external basis is the median basis rate on different external exchanges"
-            ),
+            description="External fair price, calculated from spot price and an external basis: spot_price * (1 + external_basis). where external basis is the median basis rate on different external exchanges",
             examples=["29876.3"],
         ),
+    ] = None
+    forward_rate: Annotated[
+        str | None, Field(description="EWMA-smoothed annualized forward rate for dated options", examples=["0.05"])
     ] = None
     funding_rate: Annotated[
         str | None,
         Field(
-            description=(
-                "This raw funding rate corresponds to the actual funding period of the instrument itself. It is not a"
-                " normalized 8h funding rate."
-            ),
+            description="This raw funding rate corresponds to the actual funding period of the instrument itself. It is not a normalized 8h funding rate.",
             examples=["0.3"],
         ),
     ] = None
@@ -1959,6 +2124,9 @@ class MarketSummaryResp(BaseModel):
     ] = None
     price_change_rate_24h: Annotated[
         str | None, Field(description="Price change rate in the last 24 hours", examples=["0.05"])
+    ] = None
+    risk_free_rate: Annotated[
+        str | None, Field(description="Risk-free discounting rate used for option pricing", examples=["0.05"])
     ] = None
     rolling_details: Annotated[
         RollingDetailsResp | None,
@@ -2032,11 +2200,7 @@ class OrderResp(BaseModel):
     seq_no: Annotated[
         int | None,
         Field(
-            description=(
-                "Unique increasing number (non-sequential) that is assigned to this order update and changes on every"
-                " order update. Can be used to deduplicate multiple feeds. WebSocket and REST responses use"
-                " independently generated seq_no per event."
-            ),
+            description="Unique increasing number (non-sequential) that is assigned to this order update and changes on every order update. Can be used to deduplicate multiple feeds. WebSocket and REST responses use independently generated seq_no per event.",
             examples=[1681471234972000000],
         ),
     ] = None
@@ -2061,6 +2225,19 @@ class PortfolioMarginParamsResp(BaseModel):
     scenarios: list[PortfolioMarginScenarioResp] | None = None
     unhedged_margin_factor: Annotated[float | None, Field(examples=[0.02])] = None
     vol_shock_params: VolShockParamsResp | None = None
+
+
+class StakingConfigResponse(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        populate_by_name=True,
+    )
+    dime_fee_discount_pct: Annotated[
+        str | None, Field(description='DIME fee payment discount percentage (e.g. "20")')
+    ] = None
+    tiers: Annotated[
+        list[StakingTierResp] | None, Field(description="All available staking tiers sorted by threshold")
+    ] = None
 
 
 class SystemStateResponse(BaseModel):
@@ -2157,6 +2334,37 @@ class TransferResult(BaseModel):
     ] = None
 
 
+class VaultAnalytics(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        populate_by_name=True,
+    )
+    address: Annotated[str | None, Field(examples=["0x1234567890abcdef"])] = None
+    annualized_volatility: WindowedMetrics | None = None
+    apr: WindowedMetrics | None = None
+    as_of: Annotated[str | None, Field(examples=["2026-05-05 09:00:00.000"])] = None
+    best_period_return: WindowedMetrics | None = None
+    max_drawdown: WindowedMetrics | None = None
+    monthly_pnl_last_12m: list[VaultMonthlyPnlEntry] | None = None
+    pct_positive: WindowedMetrics | None = None
+    pnl: WindowedMetrics | None = None
+    recovery_hours: WindowedMetrics | None = None
+    sharpe_ratio: WindowedMetrics | None = None
+    top_holders: list[VaultTopHolder] | None = None
+    worst_period_return: WindowedMetrics | None = None
+
+
+class VaultAnalyticsResp(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        populate_by_name=True,
+    )
+    address: Annotated[str | None, Field(examples=["0x1234567890abcdef"])] = None
+    as_of: Annotated[str | None, Field(examples=["2026-05-05 09:00:00.000"])] = None
+    substrategies: list[AccountAnalytics] | None = None
+    vault_level: VaultAnalytics | None = None
+
+
 class VaultResp(BaseModel):
     model_config = ConfigDict(
         extra="allow",
@@ -2169,15 +2377,16 @@ class VaultResp(BaseModel):
         int | None,
         Field(description="Unix timestamp in milliseconds of when the vault has been created", examples=[1517171717]),
     ] = None
+    curator_name: Annotated[
+        str | None, Field(description="Curator name of the vault (empty string if not set)", examples=["Some Curator"])
+    ] = None
     description: Annotated[str | None, Field(description="Description of the vault", examples=["My description"])] = (
         None
     )
     kind: Annotated[
         VaultKind | None,
         Field(
-            description=(
-                "Kind of the vault: 'user' for user-defined vaults, 'protocol' for vaults controlled by Paradex"
-            ),
+            description="Kind of the vault: 'user' for user-defined vaults, 'protocol' for vaults controlled by Paradex",
             examples=["user"],
         ),
     ] = None
@@ -2201,6 +2410,10 @@ class VaultResp(BaseModel):
     ] = None
     status: Annotated[VaultStatus | None, Field(description="Status of the vault", examples=["ACTIVE"])] = None
     strategies: Annotated[list[Strategy] | None, Field(description="Strategies of the vault")] = None
+    strategy_description: Annotated[
+        str | None,
+        Field(description="Strategy description of the vault (empty string if not set)", examples=["Delta Neutral"]),
+    ] = None
     token_address: Annotated[str | None, Field(description="LP token address")] = None
 
 
@@ -2263,10 +2476,7 @@ class MarketResp(BaseModel):
     fee_config: Annotated[
         MarketFeeConfig | None,
         Field(
-            description=(
-                "Fee config indicates override fee for the market. If not set, it will use the global exchange fee"
-                " config"
-            )
+            description="Fee config indicates override fee for the market. If not set, it will use the global exchange fee config"
         ),
     ] = None
     funding_multiplier: Annotated[float | None, Field(description="Funding multiplier", examples=[1])] = None
