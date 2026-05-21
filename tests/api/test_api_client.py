@@ -145,3 +145,40 @@ class TestParadexApiClient:
             # Verify price_kind is not in params when not provided
             called_params = mock_get.call_args[1]["params"]
             assert "price_kind" not in called_params
+
+    def test_update_subkey_allowed_cidrs_replaces_list(self):
+        """update_subkey_allowed_cidrs PUTs the replacement CIDR list to the subkey endpoint."""
+        public_key = "0xabc123"
+        allowed_cidrs = ["203.0.113.0/24", "198.51.100.42/32"]
+
+        with patch.object(self.api_client, "put") as mock_put:
+            mock_put.return_value = {"public_key": public_key, "allowed_cidrs": allowed_cidrs}
+
+            result = self.api_client.update_subkey_allowed_cidrs(public_key, allowed_cidrs)
+
+            mock_put.assert_called_once_with(
+                api_url=self.api_client.api_url,
+                path=f"account/keys/subkeys/{public_key}/allowed-cidrs",
+                payload={"allowed_cidrs": allowed_cidrs},
+                params=None,
+                headers=None,
+            )
+            self.api_client._validate_auth.assert_called_once()
+            assert result["allowed_cidrs"] == allowed_cidrs
+
+    def test_update_subkey_allowed_cidrs_empty_clears_allowlist(self):
+        """An empty list clears the allowlist (unrestricted)."""
+        public_key = "0xabc123"
+
+        with patch.object(self.api_client, "put") as mock_put:
+            mock_put.return_value = {"public_key": public_key, "allowed_cidrs": []}
+
+            self.api_client.update_subkey_allowed_cidrs(public_key, [])
+
+            mock_put.assert_called_once_with(
+                api_url=self.api_client.api_url,
+                path=f"account/keys/subkeys/{public_key}/allowed-cidrs",
+                payload={"allowed_cidrs": []},
+                params=None,
+                headers=None,
+            )

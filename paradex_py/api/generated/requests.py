@@ -1,4 +1,4 @@
-# Generated from Paradex API spec version 1.119.0
+# Generated from Paradex API spec version 1.121.0
 
 from __future__ import annotations
 
@@ -97,6 +97,13 @@ class CreateSubkey(BaseModel):
             examples=["0x123..."],
         ),
     ] = None
+    evm_signature: Annotated[
+        str | None,
+        Field(
+            description="EVM (EIP-191) registration signature, used in place of `signature` /\n`signature_timestamp` / `signature_expiry` when the account's main\nkey is a secp256k1 key (AccountSignerType == EIP191). The server\nreconstructs nothing — the raw SIWE message presented to the user is\nsupplied verbatim in `siwe_message` and the personal_sign signature\nin `evm_signature`. The SIWE message's Statement must equal\n\"Paradex Subkey Registration: 0x<new_subkey_pubkey>\" (lowercased\npubkey); that line is what binds the authorisation to the specific\nsubkey being registered.",
+            examples=["0x..."],
+        ),
+    ] = None
     name: Annotated[str, Field(description="User-friendly name for the subkey.", examples=["My Trading Subkey"])]
     public_key: Annotated[
         str,
@@ -105,6 +112,21 @@ class CreateSubkey(BaseModel):
             examples=["0x3d9f2b2e5f50c1aade60ca540368cd7490160f41270c192c05729fe35b656a9"],
         ),
     ]
+    signature: Annotated[
+        list[str] | None,
+        Field(
+            description="Signature from the account's main StarkNet private key over\npedersen_array(account, public_key, signature_timestamp, signature_expiry).\nRequired when the server enforces main-key authorization on subkey\nregistration (feature flag EnableSubkeyRegistrationSignature). Format: [r, s].",
+            examples=[['["0xr..."', '"0xs..."]']],
+        ),
+    ] = None
+    signature_expiry: Annotated[
+        int | None,
+        Field(description="Unix seconds; included in signed message and bounds replay window.", examples=[1706400600]),
+    ] = None
+    signature_timestamp: Annotated[
+        int | None, Field(description="Unix seconds; included in signed message.", examples=[1706400000])
+    ] = None
+    siwe_message: Annotated[str | None, Field(examples=["app.paradex.trade wants you to sign in..."])] = None
     state: Annotated[
         str | None,
         Field(description="State of the subkey: 'active' or 'pending'. Defaults to 'active'.", examples=["active"]),
@@ -130,6 +152,9 @@ class CreateVault(BaseModel):
         extra="allow",
         populate_by_name=True,
     )
+    curator_name: Annotated[
+        str | None, Field(description="Curator name for the vault (optional)", examples=["Some Curator"])
+    ] = None
     deposit_tx_signature: Annotated[
         str | None, Field(description="Initial deposit transfer by vault owner", examples=["["])
     ] = None
@@ -149,6 +174,9 @@ class CreateVault(BaseModel):
     public_key: Annotated[
         str | None, Field(description="Public key of vault operator", examples=["0x1234567890abcdef"])
     ] = None
+    strategy_description: Annotated[
+        str | None, Field(description="Strategy description for the vault (optional)", examples=["Delta Neutral"])
+    ] = None
 
 
 class CreateXPTransferRequest(BaseModel):
@@ -160,9 +188,7 @@ class CreateXPTransferRequest(BaseModel):
     is_private: Annotated[
         bool | None,
         Field(
-            description=(
-                "Whether the transfer is private (not shown on public feeds). Defaults to false if not provided."
-            ),
+            description="Whether the transfer is private (not shown on public feeds). Defaults to false if not provided.",
             examples=[False],
         ),
     ] = False
@@ -249,6 +275,20 @@ class UpdateAccountProfileRequest(BaseModel):
     xp_share_rate: Annotated[str | None, Field(examples=["0.2"])] = None
 
 
+class UpdateAllowedCIDRs(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        populate_by_name=True,
+    )
+    allowed_cidrs: Annotated[
+        list[str] | None,
+        Field(
+            description="Full replacement list. Empty = unrestricted.",
+            examples=[['["203.0.113.0/24"', '"198.51.100.42/32"]']],
+        ),
+    ] = None
+
+
 class UpdateNotificationPreferencesRequest(BaseModel):
     model_config = ConfigDict(
         extra="allow",
@@ -301,12 +341,16 @@ class AlgoOrderRequest(BaseModel):
         populate_by_name=True,
     )
     algo_type: Annotated[str, Field(description="Algo type, required for algo orders creation", examples=["TWAP"])]
+    dime_discount: Annotated[
+        bool | None,
+        Field(
+            description="If true, child-order fees are charged in DIME with the DIME discount applied; falls back to USDC if balance is insufficient"
+        ),
+    ] = None
     duration_seconds: Annotated[
         int,
         Field(
-            description=(
-                "Duration in seconds for which the algo order will be running, required for algo orders creation"
-            ),
+            description="Duration in seconds for which the algo order will be running, required for algo orders creation",
             examples=[3600],
         ),
     ]
@@ -324,10 +368,7 @@ class AlgoOrderRequest(BaseModel):
     recv_window: Annotated[
         int | None,
         Field(
-            description=(
-                "Order will be created if it is received by API within RecvWindow milliseconds from signature"
-                " timestamp, minimum is 10 milliseconds"
-            )
+            description="Order will be created if it is received by API within RecvWindow milliseconds from signature timestamp, minimum is 10 milliseconds"
         ),
     ] = None
     side: Annotated[responses.OrderSide, Field(description="Algo order side", examples=["MARKET"])]
@@ -356,9 +397,7 @@ class BlockExecuteRequest(BaseModel):
     signatures: Annotated[
         dict[str, responses.BlockTradeSignature],
         Field(
-            description=(
-                "Map of offer IDs to initiator signatures accepting each offer. Block id if it is a direct block trade."
-            )
+            description="Map of offer IDs to initiator signatures accepting each offer. Block id if it is a direct block trade."
         ),
     ]
 
@@ -371,6 +410,12 @@ class Onboarding(BaseModel):
     marketing_code: Annotated[
         str | None,
         Field(description="Marketing code of the campaign the user is being onboarded via.", examples=["abcd:code1"]),
+    ] = None
+    portfolio_margin: Annotated[
+        bool | None,
+        Field(
+            description="When true, the new account is onboarded directly into Portfolio Margin mode. Only valid for main accounts and subaccounts."
+        ),
     ] = None
     public_key: Annotated[
         str | None,
@@ -394,6 +439,12 @@ class OrderRequest(BaseModel):
     client_id: Annotated[
         str | None, Field(description="Unique client assigned ID for the order", examples=["123454321"], max_length=64)
     ] = None
+    dime_discount: Annotated[
+        bool | None,
+        Field(
+            description="If true, fees are charged in DIME with the DIME discount applied; falls back to USDC if balance is insufficient"
+        ),
+    ] = None
     flags: Annotated[list[responses.OrderFlag] | None, Field(description="Order flags, allow flag: REDUCE_ONLY")] = None
     instruction: Annotated[
         responses.OrderInstruction, Field(description="Order Instruction, GTC, IOC, RPI or POST_ONLY if empty GTC")
@@ -410,10 +461,7 @@ class OrderRequest(BaseModel):
     recv_window: Annotated[
         int | None,
         Field(
-            description=(
-                "Order will be created if it is received by API within RecvWindow milliseconds from signature"
-                " timestamp, minimum is 10 milliseconds"
-            )
+            description="Order will be created if it is received by API within RecvWindow milliseconds from signature timestamp, minimum is 10 milliseconds"
         ),
     ] = None
     side: Annotated[responses.OrderSide, Field(description="Order side")]
