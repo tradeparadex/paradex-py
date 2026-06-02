@@ -19,11 +19,11 @@ jobs:
       (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
     runs-on: ubuntu-latest
     permissions:
-      id-token: write      # mandatory for OIDC — omitting causes silent auth failure
+      id-token: write # mandatory for OIDC — omitting causes silent auth failure
       contents: write
       pull-requests: write
       issues: write
-      actions: read        # lets Claude read CI results on PRs
+      actions: read # lets Claude read CI results on PRs
     steps:
       - name: Generate GitHub App token
         uses: actions/create-github-app-token@v1
