@@ -1,12 +1,19 @@
 import base64
 import secrets
+import types
 from datetime import datetime, timedelta, timezone
 
 from eth_account import Account
 from eth_account.messages import encode_defunct
 from eth_keys.datatypes import PrivateKey
-from starknet_py.common import int_from_hex
+from httpx import AsyncClient
+from starknet_py.common import int_from_bytes, int_from_hex
+from starknet_py.net.full_node_client import FullNodeClient
+from starknet_py.net.http_client import HttpMethod
 
+from paradex_py.account.account import CustomStarknetChainId
+from paradex_py.account.eip191_signer import Eip191Signer
+from paradex_py.account.starknet import Account as StarknetAccount
 from paradex_py.account.utils import derive_l2_address_eip191
 from paradex_py.api.models import SystemConfig
 from paradex_py.environment import Environment
@@ -53,6 +60,7 @@ class EvmAccount:
         evm_private_key: str,
         l2_address: str | None = None,
         is_onboarded: bool | None = None,
+        rpc_version: str | None = None,
     ):
         if not evm_address:
             raise_value_error("EvmAccount: EVM address is required")
@@ -61,6 +69,8 @@ class EvmAccount:
 
         self.config = config
         self.env = env
+        self._evm_private_key = evm_private_key
+        self._rpc_version = rpc_version
 
         # Normalise address to checksum format
         self._eth_account = Account.from_key(evm_private_key)
@@ -81,6 +91,62 @@ class EvmAccount:
             # construction and is intended for eventual removal.
             self.l2_address = derive_l2_address_eip191(config, self.evm_address)
         self.is_onboarded = is_onboarded
+
+        # StarkNet account backed by an EIP-191 signer, so on-chain operations
+        # (deposit / withdraw / transfer / guardian) can be signed with the
+        # Ethereum key. The account contract validates the resulting
+        # SignerSignature via secp256k1/EIP-191 on-chain.
+        self.l2_chain_id = int_from_bytes(config.starknet_chain_id.encode())
+        self.jwt_token: str | None = None
+        self.starknet = self._build_starknet_account()
+        self._apply_fullnode_jwt_patch(self.starknet.client)
+
+    def _apply_fullnode_jwt_patch(self, client) -> None:
+        """Attach the account's JWT to fullnode RPC requests.
+
+        An EVM account authenticates with the ``Authorization: Bearer <jwt>``
+        token obtained during SIWE auth and sends it on each RPC call.
+        """
+        current_self = self
+
+        # Skip starknet_py's RPC spec-version probe (it only emits a warning on
+        # mismatch); the endpoint may report a newer spec than the pinned
+        # EXPECTED_RPC_VERSION.
+        client._client._is_spec_version_verified = True
+
+        async def jwt_make_request(
+            self,
+            session: AsyncClient,
+            address: str,
+            http_method: HttpMethod,
+            params: dict,
+            payload: dict,
+        ) -> dict:
+            headers = {"Content-Type": "application/json"}
+            if current_self.jwt_token:
+                headers["Authorization"] = f"Bearer {current_self.jwt_token}"
+            response = await session.request(
+                method=http_method.value, url=address, params=params, json=payload, headers=headers
+            )
+            await self.handle_request_error(response)
+            return await response.json()
+
+        client._client._make_request = types.MethodType(jwt_make_request, client._client)
+
+    def _build_starknet_account(self) -> StarknetAccount:
+        if self._rpc_version:
+            node_url = f"{self.config.starknet_fullnode_rpc_base_url}/rpc/{self._rpc_version}"
+        else:
+            node_url = self.config.starknet_fullnode_rpc_url
+        client = FullNodeClient(node_url=node_url)
+        chain = CustomStarknetChainId(self.l2_chain_id)
+        signer = Eip191Signer(self._evm_private_key, int(chain))
+        return StarknetAccount(
+            client=client,
+            address=self.l2_address,
+            signer=signer,
+            chain=chain,  # ty: ignore[invalid-argument-type]
+        )
 
     # ------------------------------------------------------------------
     # SIWE helpers
