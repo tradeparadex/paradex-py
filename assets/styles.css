@@ -1,0 +1,22 @@
+.md-header__button.md-logo img,
+.md-header__button.md-logo svg {
+  height: 0.6rem;
+}
+
+[dir="ltr"] .md-header__title {
+  margin-left: 0.5rem;
+}
+
+.md-header__topic:first-child {
+  font-weight: 400;
+}
+
+.md-header__title {
+  font-size: 0.75rem;
+}
+
+.doc.doc-heading code,
+.md-nav__item .md-nav__link--active,
+.md-nav__item .md-nav__link--active code {
+  color: var(--md-accent-fg-color);
+}
