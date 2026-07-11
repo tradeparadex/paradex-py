@@ -1,4 +1,5 @@
 import logging
+from typing import TYPE_CHECKING
 
 from paradex_py._client_base import _ClientBase
 from paradex_py.account.subkey_account import SubkeyAccount
@@ -7,6 +8,9 @@ from paradex_py.api.ws_client import ParadexWebsocketClient
 from paradex_py.auth_level import AuthLevel
 from paradex_py.environment import Environment, _validate_env
 from paradex_py.utils import raise_value_error
+
+if TYPE_CHECKING:
+    from paradex_py.api.models import SystemConfig
 
 __all__ = ["ParadexL2"]
 
@@ -29,6 +33,10 @@ class ParadexL2(_ClientBase):
         ws_timeout (int, optional): WebSocket read timeout in seconds. Defaults to None (uses default).
         ws_enabled (bool, optional): Whether to create a WebSocket client. Defaults to True.
             Set to False for REST-only use cases to avoid starting background connection machinery.
+        config (SystemConfig, optional): Pre-fetched system configuration. If provided,
+            it is used as-is and the ``GET /system/config`` request is skipped. Callers
+            that build many clients can fetch it once and reuse it. Defaults to None
+            (fetched from the API).
 
     Examples:
         >>> from paradex_py import ParadexL2
@@ -49,6 +57,7 @@ class ParadexL2(_ClientBase):
         ws_timeout: int | None = None,
         ws_enabled: bool = True,
         ws_sbe_enabled: bool = False,
+        config: "SystemConfig | None" = None,
     ):
         _validate_env(env, "ParadexL2")
 
@@ -72,7 +81,10 @@ class ParadexL2(_ClientBase):
             if ws_enabled
             else None
         )
-        self.config = self.api_client.fetch_system_config()
+        if config is not None:
+            self.config = config
+        else:
+            self.config = self.api_client.fetch_system_config()
 
         self.account = SubkeyAccount(
             config=self.config,
