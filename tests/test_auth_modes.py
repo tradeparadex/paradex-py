@@ -827,9 +827,7 @@ class TestParadexEvm:
     @patch("paradex_py.paradex_evm.EvmAccount")
     @patch("paradex_py.paradex_evm.ParadexWebsocketClient")
     @patch("paradex_py.paradex_evm.ParadexApiClient")
-    def test_vault_operator_index_server_derivation(
-        self, MockApiClient, MockWsClient, MockEvmAccount, mock_derive
-    ):
+    def test_vault_operator_index_server_derivation(self, MockApiClient, MockWsClient, MockEvmAccount, mock_derive):
         """server_derive_address=True resolves the operator address via GET /onboarding
         with the vault_operator_index param. (derive_l2_address_eip191 is patched to a
         value distinct from the server's answer — the main-account-fallback guard

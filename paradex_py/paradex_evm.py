@@ -138,49 +138,14 @@ class ParadexEvm(_ClientBase):
         # what both the ``/onboarding`` endpoint and the local derivation helper expect.
         checksum_address = EthAccount.from_key(evm_private_key).address
         is_vault_operator = vault_operator_address is not None or vault_operator_index is not None
-        is_onboarded: bool | None = None
         if is_vault_operator:
-            # Operator sessions authenticate as the operator's L2 address while
-            # signing SIWE with the owner's key. Operators are onboarded by vault
-            # creation, never by POST /v2/onboarding, so is_onboarded=True skips
-            # the auto-onboarding path and goes straight to POST /v2/auth.
-            if vault_operator_address is not None:
-                l2_address_hex = vault_operator_address
-            elif server_derive_address:
-                info = self.api_client.fetch_onboarding(
-                    {
-                        "account_signer_type": "eip191",
-                        "eth_address": checksum_address,
-                        "vault_operator_index": vault_operator_index,
-                    }
-                )
-                l2_address_hex = info["address"]
-                if info.get("exists") is False:
-                    raise_value_error(
-                        f"ParadexEvm: vault operator index {vault_operator_index} "
-                        f"({l2_address_hex}) does not exist yet — operators are created "
-                        "by vault creation with operator_signer_type=eip191"
-                    )
-                # A server that predates EVM vault operators ignores the unknown
-                # vault_operator_index query param and answers for the OWNER's
-                # main account. Never let an "operator" session silently target
-                # the main account.
-                if int(l2_address_hex, 16) == derive_l2_address_eip191(self.config, checksum_address):
-                    raise_value_error(
-                        "ParadexEvm: GET /onboarding returned the owner's main account "
-                        f"for vault_operator_index={vault_operator_index} — this server "
-                        "does not support EVM vault operators (feature flag off or "
-                        "pre-feature deployment)"
-                    )
-            else:
-                if vault_operator_index is None:
-                    # Unreachable: is_vault_operator with no address implies an
-                    # index. The explicit check narrows the type for ty.
-                    raise_value_error("ParadexEvm: vault operator session requires an index")
-                l2_address_hex = hex(
-                    derive_vault_operator_l2_address_eip191(self.config, checksum_address, vault_operator_index)
-                )
-            is_onboarded = True
+            l2_address_hex = self._resolve_operator_address(
+                checksum_address, vault_operator_address, vault_operator_index, server_derive_address
+            )
+            # Operators are onboarded by vault creation, never by POST
+            # /v2/onboarding, so is_onboarded=True skips the auto-onboarding
+            # path and goes straight to POST /v2/auth.
+            is_onboarded: bool | None = True
         elif server_derive_address:
             info = self.api_client.fetch_onboarding(
                 {
@@ -193,6 +158,7 @@ class ParadexEvm(_ClientBase):
             is_onboarded = bool(exists) if exists is not None else None
         else:
             l2_address_hex = hex(derive_l2_address_eip191(self.config, checksum_address))
+            is_onboarded = None
 
         self.account = EvmAccount(
             config=self.config,
@@ -205,6 +171,56 @@ class ParadexEvm(_ClientBase):
         )
 
         self.api_client.init_account_evm(self.account)
+
+    def _resolve_operator_address(
+        self,
+        checksum_address: str,
+        vault_operator_address: str | None,
+        vault_operator_index: int | None,
+        server_derive_address: bool,
+    ) -> str:
+        """Resolve the L2 address of the vault operator this session targets.
+
+        Operator sessions authenticate as the operator's L2 address while
+        signing SIWE with the owner's key. The address comes from (in order):
+        the explicit ``vault_operator_address``, the server
+        (``GET /onboarding?vault_operator_index=N``) when
+        ``server_derive_address`` is on, or local derivation.
+        """
+        if vault_operator_address is not None:
+            return vault_operator_address
+        if vault_operator_index is None:
+            # Unreachable from __init__ (operator sessions imply an address or
+            # an index); the explicit check narrows the type for ty.
+            raise_value_error("ParadexEvm: vault operator session requires an address or index")
+        if not server_derive_address:
+            return hex(derive_vault_operator_l2_address_eip191(self.config, checksum_address, vault_operator_index))
+        info = self.api_client.fetch_onboarding(
+            {
+                "account_signer_type": "eip191",
+                "eth_address": checksum_address,
+                "vault_operator_index": vault_operator_index,
+            }
+        )
+        l2_address_hex: str = info["address"]
+        if info.get("exists") is False:
+            raise_value_error(
+                f"ParadexEvm: vault operator index {vault_operator_index} "
+                f"({l2_address_hex}) does not exist yet — operators are created "
+                "by vault creation with operator_signer_type=eip191"
+            )
+        # A server that predates EVM vault operators ignores the unknown
+        # vault_operator_index query param and answers for the OWNER's main
+        # account. Never let an "operator" session silently target the main
+        # account.
+        if int(l2_address_hex, 16) == derive_l2_address_eip191(self.config, checksum_address):
+            raise_value_error(
+                "ParadexEvm: GET /onboarding returned the owner's main account "
+                f"for vault_operator_index={vault_operator_index} — this server "
+                "does not support EVM vault operators (feature flag off or "
+                "pre-feature deployment)"
+            )
+        return l2_address_hex
 
     @property
     def auth_level(self) -> AuthLevel:
