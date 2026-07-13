@@ -39,6 +39,13 @@ class EvmAccount:
         env (Environment): Environment (used to select the SIWE domain).
         evm_address (str): Ethereum address (checksummed or lowercase hex).
         evm_private_key (str): Ethereum private key (hex string with 0x prefix).
+        l2_address (str, optional): Pre-resolved L2 address; derived from the EVM
+            address when omitted.
+        is_onboarded (bool, optional): Cached onboarding state; ``True`` skips the
+            auto-onboarding path.
+        is_vault_operator (bool, optional): The session targets an EVM vault
+            operator sub-account (requires ``l2_address``). Operators are onboarded
+            by vault creation — ``onboarding_headers()`` raises for them.
 
     Examples:
         >>> from paradex_py.account.evm_account import EvmAccount
@@ -61,11 +68,14 @@ class EvmAccount:
         l2_address: str | None = None,
         is_onboarded: bool | None = None,
         rpc_version: str | None = None,
+        is_vault_operator: bool = False,
     ):
         if not evm_address:
             raise_value_error("EvmAccount: EVM address is required")
         if not evm_private_key:
             raise_value_error("EvmAccount: EVM private key is required")
+        if is_vault_operator and l2_address is None:
+            raise_value_error("EvmAccount: a vault operator account requires a pre-resolved l2_address")
 
         self.config = config
         self.env = env
@@ -91,6 +101,7 @@ class EvmAccount:
             # construction and is intended for eventual removal.
             self.l2_address = derive_l2_address_eip191(config, self.evm_address)
         self.is_onboarded = is_onboarded
+        self.is_vault_operator = is_vault_operator
 
         # StarkNet account backed by an EIP-191 signer, so on-chain operations
         # (deposit / withdraw / transfer / guardian) can be signed with the
@@ -207,6 +218,13 @@ class EvmAccount:
     # ------------------------------------------------------------------
 
     def onboarding_headers(self) -> dict:
+        if self.is_vault_operator:
+            raise_value_error(
+                "EvmAccount: vault operator accounts are onboarded by vault creation "
+                "(POST /vaults with operator_signer_type=eip191); they cannot be "
+                "onboarded via POST /v2/onboarding. If auth failed with NOT_ONBOARDED, "
+                "the operator does not exist yet — create the vault first."
+            )
         siwe = self._build_siwe_onboarding()
         return {
             "PARADEX-STARKNET-ACCOUNT": hex(self.l2_address),

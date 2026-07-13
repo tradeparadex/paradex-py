@@ -54,3 +54,38 @@ def test_rpc_version_check_skipped_on_client():
     # mark the check done so the first real call doesn't error on it.
     acct = _account()
     assert acct.starknet.client._client._is_spec_version_verified is True
+
+
+def test_vault_operator_requires_preresolved_l2_address():
+    config = MockApiClient().fetch_system_config()
+    import pytest
+
+    with pytest.raises(ValueError, match="pre-resolved l2_address"):
+        EvmAccount(
+            config=config,
+            env="testnet",
+            evm_address=EVM_ADDR,
+            evm_private_key=EVM_KEY,
+            is_vault_operator=True,
+        )
+
+
+def test_vault_operator_onboarding_headers_raises():
+    # Operators are onboarded by vault creation, never POST /v2/onboarding —
+    # attempting it must fail loudly instead of onboarding a phantom account.
+    config = MockApiClient().fetch_system_config()
+    import pytest
+
+    acct = EvmAccount(
+        config=config,
+        env="testnet",
+        evm_address=EVM_ADDR,
+        evm_private_key=EVM_KEY,
+        l2_address=L2_ADDR,
+        is_vault_operator=True,
+    )
+    with pytest.raises(ValueError, match="onboarded by vault creation"):
+        acct.onboarding_headers()
+    # Auth headers remain available — that's the operator session's whole point.
+    headers = acct.auth_headers()
+    assert headers["PARADEX-STARKNET-ACCOUNT"] == hex(int(L2_ADDR, 16))
