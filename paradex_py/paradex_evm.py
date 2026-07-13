@@ -173,12 +173,12 @@ class ParadexEvm(_ClientBase):
                         "pre-feature deployment)"
                     )
             else:
+                if vault_operator_index is None:
+                    # Unreachable: is_vault_operator with no address implies an
+                    # index. The explicit check narrows the type for ty.
+                    raise_value_error("ParadexEvm: vault operator session requires an index")
                 l2_address_hex = hex(
-                    derive_vault_operator_l2_address_eip191(
-                        self.config,
-                        checksum_address,
-                        vault_operator_index,  # type: ignore[arg-type]
-                    )
+                    derive_vault_operator_l2_address_eip191(self.config, checksum_address, vault_operator_index)
                 )
             is_onboarded = True
         elif server_derive_address:
