@@ -542,3 +542,43 @@ class TestSimulatorUseCases:
 
         await paradex.ws_client.pump_once()
         assert len(received_messages) == 1
+
+
+class TestParadexL2ConfigInjection:
+    """ParadexL2 accepts a pre-fetched SystemConfig to skip the fetch."""
+
+    @patch("paradex_py.paradex_l2.ParadexWebsocketClient")
+    @patch("paradex_py.paradex_l2.SubkeyAccount")
+    @patch("paradex_py.paradex_l2.ParadexApiClient")
+    def test_injected_config_skips_fetch(self, mock_api_cls, mock_account_cls, mock_ws_cls):
+        from paradex_py.paradex_l2 import ParadexL2
+
+        sentinel_config = object()
+        mock_api = mock_api_cls.return_value
+        client = ParadexL2(
+            env=TESTNET,
+            l2_private_key="0x1",
+            l2_address="0x2",
+            ws_enabled=False,
+            config=sentinel_config,
+        )
+        assert client.config is sentinel_config
+        mock_api.fetch_system_config.assert_not_called()
+        _, account_kwargs = mock_account_cls.call_args
+        assert account_kwargs["config"] is sentinel_config
+
+    @patch("paradex_py.paradex_l2.ParadexWebsocketClient")
+    @patch("paradex_py.paradex_l2.SubkeyAccount")
+    @patch("paradex_py.paradex_l2.ParadexApiClient")
+    def test_fetches_config_when_not_provided(self, mock_api_cls, mock_account_cls, mock_ws_cls):
+        from paradex_py.paradex_l2 import ParadexL2
+
+        mock_api = mock_api_cls.return_value
+        client = ParadexL2(
+            env=TESTNET,
+            l2_private_key="0x1",
+            l2_address="0x2",
+            ws_enabled=False,
+        )
+        mock_api.fetch_system_config.assert_called_once()
+        assert client.config is mock_api.fetch_system_config.return_value

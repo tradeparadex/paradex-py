@@ -137,6 +137,40 @@ def derive_l2_address_eip191(config: "SystemConfig", evm_address: str) -> int:
     )
 
 
+# Domain tag for EVM child-account salt derivation, sn_keccak of the exact
+# preimage "paradex.child.vault_operator". Mirrors the Paradex backend's
+# vault-operator kind tag; the tag is part of the on-chain deployment salt and
+# must never change.
+VAULT_OPERATOR_CHILD_KIND_TAG = get_selector_from_name("paradex.child.vault_operator")
+
+
+def derive_vault_operator_l2_address_eip191(config: "SystemConfig", evm_address: str, operator_index: int) -> int:
+    """Compute the L2 address of an EVM-owned vault operator sub-account.
+
+    Mirrors the server-side derivation (``ComputeEvmVaultOperatorAddress``):
+    same Argent v0.5.0 class hash and constructor calldata as the owner's main
+    EVM account (owner = Eip191(evm_address), guardian = None); only the UDC
+    salt differs::
+
+        salt = pedersen(pedersen(owner_l2_address, VAULT_OPERATOR_CHILD_KIND_TAG), operator_index)
+
+    The same address is returned by ``GET /onboarding?account_signer_type=eip191
+    &eth_address=..&vault_operator_index=N`` — prefer that on environments where
+    the class hash may rotate.
+    """
+    if operator_index < 0:
+        raise_value_error(f"operator_index must be non-negative, got {operator_index}")
+    owner_l2 = derive_l2_address_eip191(config, evm_address)
+    salt = rs_pedersen_hash(rs_pedersen_hash(owner_l2, VAULT_OPERATOR_CHILD_KIND_TAG), operator_index)
+    eth_addr_int = int_from_hex(evm_address)
+    return compute_address(
+        class_hash=int_from_hex(cast(str, config.paraclear_evm_account_hash)),
+        constructor_calldata=[3, eth_addr_int, 1],
+        salt=salt,
+        deployer_address=0,
+    )
+
+
 def resolve_l2_keypair(
     config: "SystemConfig",
     l1_address: str,

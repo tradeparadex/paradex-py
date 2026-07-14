@@ -152,7 +152,7 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         Public endpoint — no authentication required.
 
         Args:
-            params: Query parameters. Exactly one of two forms:
+            params: Query parameters. One of the following forms:
 
                 Starknet account (``account_signer_type="starknet"``)::
 
@@ -163,6 +163,14 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
                     {"account_signer_type": "eip191", "eth_address": "0x<evm_address>"}
 
                 Note: ``public_key`` is ignored by the server for EIP-191 accounts.
+
+                EIP-191 accounts additionally accept ``vault_operator_index`` (int) to
+                resolve the address and existence of the N-th EVM vault operator
+                sub-account of that eth key's main account (0-based; requires the
+                server's EVM vault operators feature flag)::
+
+                    {"account_signer_type": "eip191", "eth_address": "0x<evm_address>",
+                     "vault_operator_index": 0}
 
         Returns:
             dict with ``address``, ``exists`` (bool), ``account_signer_type``, and
