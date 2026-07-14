@@ -604,6 +604,7 @@ class TestParadexEvm:
             evm_private_key=EVM_KEY,
             l2_address=hex(0xABC),
             is_onboarded=None,
+            is_vault_operator=False,
         )
         mock_api.init_account_evm.assert_called_once_with(MockEvmAccount.return_value)
         assert p.config is MOCK_SYSTEM_CONFIG
@@ -762,7 +763,168 @@ class TestParadexEvm:
             evm_private_key=EVM_KEY,
             l2_address="0xabc123",
             is_onboarded=True,
+            is_vault_operator=False,
         )
+
+    @patch("paradex_py.paradex_evm.EvmAccount")
+    @patch("paradex_py.paradex_evm.ParadexWebsocketClient")
+    @patch("paradex_py.paradex_evm.ParadexApiClient")
+    def test_vault_operator_address_targets_operator(self, MockApiClient, MockWsClient, MockEvmAccount):
+        """An explicit operator address becomes the session target: EvmAccount gets it as
+        l2_address with is_vault_operator=True and is_onboarded=True (operators are
+        onboarded by vault creation, so the auto-onboarding path must be skipped)."""
+        mock_api = MockApiClient.return_value
+        mock_api.fetch_system_config.return_value = MOCK_SYSTEM_CONFIG
+
+        ParadexEvm(
+            env=TESTNET,
+            evm_address=EVM_ADDR,
+            evm_private_key=EVM_KEY,
+            vault_operator_address="0xfeed",
+        )
+
+        mock_api.fetch_onboarding.assert_not_called()
+        MockEvmAccount.assert_called_once_with(
+            config=MOCK_SYSTEM_CONFIG,
+            env=TESTNET,
+            evm_address=EVM_ADDR,
+            evm_private_key=EVM_KEY,
+            l2_address="0xfeed",
+            is_onboarded=True,
+            is_vault_operator=True,
+        )
+
+    @patch("paradex_py.paradex_evm.derive_vault_operator_l2_address_eip191", return_value=0xDEF)
+    @patch("paradex_py.paradex_evm.EvmAccount")
+    @patch("paradex_py.paradex_evm.ParadexWebsocketClient")
+    @patch("paradex_py.paradex_evm.ParadexApiClient")
+    def test_vault_operator_index_local_derivation(self, MockApiClient, MockWsClient, MockEvmAccount, mock_derive_op):
+        mock_api = MockApiClient.return_value
+        mock_api.fetch_system_config.return_value = MOCK_SYSTEM_CONFIG
+
+        ParadexEvm(
+            env=TESTNET,
+            evm_address=EVM_ADDR,
+            evm_private_key=EVM_KEY,
+            vault_operator_index=2,
+        )
+
+        from eth_account import Account as _EthAccount
+
+        checksum = _EthAccount.from_key(EVM_KEY).address
+        mock_derive_op.assert_called_once_with(MOCK_SYSTEM_CONFIG, checksum, 2)
+        MockEvmAccount.assert_called_once_with(
+            config=MOCK_SYSTEM_CONFIG,
+            env=TESTNET,
+            evm_address=EVM_ADDR,
+            evm_private_key=EVM_KEY,
+            l2_address=hex(0xDEF),
+            is_onboarded=True,
+            is_vault_operator=True,
+        )
+
+    @patch("paradex_py.paradex_evm.derive_l2_address_eip191", return_value=0xABC)
+    @patch("paradex_py.paradex_evm.EvmAccount")
+    @patch("paradex_py.paradex_evm.ParadexWebsocketClient")
+    @patch("paradex_py.paradex_evm.ParadexApiClient")
+    def test_vault_operator_index_server_derivation(self, MockApiClient, MockWsClient, MockEvmAccount, mock_derive):
+        """server_derive_address=True resolves the operator address via GET /onboarding
+        with the vault_operator_index param. (derive_l2_address_eip191 is patched to a
+        value distinct from the server's answer — the main-account-fallback guard
+        compares the two.)"""
+        mock_api = MockApiClient.return_value
+        mock_api.fetch_system_config.return_value = MOCK_SYSTEM_CONFIG
+        mock_api.fetch_onboarding.return_value = {
+            "account_signer_type": "eip191",
+            "address": "0xfacade",
+            "exists": True,
+        }
+
+        ParadexEvm(
+            env=TESTNET,
+            evm_address=EVM_ADDR,
+            evm_private_key=EVM_KEY,
+            server_derive_address=True,
+            vault_operator_index=0,
+        )
+
+        params = mock_api.fetch_onboarding.call_args[0][0]
+        assert params["account_signer_type"] == "eip191"
+        assert params["vault_operator_index"] == 0
+        MockEvmAccount.assert_called_once_with(
+            config=MOCK_SYSTEM_CONFIG,
+            env=TESTNET,
+            evm_address=EVM_ADDR,
+            evm_private_key=EVM_KEY,
+            l2_address="0xfacade",
+            is_onboarded=True,
+            is_vault_operator=True,
+        )
+
+    @patch("paradex_py.paradex_evm.EvmAccount")
+    @patch("paradex_py.paradex_evm.ParadexWebsocketClient")
+    @patch("paradex_py.paradex_evm.ParadexApiClient")
+    def test_vault_operator_index_server_not_exists_raises(self, MockApiClient, MockWsClient, MockEvmAccount):
+        """A server probe that reports exists=False fails fast: the operator is only
+        created by vault creation, so authenticating as it can never succeed."""
+        mock_api = MockApiClient.return_value
+        mock_api.fetch_system_config.return_value = MOCK_SYSTEM_CONFIG
+        mock_api.fetch_onboarding.return_value = {
+            "account_signer_type": "eip191",
+            "address": "0xfacade",
+            "exists": False,
+        }
+
+        with pytest.raises(ValueError, match="does not exist yet"):
+            ParadexEvm(
+                env=TESTNET,
+                evm_address=EVM_ADDR,
+                evm_private_key=EVM_KEY,
+                server_derive_address=True,
+                vault_operator_index=1,
+            )
+        MockEvmAccount.assert_not_called()
+
+    @patch("paradex_py.paradex_evm.derive_l2_address_eip191", return_value=0xABC)
+    @patch("paradex_py.paradex_evm.EvmAccount")
+    @patch("paradex_py.paradex_evm.ParadexWebsocketClient")
+    @patch("paradex_py.paradex_evm.ParadexApiClient")
+    def test_vault_operator_index_server_main_account_fallback_raises(
+        self, MockApiClient, MockWsClient, MockEvmAccount, mock_derive
+    ):
+        """A server that predates EVM vault operators ignores the unknown
+        vault_operator_index param and answers for the owner's MAIN account. The
+        client must refuse rather than silently run an "operator" session that
+        actually targets the main account."""
+        mock_api = MockApiClient.return_value
+        mock_api.fetch_system_config.return_value = MOCK_SYSTEM_CONFIG
+        mock_api.fetch_onboarding.return_value = {
+            "account_signer_type": "eip191",
+            "address": hex(0xABC),  # == the owner's main account address
+            "exists": True,
+        }
+
+        with pytest.raises(ValueError, match="does not support EVM vault operators"):
+            ParadexEvm(
+                env=TESTNET,
+                evm_address=EVM_ADDR,
+                evm_private_key=EVM_KEY,
+                server_derive_address=True,
+                vault_operator_index=0,
+            )
+        MockEvmAccount.assert_not_called()
+
+    @patch("paradex_py.paradex_evm.ParadexApiClient")
+    def test_vault_operator_address_and_index_mutually_exclusive(self, MockApiClient):
+        MockApiClient.return_value.fetch_system_config.return_value = MOCK_SYSTEM_CONFIG
+        with pytest.raises(ValueError, match="mutually exclusive"):
+            ParadexEvm(
+                env=TESTNET,
+                evm_address=EVM_ADDR,
+                evm_private_key=EVM_KEY,
+                vault_operator_address="0xfeed",
+                vault_operator_index=0,
+            )
 
 
 # ---------------------------------------------------------------------------
