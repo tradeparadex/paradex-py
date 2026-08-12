@@ -133,7 +133,10 @@ async def run_parity(env: Environment, market: str, n_samples: int) -> bool:  # 
     logger.info(f"Collecting {n_samples} samples per channel on {env}...")
     try:
         await asyncio.wait_for(done.wait(), timeout=60)
-    except TimeoutError:
+    except (TimeoutError, asyncio.TimeoutError):
+        # asyncio.TimeoutError is only an alias for the builtin TimeoutError on Python >=3.11;
+        # on 3.10 (the repo's minimum supported version) they're distinct classes and a bare
+        # `except TimeoutError` doesn't catch it, crashing instead of printing partial results.
         logger.warning("Timeout waiting for samples — printing what we have")
 
     # ── Print comparison ────────────────────────────────────────────────

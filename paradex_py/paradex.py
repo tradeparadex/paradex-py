@@ -55,7 +55,9 @@ class Paradex(_ClientBase):
         ping_interval (float, optional): WebSocket ping interval in seconds. Defaults to None.
         disable_reconnect (bool, optional): Disable automatic WebSocket reconnection. Defaults to False.
         enable_ws_compression (bool, optional): Enable WebSocket per-message compression (RFC 7692). Defaults to True.
-        ws_sbe_enabled (bool, optional): Enable SBE binary encoding on the WebSocket connection. Defaults to False.
+        ws_sbe_enabled (bool, optional): Enable SBE binary encoding on ``ws_direct_client``. The
+            public ``ws_client`` does not support SBE and always uses JSON regardless of this flag.
+            Defaults to False.
         auto_auth (bool, optional): Whether to automatically handle onboarding/auth. Defaults to True.
         auth_provider (AuthProvider, optional): Custom authentication provider. Defaults to None.
         auth_params (dict, optional): Extra query parameters sent with every ``/auth`` request
