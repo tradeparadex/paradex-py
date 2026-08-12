@@ -145,11 +145,6 @@ class ParadexWebsocketClient:
         disable_reconnect (bool, optional): Disable automatic reconnection for tight simulation control. Defaults to False.
         enable_compression (bool, optional): Enable WebSocket per-message compression (RFC 7692). Defaults to True.
         api_client (Optional[Any], optional): Reference to ParadexApiClient for token refresh. Defaults to None.
-        sbe_enabled (bool, optional): Decode incoming frames as SBE binary instead of JSON.
-            Only the direct endpoint (``direct=True``) currently understands the
-            ``sbeSchemaId``/``sbeSchemaVersion`` query params this appends to the connection
-            URL — the public endpoint ignores them and keeps sending JSON, so enabling this
-            without ``direct=True`` silently has no effect. Defaults to False.
         direct (bool, optional): Connect to the direct WebSocket endpoint
             (``ws.api.{env}.paradex.trade``) instead of the default public one
             (``ws-public.api.{env}.paradex.trade``).
@@ -240,9 +235,6 @@ class ParadexWebsocketClient:
         self._api_client = api_client
 
         # SBE binary encoding opt-in
-        # The public endpoint ignores sbeSchemaId/sbeSchemaVersion and always sends JSON, so
-        # this combination silently no-ops unless a custom ws_url_override is known to support SBE.
-        self._sbe_on_unsupported_endpoint = sbe_enabled and not direct and ws_url_override is None
         self.sbe_enabled = sbe_enabled
 
         if auto_start_reader:
@@ -303,12 +295,6 @@ class ParadexWebsocketClient:
 
                 sep = "&" if "?" in ws_url else "?"
                 ws_url += f"{sep}sbeSchemaId={_SCHEMA_ID}&sbeSchemaVersion={_SCHEMA_VERSION}"
-                if self._sbe_on_unsupported_endpoint:
-                    self.logger.warning(
-                        f"{self.classname}: sbe_enabled=True but connecting to the public endpoint, "
-                        "which ignores sbeSchemaId/sbeSchemaVersion and sends JSON — SBE decoding will "
-                        "never trigger. Pass direct=True (or use Paradex.ws_direct_client) for SBE."
-                    )
 
             # Use custom connector if provided, otherwise use default websockets.connect
             if self.connector is not None:
