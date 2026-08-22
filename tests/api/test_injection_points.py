@@ -598,7 +598,7 @@ class TestParadexL2HttpClientInjection:
     def test_injected_http_client_is_forwarded(self, mock_api_cls, mock_account_cls, mock_ws_cls):
         from paradex_py.paradex_l2 import ParadexL2
 
-        shared = httpx.Client(limits=httpx.Limits(keepalive_expiry=600.0))
+        shared = HttpClient(http_client=httpx.Client(limits=httpx.Limits(keepalive_expiry=600.0)))
         ParadexL2(
             env=TESTNET,
             l2_private_key="0x1",
