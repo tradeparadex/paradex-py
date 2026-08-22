@@ -10,6 +10,9 @@ from paradex_py.environment import Environment, _validate_env
 from paradex_py.utils import raise_value_error
 
 if TYPE_CHECKING:
+    import httpx
+
+    from paradex_py.api.http_client import HttpClient
     from paradex_py.api.models import SystemConfig
 
 __all__ = ["ParadexL2"]
@@ -37,6 +40,10 @@ class ParadexL2(_ClientBase):
             it is used as-is and the ``GET /system/config`` request is skipped. Callers
             that build many clients can fetch it once and reuse it. Defaults to None
             (fetched from the API).
+        http_client (httpx.Client | HttpClient, optional): Pre-built HTTP client. Passed
+            straight to ``ParadexApiClient``, so callers that build many clients can share
+            one connection pool and keep its keep-alive settings. Defaults to None (a new
+            ``httpx.Client`` with library defaults).
 
     Examples:
         >>> from paradex_py import ParadexL2
@@ -58,6 +65,7 @@ class ParadexL2(_ClientBase):
         ws_enabled: bool = True,
         ws_sbe_enabled: bool = False,
         config: "SystemConfig | None" = None,
+        http_client: "httpx.Client | HttpClient | None" = None,
     ):
         _validate_env(env, "ParadexL2")
 
@@ -69,7 +77,7 @@ class ParadexL2(_ClientBase):
         self.env = env
         self.logger: logging.Logger = logger or logging.getLogger(__name__)
 
-        self.api_client = ParadexApiClient(env=env, logger=logger)
+        self.api_client = ParadexApiClient(env=env, logger=logger, http_client=http_client)
         self.ws_client: ParadexWebsocketClient | None = (
             ParadexWebsocketClient(
                 env=env,
