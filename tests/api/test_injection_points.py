@@ -582,3 +582,46 @@ class TestParadexL2ConfigInjection:
         )
         mock_api.fetch_system_config.assert_called_once()
         assert client.config is mock_api.fetch_system_config.return_value
+
+
+class TestParadexL2HttpClientInjection:
+    """ParadexL2 forwards a pre-built HTTP client to the API client.
+
+    Sharing one client means sharing its connection pool, so callers that
+    build many clients keep the keep-alive settings they configured instead
+    of getting a fresh pool with library defaults each time.
+    """
+
+    @patch("paradex_py.paradex_l2.ParadexWebsocketClient")
+    @patch("paradex_py.paradex_l2.SubkeyAccount")
+    @patch("paradex_py.paradex_l2.ParadexApiClient")
+    def test_injected_http_client_is_forwarded(self, mock_api_cls, mock_account_cls, mock_ws_cls):
+        from paradex_py.paradex_l2 import ParadexL2
+
+        shared = HttpClient(http_client=httpx.Client(limits=httpx.Limits(keepalive_expiry=600.0)))
+        ParadexL2(
+            env=TESTNET,
+            l2_private_key="0x1",
+            l2_address="0x2",
+            ws_enabled=False,
+            config=MagicMock(),
+            http_client=shared,
+        )
+        _, api_kwargs = mock_api_cls.call_args
+        assert api_kwargs["http_client"] is shared
+
+    @patch("paradex_py.paradex_l2.ParadexWebsocketClient")
+    @patch("paradex_py.paradex_l2.SubkeyAccount")
+    @patch("paradex_py.paradex_l2.ParadexApiClient")
+    def test_no_http_client_keeps_default(self, mock_api_cls, mock_account_cls, mock_ws_cls):
+        from paradex_py.paradex_l2 import ParadexL2
+
+        ParadexL2(
+            env=TESTNET,
+            l2_private_key="0x1",
+            l2_address="0x2",
+            ws_enabled=False,
+            config=MagicMock(),
+        )
+        _, api_kwargs = mock_api_cls.call_args
+        assert api_kwargs["http_client"] is None

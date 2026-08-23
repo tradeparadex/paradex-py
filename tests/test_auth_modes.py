@@ -69,7 +69,7 @@ class TestParadexL2:
 
         p = ParadexL2(env=TESTNET, l2_private_key=L2_KEY, l2_address=L2_ADDR)
 
-        MockApiClient.assert_called_once_with(env=TESTNET, logger=None)
+        MockApiClient.assert_called_once_with(env=TESTNET, logger=None, http_client=None)
         mock_api.fetch_system_config.assert_called_once()
         MockSubkeyAccount.assert_called_once_with(config=MOCK_SYSTEM_CONFIG, l2_private_key=L2_KEY, l2_address=L2_ADDR)
         mock_api.init_account.assert_called_once_with(MockSubkeyAccount.return_value)
