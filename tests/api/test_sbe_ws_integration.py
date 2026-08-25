@@ -73,7 +73,7 @@ def test_sbe_off_via_paradex_constructor():
 @pytest.mark.asyncio
 @patch("websockets.connect", new_callable=AsyncMock)
 async def test_sbe_url_params_appended(mock_connect: AsyncMock):
-    """SBE enabled → ?sbeSchemaId=1&sbeSchemaVersion=0 appended to URL."""
+    """SBE enabled → ?sbeSchemaId=1&sbeSchemaVersion=1 appended to URL."""
     mock_ws = _make_mock_ws()
     mock_connect.return_value = mock_ws
 
@@ -82,7 +82,7 @@ async def test_sbe_url_params_appended(mock_connect: AsyncMock):
 
     url_called = mock_connect.call_args.args[0]
     assert "sbeSchemaId=1" in url_called
-    assert "sbeSchemaVersion=0" in url_called
+    assert "sbeSchemaVersion=1" in url_called
 
 
 @pytest.mark.asyncio
