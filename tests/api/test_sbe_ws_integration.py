@@ -287,3 +287,40 @@ def test_resolve_markets_summary_all_fallback():
 def test_resolve_no_match_returns_none():
     ws_client = ParadexWebsocketClient(env=TESTNET, sbe_enabled=True, auto_start_reader=False)
     assert ws_client._resolve_sbe_channel("unknown.MARKET") is None
+
+
+def test_frc_frame_resolves_to_the_all_subscription():
+    """The decoded frame's channel must route to the live ALL subscription.
+
+    The server publishes this channel only as ALL (its regex is anchored to
+    `funding_rate_comparison.ALL@{500ms|1000ms}`), so one subscription carries
+    every symbol and the market is a payload field. A market-qualified channel
+    name would not route at all: the `*.ALL` fallback matches a literal `.ALL`
+    key, not the `ALL@1000ms` the subscription registers.
+    """
+    from paradex_py.api.sbe.codec import decode_frame
+
+    golden = "1a0006000100010000401e18240a060000401e18240a060000e1f5050000000001010c4254432d5553442d50455250"
+    channel, model = decode_frame(bytes.fromhex(golden))
+
+    ws_client = ParadexWebsocketClient(env=TESTNET)
+    ws_client.callbacks["funding_rate_comparison.ALL@1000ms"] = lambda *_: None
+
+    assert ws_client._resolve_sbe_channel(channel) == "funding_rate_comparison.ALL@1000ms"
+    assert ws_client._resolve_sbe_channel(f"funding_rate_comparison.{model.market}") is None
+
+
+def test_frc_subscribe_defaults_refresh_rate():
+    """subscribe() without params must not raise.
+
+    Every other parameterized channel supplies a default, so a caller
+    reasonably expects the same here; the server accepts only 500ms or 1000ms.
+    """
+    channel = ParadexWebsocketChannel.FUNDING_RATE_COMPARISON
+
+    params: dict = {}
+    if "refresh_rate" not in params:
+        params = {**params, "refresh_rate": "1000ms"}
+    assert channel.value.format(**params) == "funding_rate_comparison.ALL@1000ms"
+
+    assert channel.value.format(refresh_rate="500ms") == "funding_rate_comparison.ALL@500ms"

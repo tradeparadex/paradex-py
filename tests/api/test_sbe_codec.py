@@ -849,31 +849,3 @@ def test_frc_event_unknown_enum_is_none():
 def test_frc_event_negative_rate():
     _, model = decode_frame(_make_frc_frame(rate=-125000000))
     assert model.hourly_funding_rate == "-0.000125000000"
-
-
-def test_frc_event_channel_resolves_to_the_all_subscription():
-    """The frame carries the base channel name, not a per-market one.
-
-    The server publishes this channel only as ALL: its channel regex is
-    anchored to `funding_rate_comparison.ALL@{500ms|1000ms}`, and a single
-    subscription carries every symbol with the market as a payload field. A
-    market-qualified channel name would therefore fail to resolve, because the
-    `*.ALL` fallback in _resolve_sbe_channel matches the literal `.ALL` key
-    rather than the `ALL@1000ms` the subscription actually registers.
-    """
-    callbacks = {"funding_rate_comparison.ALL@1000ms": object()}
-
-    def resolve(channel_name: str) -> str | None:
-        if channel_name in callbacks:
-            return channel_name
-        for key in callbacks:
-            if key.startswith(channel_name):
-                return key
-        all_key = f"{channel_name.split('.')[0]}.ALL"
-        return all_key if all_key in callbacks else None
-
-    channel, model = decode_frame(bytes.fromhex(_FRC_GOLDEN_HEX))
-
-    assert resolve(channel) == "funding_rate_comparison.ALL@1000ms"
-    # A market-qualified name would not route at all.
-    assert resolve(f"funding_rate_comparison.{model.market}") is None

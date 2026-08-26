@@ -789,6 +789,13 @@ class ParadexWebsocketClient:
         if channel == ParadexWebsocketChannel.MARKETS_SUMMARY and not params:
             params = {"market": "ALL"}
 
+        # The server accepts only 500ms or 1000ms here, and the channel takes
+        # no market, so an unparameterized subscribe has exactly one sensible
+        # reading. Without a default this is the only parameterized channel
+        # that raises KeyError instead of subscribing.
+        if channel == ParadexWebsocketChannel.FUNDING_RATE_COMPARISON and "refresh_rate" not in params:
+            params = {**params, "refresh_rate": "1000ms"}
+
         # Handle ORDER_BOOK channel with optional parameters
         if channel == ParadexWebsocketChannel.ORDER_BOOK:
             # Set defaults for required parameters
