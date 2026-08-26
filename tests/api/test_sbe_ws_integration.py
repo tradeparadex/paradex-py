@@ -310,17 +310,39 @@ def test_frc_frame_resolves_to_the_all_subscription():
     assert ws_client._resolve_sbe_channel(f"funding_rate_comparison.{model.market}") is None
 
 
-def test_frc_subscribe_defaults_refresh_rate():
-    """subscribe() without params must not raise.
+@pytest.mark.asyncio
+async def test_frc_subscribe_defaults_refresh_rate():
+    """subscribe() without params must register the ALL@1000ms channel.
 
-    Every other parameterized channel supplies a default, so a caller
-    reasonably expects the same here; the server accepts only 500ms or 1000ms.
+    Driven through subscribe() rather than reimplementing the defaulting: the
+    point is to guard the default in ws_client, so asserting on a locally
+    computed value would pass even with that code deleted.
     """
-    channel = ParadexWebsocketChannel.FUNDING_RATE_COMPARISON
+    client = ParadexWebsocketClient(env=TESTNET)
+    client._subscribe_to_channel_by_name = AsyncMock()
 
-    params: dict = {}
-    if "refresh_rate" not in params:
-        params = {**params, "refresh_rate": "1000ms"}
-    assert channel.value.format(**params) == "funding_rate_comparison.ALL@1000ms"
+    async def _cb(_channel, _message):
+        pass
 
-    assert channel.value.format(refresh_rate="500ms") == "funding_rate_comparison.ALL@500ms"
+    await client.subscribe(ParadexWebsocketChannel.FUNDING_RATE_COMPARISON, callback=_cb)
+
+    assert "funding_rate_comparison.ALL@1000ms" in client.callbacks
+    client._subscribe_to_channel_by_name.assert_awaited_once_with("funding_rate_comparison.ALL@1000ms")
+
+
+@pytest.mark.asyncio
+async def test_frc_subscribe_honours_an_explicit_refresh_rate():
+    """The default must not override a caller-supplied rate."""
+    client = ParadexWebsocketClient(env=TESTNET)
+    client._subscribe_to_channel_by_name = AsyncMock()
+
+    async def _cb(_channel, _message):
+        pass
+
+    await client.subscribe(
+        ParadexWebsocketChannel.FUNDING_RATE_COMPARISON,
+        callback=_cb,
+        params={"refresh_rate": "500ms"},
+    )
+
+    assert "funding_rate_comparison.ALL@500ms" in client.callbacks
