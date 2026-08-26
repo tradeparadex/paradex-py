@@ -212,6 +212,14 @@ _ENUM_VALUE_PREFIX = {
     "FundingRateSource": "SOURCE_",
 }
 
+# Note on FillType value 3. The schema and both server feeds (JSON and SBE)
+# spell it UNWIND_TRANSFER, renamed server-side in July 2026. The SDK's
+# generated REST model still carries the old TRANSFER spelling because it is
+# generated from an older API spec, so paradex_py/api/generated/responses.py
+# and this codec disagree until that spec is refreshed. The codec follows the
+# wire, which is what a callback actually receives; do not "fix" it back to
+# TRANSFER to match the stale REST model.
+
 
 # ── Channel routing (hardcoded per message) ─────────────────────────────────
 
