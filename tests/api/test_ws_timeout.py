@@ -1,5 +1,9 @@
 """Simple WebSocket timeout tests that don't hang."""
 
+import asyncio
+
+import pytest
+
 from paradex_py import Paradex
 from paradex_py.api.ws_client import ParadexWebsocketClient
 from paradex_py.constants import WS_TIMEOUT
@@ -124,3 +128,41 @@ class TestWebSocketTimeout:
         # Test with zero
         ws_client3 = ParadexWebsocketClient(env=TESTNET, ws_timeout=0)
         assert ws_client3.ws_timeout == 0
+
+
+class TestPendingRequestCleanup:
+    """`_send_request` must not leave entries behind in `_pending_requests`."""
+
+    @pytest.mark.asyncio
+    async def test_pending_cleared_when_send_fails(self):
+        ws_client = ParadexWebsocketClient(env=TESTNET, auto_start_reader=False)
+
+        async def failing_send(_payload):
+            raise ConnectionError
+
+        ws_client._send = failing_send
+
+        with pytest.raises(ConnectionError):
+            await ws_client._send_request("order.create", {})
+
+        assert ws_client._pending_requests == {}
+
+    @pytest.mark.asyncio
+    async def test_pending_cleared_when_caller_cancels(self):
+        # An outer asyncio.wait_for around a request cancels this coroutine while the
+        # connection stays open, so nothing else clears the entry.
+        ws_client = ParadexWebsocketClient(env=TESTNET, auto_start_reader=False)
+
+        async def silent_send(_payload):
+            return None
+
+        ws_client._send = silent_send
+
+        task = asyncio.ensure_future(ws_client._send_request("order.create", {}, timeout=30))
+        while not ws_client._pending_requests:
+            await asyncio.sleep(0)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        assert ws_client._pending_requests == {}
