@@ -89,6 +89,7 @@ class ParadexWebsocketChannel(Enum):
         FILLS (str): Private websocket channel to receive details of fills for specific account
         FUNDING_DATA (str): Public websocket channel to receive funding data updates
         FUNDING_PAYMENTS (str): Private websocket channel to receive funding payments of an account
+        FUNDING_RATE_COMPARISON (str): Public websocket channel for hourly funding rates across venues
         MARKETS_SUMMARY (str): Public websocket channel for updates of available markets
         ORDERS (str): Private websocket channel to receive order updates
         ORDER_BOOK (str): Public websocket channel for orderbook snapshot updates at most every 50ms or 100ms, optionally grouped by price tick (production only)
@@ -106,6 +107,10 @@ class ParadexWebsocketChannel(Enum):
     FILLS = "fills.{market}"
     FUNDING_DATA = "funding_data.{market}"
     FUNDING_PAYMENTS = "funding_payments.{market}"
+    # The server publishes this channel only as ALL (its channel regex is
+    # anchored to `funding_rate_comparison.ALL@{500ms|1000ms}`), so the market
+    # is a payload field rather than a channel parameter.
+    FUNDING_RATE_COMPARISON = "funding_rate_comparison.ALL@{refresh_rate}"
     MARKETS_SUMMARY = "markets_summary.{market}"
     ORDERS = "orders.{market}"
     ORDER_BOOK = "order_book.{market}.{feed_type}@15@{refresh_rate}@{price_tick}"
@@ -783,6 +788,13 @@ class ParadexWebsocketClient:
         # no params were required.
         if channel == ParadexWebsocketChannel.MARKETS_SUMMARY and not params:
             params = {"market": "ALL"}
+
+        # The server accepts only 500ms or 1000ms here, and the channel takes
+        # no market, so an unparameterized subscribe has exactly one sensible
+        # reading. Without a default this is the only parameterized channel
+        # that raises KeyError instead of subscribing.
+        if channel == ParadexWebsocketChannel.FUNDING_RATE_COMPARISON and "refresh_rate" not in params:
+            params = {**params, "refresh_rate": "1000ms"}
 
         # Handle ORDER_BOOK channel with optional parameters
         if channel == ParadexWebsocketChannel.ORDER_BOOK:

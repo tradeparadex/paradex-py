@@ -73,7 +73,7 @@ def test_sbe_off_via_paradex_constructor():
 @pytest.mark.asyncio
 @patch("websockets.connect", new_callable=AsyncMock)
 async def test_sbe_url_params_appended(mock_connect: AsyncMock):
-    """SBE enabled → ?sbeSchemaId=1&sbeSchemaVersion=0 appended to URL."""
+    """SBE enabled → ?sbeSchemaId=1&sbeSchemaVersion=1 appended to URL."""
     mock_ws = _make_mock_ws()
     mock_connect.return_value = mock_ws
 
@@ -82,7 +82,7 @@ async def test_sbe_url_params_appended(mock_connect: AsyncMock):
 
     url_called = mock_connect.call_args.args[0]
     assert "sbeSchemaId=1" in url_called
-    assert "sbeSchemaVersion=0" in url_called
+    assert "sbeSchemaVersion=1" in url_called
 
 
 @pytest.mark.asyncio
@@ -287,3 +287,62 @@ def test_resolve_markets_summary_all_fallback():
 def test_resolve_no_match_returns_none():
     ws_client = ParadexWebsocketClient(env=TESTNET, sbe_enabled=True, auto_start_reader=False)
     assert ws_client._resolve_sbe_channel("unknown.MARKET") is None
+
+
+def test_frc_frame_resolves_to_the_all_subscription():
+    """The decoded frame's channel must route to the live ALL subscription.
+
+    The server publishes this channel only as ALL (its regex is anchored to
+    `funding_rate_comparison.ALL@{500ms|1000ms}`), so one subscription carries
+    every symbol and the market is a payload field. A market-qualified channel
+    name would not route at all: the `*.ALL` fallback matches a literal `.ALL`
+    key, not the `ALL@1000ms` the subscription registers.
+    """
+    from paradex_py.api.sbe.codec import decode_frame
+
+    golden = "1a0006000100010000401e18240a060000401e18240a060000e1f5050000000001010c4254432d5553442d50455250"
+    channel, model = decode_frame(bytes.fromhex(golden))
+
+    ws_client = ParadexWebsocketClient(env=TESTNET)
+    ws_client.callbacks["funding_rate_comparison.ALL@1000ms"] = lambda *_: None
+
+    assert ws_client._resolve_sbe_channel(channel) == "funding_rate_comparison.ALL@1000ms"
+    assert ws_client._resolve_sbe_channel(f"funding_rate_comparison.{model.market}") is None
+
+
+@pytest.mark.asyncio
+async def test_frc_subscribe_defaults_refresh_rate():
+    """subscribe() without params must register the ALL@1000ms channel.
+
+    Driven through subscribe() rather than reimplementing the defaulting: the
+    point is to guard the default in ws_client, so asserting on a locally
+    computed value would pass even with that code deleted.
+    """
+    client = ParadexWebsocketClient(env=TESTNET)
+    client._subscribe_to_channel_by_name = AsyncMock()
+
+    async def _cb(_channel, _message):
+        pass
+
+    await client.subscribe(ParadexWebsocketChannel.FUNDING_RATE_COMPARISON, callback=_cb)
+
+    assert "funding_rate_comparison.ALL@1000ms" in client.callbacks
+    client._subscribe_to_channel_by_name.assert_awaited_once_with("funding_rate_comparison.ALL@1000ms")
+
+
+@pytest.mark.asyncio
+async def test_frc_subscribe_honours_an_explicit_refresh_rate():
+    """The default must not override a caller-supplied rate."""
+    client = ParadexWebsocketClient(env=TESTNET)
+    client._subscribe_to_channel_by_name = AsyncMock()
+
+    async def _cb(_channel, _message):
+        pass
+
+    await client.subscribe(
+        ParadexWebsocketChannel.FUNDING_RATE_COMPARISON,
+        callback=_cb,
+        params={"refresh_rate": "500ms"},
+    )
+
+    assert "funding_rate_comparison.ALL@500ms" in client.callbacks

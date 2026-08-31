@@ -14,6 +14,7 @@ from paradex_py.api.sbe.codec import (
     BookEventData,
     FillEventData,
     FundingDataEventData,
+    FundingRateComparisonEventData,
     MarketSummaryEventData,
     OrderEventData,
     PositionEventData,
@@ -348,7 +349,7 @@ def test_book_event_zero_size_removal():
 
 # ── MarketSummaryEvent (id=4) ─────────────────────────────────────────────
 
-_MS_STRUCT = struct.Struct("<qqqqqqqqqqqqqqqqqqqqqqqqqqq")  # 27 fields; 6 new vs prev schema
+_MS_STRUCT = struct.Struct("<" + "q" * 30)  # matches schema 1:1 MarketSummaryEvent block
 
 
 def _make_ms_frame(market: bytes = MARKET) -> bytes:
@@ -381,6 +382,9 @@ def _make_ms_frame(market: bytes = MARKET) -> bytes:
         INT64_MIN,  # externalFairPrice (null)
         INT64_MIN,  # bidSize (null — new)
         INT64_MIN,  # askSize (null — new)
+        INT64_MIN,  # forwardRate (null — 1:1)
+        INT64_MIN,  # riskFreeRate (null — 1:1)
+        INT64_MIN,  # fundingRatePrecise (null — 1:1)
     )
     payload += _var(market)
     return _hdr(block_len, 4) + payload
@@ -436,6 +440,9 @@ def test_ms_event_null_bid_ask():
         INT64_MIN,  # externalFairPrice
         INT64_MIN,  # bidSize (new)
         INT64_MIN,  # askSize (new)
+        INT64_MIN,  # forwardRate (null — 1:1)
+        INT64_MIN,  # riskFreeRate (null — 1:1)
+        INT64_MIN,  # fundingRatePrecise (null — 1:1)
     )
     frame = _hdr(_MS_STRUCT.size, 4) + payload + _var(MARKET)
     _, model = decode_frame(frame)
@@ -445,7 +452,7 @@ def test_ms_event_null_bid_ask():
 
 # ── FundingDataEvent (id=5) ──────────────────────────────────────────────
 
-_FD_STRUCT = struct.Struct("<qqqqqqqh")
+_FD_STRUCT = struct.Struct("<qqqqqqqhq")  # +impactPremiumRate in 1:1
 
 
 def _make_fd_frame(market: bytes = MARKET) -> bytes:
@@ -459,6 +466,7 @@ def _make_fd_frame(market: bytes = MARKET) -> bytes:
         500_000,  # fundingPremium (Rate8) → 0.00500000
         800_000,  # fundingRate8h (Rate8) → 0.00800000
         8,  # fundingPeriodHours
+        INT64_MIN,  # impactPremiumRate (null — 1:1)
     )
     payload += _var(market)
     return _hdr(block_len, 5) + payload
@@ -610,7 +618,7 @@ def test_fill_event():
 
 def test_fill_event_new_fill_types():
     block_len = _FILL_STRUCT.size
-    for raw, expected in [(3, "TRANSFER"), (4, "SETTLE_MARKET"), (5, "RPI"), (6, "BLOCK_TRADE")]:
+    for raw, expected in [(3, "UNWIND_TRANSFER"), (4, "SETTLE_MARKET"), (5, "RPI"), (6, "BLOCK_TRADE")]:
         payload = _FILL_STRUCT.pack(
             1710000000000000,
             1,
@@ -771,3 +779,73 @@ def test_timestamp_microseconds_to_millis():
     """1710000000123456 μs → 1710000000123 ms (drops sub-millisecond)."""
     _, model = decode_frame(_make_trade_frame(ts=1710000000123456))
     assert model.timestamp == 1710000000123
+
+
+# ── FundingRateComparisonEvent (id=6) ────────────────────────────────────
+
+# Golden frame captured from the server's encoder. Decoding the exact bytes
+# the server emits is what makes this a wire-format contract rather than a
+# test of our own packing.
+_FRC_GOLDEN_HEX = "1a0006000100010000401e18240a060000401e18240a060000e1f5050000000001010c4254432d5553442d50455250"
+
+
+def test_frc_event_decodes_go_golden_frame():
+    channel, model = decode_frame(bytes.fromhex(_FRC_GOLDEN_HEX))
+    assert channel == "funding_rate_comparison"
+    assert isinstance(model, FundingRateComparisonEventData)
+    assert model.market == "BTC-USD-PERP"
+    assert model.hourly_funding_rate == "0.000100000000"
+    assert model.last_updated_at == 1700000000000
+
+
+def test_frc_event_enum_spelling_matches_json_feed():
+    """SBE stores enums bare; the JSON feed sends the prefixed protobuf names.
+
+    Callbacks must see identical values on both transports, so the codec
+    restores the prefixes.
+    """
+    _, model = decode_frame(bytes.fromhex(_FRC_GOLDEN_HEX))
+    assert model.asset_kind == "ASSET_KIND_PERPETUAL_FUTURE"
+    assert model.source == "SOURCE_PARADEX"
+
+
+_FRC_STRUCT = struct.Struct("<qqqBB")
+
+
+def _make_frc_frame(asset_kind: int = 1, source: int = 1, rate: int = 10000) -> bytes:
+    payload = _FRC_STRUCT.pack(1710000000000000, 1710000000000000, rate, asset_kind, source)
+    return _hdr(_FRC_STRUCT.size, 6) + payload + _var(MARKET)
+
+
+def test_frc_event_all_sources():
+    for raw, expected in [
+        (1, "SOURCE_PARADEX"),
+        (2, "SOURCE_BINANCE"),
+        (3, "SOURCE_BYBIT"),
+        (4, "SOURCE_OKX"),
+        (7, "SOURCE_HYPERLIQUID"),
+        (12, "SOURCE_STORK"),
+    ]:
+        _, model = decode_frame(_make_frc_frame(source=raw))
+        assert model.source == expected
+
+
+def test_frc_event_asset_kinds():
+    for raw, expected in [
+        (1, "ASSET_KIND_PERPETUAL_FUTURE"),
+        (2, "ASSET_KIND_OPTION"),
+        (3, "ASSET_KIND_SPOT"),
+    ]:
+        _, model = decode_frame(_make_frc_frame(asset_kind=raw))
+        assert model.asset_kind == expected
+
+
+def test_frc_event_unknown_enum_is_none():
+    """An unrecognised venue must not raise: new sources are added upstream."""
+    _, model = decode_frame(_make_frc_frame(source=200))
+    assert model.source is None
+
+
+def test_frc_event_negative_rate():
+    _, model = decode_frame(_make_frc_frame(rate=-125000000))
+    assert model.hourly_funding_rate == "-0.000125000000"

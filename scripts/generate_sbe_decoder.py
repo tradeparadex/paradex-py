@@ -199,6 +199,28 @@ def _field_python_type(field_type: str, enums: dict) -> str:
     return "Any"
 
 
+# ── Enum value prefixes ─────────────────────────────────────────────────────
+#
+# SBE stores enum values bare ("PARADEX") because the schema already scopes
+# them by type, but the JSON feed sends the full protobuf spelling
+# ("SOURCE_PARADEX").  Callbacks must see the same value on both transports,
+# so these enums get their prefix restored when the codec is generated.
+# Enums absent from this table are emitted bare, which is what the JSON API
+# sends for them (order status, fill type and so on).
+_ENUM_VALUE_PREFIX = {
+    "AssetKind": "ASSET_KIND_",
+    "FundingRateSource": "SOURCE_",
+}
+
+# Note on FillType value 3. The schema and both server feeds (JSON and SBE)
+# spell it UNWIND_TRANSFER, renamed server-side in July 2026. The SDK's
+# generated REST model still carries the old TRANSFER spelling because it is
+# generated from an older API spec, so paradex_py/api/generated/responses.py
+# and this codec disagree until that spec is refreshed. The codec follows the
+# wire, which is what a callback actually receives; do not "fix" it back to
+# TRANSFER to match the stale REST model.
+
+
 # ── Channel routing (hardcoded per message) ─────────────────────────────────
 
 _CHANNEL_BY_ID = {
@@ -207,6 +229,11 @@ _CHANNEL_BY_ID = {
     3: ('return "order_book." + market, ', "market"),
     4: ('return "markets_summary." + market, ', "market"),
     5: ('return "funding_data." + market, ', "market"),
+    # The subscription channel carries a refresh-rate suffix
+    # ("funding_rate_comparison.ALL@1000ms") that the frame does not encode, so
+    # emit the base name and let _resolve_sbe_channel's prefix scan match it.
+    # The symbol still reaches the caller as a field on the model.
+    6: ('return "funding_rate_comparison", ', "market"),
     20: ('return "orders." + market, ', "market"),
     21: ('return "fills." + market, ', "market"),
     22: ('return "positions", ', None),
@@ -330,12 +357,13 @@ def generate_codec(schema: dict) -> str:  # noqa: C901
         '_ENUM_SIDE_LONG_SHORT = {1: "LONG", 2: "SHORT", 254: None}',
     ]
     for enum_name, values in enums.items():
+        prefix = _ENUM_VALUE_PREFIX.get(enum_name, "")
         parts = []
         for k, v in sorted(values.items()):
             if v is None:
                 parts.append(f"{k}: None")
             else:
-                parts.append(f'{k}: "{v}"')
+                parts.append(f'{k}: "{prefix}{v}"')
         enum_var = f"_ENUM_{enum_name.upper()}"
         lines.append(f"{enum_var} = {{{', '.join(parts)}}}")
     lines += ["", ""]
@@ -561,7 +589,9 @@ def _read_str(buf: bytes, pos: int) -> tuple[str, int]:
         "    dec = _DECODERS.get(tmpl_id)",
         "    if dec is None:",
         '        raise SbeDecodeError(f"Unknown templateId {tmpl_id}")',
-        "    return dec(data[8:], block_len)  # type: ignore[operator]",
+        # ty (not mypy) is what CI runs, so the suppression must use its
+        # syntax; a `type: ignore` here leaves the diagnostic unsuppressed.
+        "    return dec(data[8:], block_len)  # ty: ignore[call-non-callable]",
         "",
     ]
 
