@@ -1,0 +1,789 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Paradex SBE Market Data Schema
+  Schema ID : 1
+  Version   : 1  (schema 1:1)
+  Released  : 2026-03-17
+  Status    : ACTIVE
+
+  Version history:
+    1:0 — initial release (trades, bbo, order_book, markets_summary,
+          funding_data; private orders/fills/positions/account)
+    1:1 — non-breaking additions:
+            * FundingRateComparisonEvent (templateId 6) — public
+              funding_rate_comparison channel
+            * FundingDataEvent.impactPremiumRate appended (was JSON-only)
+          Version 0 clients remain supported: appended fields are
+          absent-by-version, and unknown templateIds must be skipped.
+
+  Versioning policy:
+    - id is incremented on any BREAKING change (field removed, type changed, order changed)
+    - version is incremented on NON-BREAKING additions (new optional field appended, new message)
+    - id increment resets version to 0
+    - Schemas are deprecated with 6-month notice before retirement
+    - Retired schemas return HTTP 400 / WS close on negotiation
+    - A new version is announced before any environment begins serving it,
+      and existing versions keep being served. Decoders differ on an unknown
+      template id: paradex-py raises SbeDecodeError, which its message
+      handler catches and logs, so those frames are dropped and the channel
+      goes quiet while the connection survives. Upgrade your decoder before
+      requesting a newer version.
+
+  Numeric encoding:
+    All prices and quantities are stored internally with 8 decimal places.
+    They are encoded as int64 mantissa with a FIXED exponent of -8.
+    actual_value = mantissa * 10^(-8)
+    Example: price 42000.50 → mantissa 4200050000000  (42000.50 * 10^8)
+    Example: qty   0.001    → mantissa       100000  (0.001 * 10^8)
+
+    Rationale: the exponent is constant (-8), so it is NOT sent on the wire.
+    Clients bake it into their decoders, which saves bytes on every numeric
+    field.
+
+  Request/Response pattern:
+    - Requests  : always JSON text frames (subscribe, unsubscribe, ping)
+    - Responses : always SBE binary frames for data channels
+    - Control acks (subscribed/error) : JSON text frames
+
+  Negotiation:
+    WebSocket URL parameter:  ?sbeSchemaId=1&sbeSchemaVersion=1
+    REST header:              X-PARADEX-SBE: 1:1
+
+  Timestamps: all int64, microseconds since Unix epoch (UTC)
+
+  Market names: variable-length UTF-8 string, e.g. "BTC-USD-PERP"
+-->
+<sbe:messageSchema
+  xmlns:sbe="http://fixprotocol.io/2016/sbe"
+  xmlns:pdx="https://docs.paradex.trade/sbe"
+  package="paradex.sbe"
+  id="1"
+  version="1"
+  semanticVersion="1.0.0"
+  description="Paradex perpetuals DEX — SBE market data and order response schema"
+  byteOrder="littleEndian"
+  headerType="messageHeader">
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       COMPOSITE TYPES
+       ═══════════════════════════════════════════════════════════════ -->
+  <types>
+
+    <!-- Standard SBE message header — 8 bytes, must be first in every message -->
+    <composite name="messageHeader" description="Template ID and root block length">
+      <type name="blockLength" primitiveType="uint16"/>
+      <type name="templateId"  primitiveType="uint16"/>
+      <type name="schemaId"    primitiveType="uint16"/>
+      <type name="version"     primitiveType="uint16"/>
+    </composite>
+
+    <!-- Repeating-group size header -->
+    <composite name="groupSizeEncoding" description="Repeating group dimensions">
+      <type name="blockLength" primitiveType="uint16"/>
+      <type name="numInGroup"  primitiveType="uint16"/>
+    </composite>
+
+    <!-- Variable-length UTF-8 string (max 255 bytes) -->
+    <composite name="varString8" description="Length-prefixed UTF-8 string, max 255 bytes">
+      <type name="length"  primitiveType="uint8"/>
+      <type name="varData" length="0" primitiveType="uint8"
+            semanticType="String" characterEncoding="UTF-8"/>
+    </composite>
+
+    <!--
+      NUMERIC ENCODING — NAMED COMPOSITES WITH CONSTANT EXPONENTS
+      ─────────────────────────────────────────────────────────────
+      Following the CME MDP 3.0 / Real Logic canonical pattern:
+        • Exponent is a schema constant (presence="constant") — never on the wire.
+        • Each semantic type gets its own named composite.
+        • NULL sentinel: INT64_MIN = -9223372036854775808
+
+      Type vocabulary:
+        Price8      — order/trade/mark/index prices          exponent -8
+        Price8NULL  — optional prices (MARKET orders, etc.)  exponent -8, presence=optional
+        Qty8        — order/fill size, open interest         exponent -8
+        Qty8NULL    — optional quantity (e.g. empty book side) exponent -8, presence=optional
+        Value8      — notional, margin, PnL (USD)            exponent -8
+        Value8NULL  — optional USD value                     exponent -8, presence=optional
+        Rate8       — leverage, simpler ratio fields         exponent -8
+        Rate8NULL   — optional rate (e.g. options greeks)   exponent -8, presence=optional
+
+      actual_value = mantissa × 10^exponent
+      Example: price 42000.50 → Price8 mantissa 4200050000000
+      Example: funding rate 0.0001 → Rate8 mantissa 10000
+    -->
+
+    <!-- Required price (e.g. limit price on a LIMIT order) -->
+    <composite name="Price8" description="Price, fixed-point exponent -8">
+      <type name="mantissa" primitiveType="int64" nullValue="-9223372036854775808"/>
+      <type name="exponent" primitiveType="int8" presence="constant">-8</type>
+    </composite>
+
+    <!-- Optional price — null when field is not applicable (e.g. MARKET order price) -->
+    <composite name="Price8NULL" description="Optional price, fixed-point exponent -8">
+      <type name="mantissa" primitiveType="int64" presence="optional"
+            nullValue="-9223372036854775808"/>
+      <type name="exponent" primitiveType="int8" presence="constant">-8</type>
+    </composite>
+
+    <!-- Order/fill/position quantity -->
+    <composite name="Qty8" description="Quantity, fixed-point exponent -8">
+      <type name="mantissa" primitiveType="int64" nullValue="-9223372036854775808"/>
+      <type name="exponent" primitiveType="int8" presence="constant">-8</type>
+    </composite>
+
+    <!-- Optional quantity — null when field is not applicable (e.g. empty book side) -->
+    <composite name="Qty8NULL" description="Optional quantity, fixed-point exponent -8">
+      <type name="mantissa" primitiveType="int64" presence="optional"
+            nullValue="-9223372036854775808"/>
+      <type name="exponent" primitiveType="int8" presence="constant">-8</type>
+    </composite>
+
+    <!-- USD-denominated values: notional, margin, PnL -->
+    <composite name="Value8" description="USD value, fixed-point exponent -8">
+      <type name="mantissa" primitiveType="int64" nullValue="-9223372036854775808"/>
+      <type name="exponent" primitiveType="int8" presence="constant">-8</type>
+    </composite>
+
+    <!-- Optional USD value (e.g. realizedPnl when no position closed) -->
+    <composite name="Value8NULL" description="Optional USD value, fixed-point exponent -8">
+      <type name="mantissa" primitiveType="int64" presence="optional"
+            nullValue="-9223372036854775808"/>
+      <type name="exponent" primitiveType="int8" presence="constant">-8</type>
+    </composite>
+
+    <!-- Leverage and simpler ratio fields -->
+    <composite name="Rate8" description="Rate/ratio, fixed-point exponent -8">
+      <type name="mantissa" primitiveType="int64" nullValue="-9223372036854775808"/>
+      <type name="exponent" primitiveType="int8" presence="constant">-8</type>
+    </composite>
+
+    <!--
+      High-precision rate, fixed-point exponent -12.
+
+      Funding rates carry more than 8 significant decimals at source (the JSON
+      field is an unbounded decimal string, e.g. "0.00010000001298"), so Rate8
+      truncates them to "0.00010000". Those digits are material on large
+      notionals, hence a dedicated -12 type rather than widening Rate8 —
+      changing Rate8's constant exponent would silently reinterpret every
+      existing rate field on the wire, which is a BREAKING change under the
+      versioning policy above.
+
+      Range at -12: +/-9.22e6, far beyond any real funding rate.
+    -->
+    <composite name="Rate12" description="High-precision rate/ratio, fixed-point exponent -12">
+      <type name="mantissa" primitiveType="int64" nullValue="-9223372036854775808"/>
+      <type name="exponent" primitiveType="int8" presence="constant">-12</type>
+    </composite>
+
+    <composite name="Rate12NULL" description="Optional high-precision rate, fixed-point exponent -12">
+      <type name="mantissa" primitiveType="int64" presence="optional"
+            nullValue="-9223372036854775808"/>
+      <type name="exponent" primitiveType="int8" presence="constant">-12</type>
+    </composite>
+
+    <!-- Optional rate (e.g. options greeks, implied vol) -->
+    <composite name="Rate8NULL" description="Optional rate/ratio, fixed-point exponent -8">
+      <type name="mantissa" primitiveType="int64" presence="optional"
+            nullValue="-9223372036854775808"/>
+      <type name="exponent" primitiveType="int8" presence="constant">-8</type>
+    </composite>
+
+    <!--
+      ACCOUNT ADDRESS ENCODING
+      ─────────────────────────
+      Paradex account addresses are Starknet 252-bit field elements, canonically
+      represented as 32 raw bytes (big-endian, zero-padded).
+
+      Wire format: 32 bytes, big-endian.
+        actual_address = bytes interpreted as big-endian uint256
+
+      To convert from/to hex string:
+        Encode: strip "0x" prefix, decode hex → 32 bytes, zero-pad from left.
+          e.g. "0x049d36...dc7" → [0x00, 0x04, 0x9d, 0x36, ...]
+        Decode: hex-encode 32 bytes, prepend "0x", strip leading zeros if desired.
+          e.g. [0x00, 0x04, 0x9d, 0x36, ...] → "0x049d36...dc7"
+
+      Go example:
+        addr, _ := hex.DecodeString(strings.TrimPrefix(s, "0x"))
+        var b [32]byte
+        copy(b[32-len(addr):], addr)
+
+      TypeScript example:
+        const addr = BigInt(hexStr).toString(16).padStart(64, '0')
+        // addr is a 64-char hex string; split into bytes for the wire
+    -->
+    <type name="AccountAddress" primitiveType="uint8" length="32"
+          description="32-byte big-endian Paradex account address (strip 0x, zero-pad left)"/>
+
+    <type name="Timestamp" primitiveType="int64"
+          description="Microseconds since Unix epoch UTC"/>
+
+    <!-- ── Enumerations ── -->
+
+    <enum name="Side" encodingType="uint8" description="Order/trade side">
+      <validValue name="BUY"               >1</validValue>
+      <validValue name="SELL"              >2</validValue>
+      <validValue name="NON_REPRESENTABLE" >254</validValue>
+    </enum>
+
+    <enum name="OrderType" encodingType="uint8">
+      <validValue name="LIMIT"             >1</validValue>
+      <validValue name="MARKET"            >2</validValue>
+      <validValue name="STOP_LIMIT"        >3</validValue>
+      <validValue name="STOP_MARKET"       >4</validValue>
+      <validValue name="TAKE_PROFIT_LIMIT" >5</validValue>
+      <validValue name="TAKE_PROFIT_MARKET">6</validValue>
+      <validValue name="STOP_LOSS_LIMIT"   >7</validValue>
+      <validValue name="STOP_LOSS_MARKET"  >8</validValue>
+      <validValue name="NON_REPRESENTABLE" >254</validValue>
+    </enum>
+
+    <enum name="OrderStatus" encodingType="uint8">
+      <validValue name="NEW"              >1</validValue>
+      <validValue name="UNTRIGGERED"      >2</validValue>
+      <validValue name="OPEN"             >3</validValue>
+      <validValue name="CLOSED"           >4</validValue>
+      <validValue name="NON_REPRESENTABLE">254</validValue>
+    </enum>
+
+    <enum name="TimeInForce" encodingType="uint8">
+      <validValue name="GTC"              >1</validValue>
+      <validValue name="IOC"              >2</validValue>
+      <validValue name="POST_ONLY"        >3</validValue>
+      <validValue name="RPI"              >4</validValue>
+      <validValue name="NON_REPRESENTABLE">254</validValue>
+    </enum>
+
+    <enum name="FillType" encodingType="uint8">
+      <validValue name="FILL"             >1</validValue>
+      <validValue name="LIQUIDATION"      >2</validValue>
+      <validValue name="UNWIND_TRANSFER"         >3</validValue>
+      <validValue name="SETTLE_MARKET"    >4</validValue>
+      <validValue name="RPI"              >5</validValue>
+      <validValue name="BLOCK_TRADE"      >6</validValue>
+      <validValue name="NON_REPRESENTABLE">254</validValue>
+    </enum>
+
+    <enum name="PkgType" encodingType="uint8" description="Orderbook package type">
+      <validValue name="SNAPSHOT">0</validValue>
+      <validValue name="DELTA"   >1</validValue>
+    </enum>
+
+    <!--
+      Asset kind — mirrors messagesv1.AssetKind. UNSPECIFIED is the
+      forward-compatible fallback: decoders must not treat an unknown
+      value as fatal.
+    -->
+    <enum name="AssetKind" encodingType="uint8" description="Market asset kind">
+      <validValue name="UNSPECIFIED"      >0</validValue>
+      <validValue name="PERPETUAL_FUTURE" >1</validValue>
+      <validValue name="OPTION"           >2</validValue>
+      <validValue name="SPOT"             >3</validValue>
+    </enum>
+
+    <!--
+      Funding-rate source venue — mirrors messagesv1.Source. New venues are
+      appended here as a NON-BREAKING change (version bump, not id bump), so
+      decoders MUST map unrecognised values to UNSPECIFIED rather than error.
+    -->
+    <enum name="FundingRateSource" encodingType="uint8" description="Funding rate source venue">
+      <validValue name="UNSPECIFIED" >0</validValue>
+      <validValue name="PARADEX"     >1</validValue>
+      <validValue name="BINANCE"     >2</validValue>
+      <validValue name="BYBIT"       >3</validValue>
+      <validValue name="OKX"         >4</validValue>
+      <validValue name="DERIBIT"     >5</validValue>
+      <validValue name="DERIVE"      >6</validValue>
+      <validValue name="HYPERLIQUID" >7</validValue>
+      <validValue name="LIGHTER"     >8</validValue>
+      <validValue name="DATABENTO"   >9</validValue>
+      <validValue name="PUBLISHER"   >10</validValue>
+      <validValue name="PYTH"        >11</validValue>
+      <validValue name="STORK"       >12</validValue>
+    </enum>
+
+    <enum name="ReduceOnly" encodingType="uint8">
+      <validValue name="FALSE"            >0</validValue>
+      <validValue name="TRUE"             >1</validValue>
+      <validValue name="NON_REPRESENTABLE">254</validValue>
+    </enum>
+
+    <enum name="LiquiditySide" encodingType="uint8">
+      <validValue name="MAKER"            >1</validValue>
+      <validValue name="TAKER"            >2</validValue>
+      <validValue name="NON_REPRESENTABLE">254</validValue>
+    </enum>
+
+    <enum name="STPMode" encodingType="uint8"
+          description="Self-Trade Prevention mode">
+      <validValue name="NONE"             >0</validValue>
+      <validValue name="EXPIRE_MAKER"     >1</validValue>
+      <validValue name="EXPIRE_TAKER"     >2</validValue>
+      <validValue name="EXPIRE_BOTH"      >3</validValue>
+      <validValue name="NON_REPRESENTABLE">254</validValue>
+    </enum>
+
+    <!-- OrderFlags bitset — bit-per-flag, matches model.OrderFlag constants -->
+    <set name="OrderFlags" encodingType="uint8" description="Order flags bitset">
+      <choice name="REDUCE_ONLY"                    >0</choice>
+      <choice name="STOP_CONDITION_BELOW_TRIGGER"   >1</choice>
+      <choice name="STOP_CONDITION_ABOVE_TRIGGER"   >2</choice>
+      <choice name="INTERACTIVE"                    >3</choice>
+      <choice name="TARGET_STRATEGY_VWAP"           >4</choice>
+    </set>
+
+    <enum name="PositionStatus" encodingType="uint8">
+      <validValue name="OPEN"             >1</validValue>
+      <validValue name="CLOSED"           >2</validValue>
+      <validValue name="UNSPECIFIED"      >3</validValue>
+      <validValue name="NON_REPRESENTABLE">254</validValue>
+    </enum>
+
+    <enum name="AccountStatus" encodingType="uint8">
+      <validValue name="ACTIVE"           >1</validValue>
+      <validValue name="LIQUIDATION"      >2</validValue>
+      <validValue name="NON_REPRESENTABLE">254</validValue>
+    </enum>
+
+  </types>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       MESSAGES  (templateId → message)
+       ─────────────────────────────────
+       Public market data:   1–19
+       Private account data: 20–39
+       System / control:     40–59
+       (reserved for v1.1+): 60–255
+       ═══════════════════════════════════════════════════════════════ -->
+
+  <!-- ──────────────────────────────────────────────────
+       templateId=1  PUBLIC TRADE
+       Channel: trades.{market}
+       Emitted on every matched trade
+       ────────────────────────────────────────────────── -->
+  <sbe:message name="TradeEvent" id="1"
+    description="Single matched trade (public)">
+    <field id="1"  name="ts"         type="Timestamp"
+           description="Feed publish timestamp (μs UTC)"/>
+    <field id="2"  name="seq"        type="int64"
+           description="Monotonically increasing sequence number"/>
+    <field id="3"  name="tradeId"    type="int64"
+           description="Unique trade identifier"/>
+    <field id="4"  name="side"       type="Side"
+           description="Aggressor side"/>
+    <field id="5"  name="price"      type="Price8"/>
+    <field id="6"  name="size"       type="Qty8"/>
+    <field id="7"  name="createdAt"  type="Timestamp"
+           description="Matching engine timestamp (μs UTC)"/>
+    <field id="8"  name="tradeType"  type="FillType"
+           description="Trade type: FILL, LIQUIDATION, RPI, BLOCK_TRADE, etc."/>
+    <!-- market is variable-length → must come after all fixed fields -->
+    <data  id="9"  name="market"     type="varString8"
+           description="Market symbol e.g. BTC-USD-PERP"/>
+  </sbe:message>
+
+  <!-- ──────────────────────────────────────────────────
+       templateId=2  BEST BID / OFFER  (BBO)
+       Channel: bbo.{market}
+       Emitted on every best-price change; supports auto-culling
+       ────────────────────────────────────────────────── -->
+  <sbe:message name="BboEvent" id="2"
+    description="Best bid/ask snapshot (public)">
+    <field id="1"  name="ts"        type="Timestamp"/>
+    <field id="2"  name="seq"       type="int64"/>
+    <field id="3"  name="bidPrice"  type="Price8NULL"
+           description="Best bid price; null if no bids"/>
+    <field id="4"  name="bidSize"   type="Qty8NULL"
+           description="Total size at best bid; null when bidPrice is null"/>
+    <field id="5"  name="askPrice"  type="Price8NULL"
+           description="Best ask price; null if no asks"/>
+    <field id="6"  name="askSize"   type="Qty8NULL"
+           description="Total size at best ask; null when askPrice is null"/>
+    <data  id="7"  name="market"    type="varString8"/>
+  </sbe:message>
+
+  <!-- ──────────────────────────────────────────────────
+       templateId=3  ORDER BOOK (delta + snapshot)
+       Channel: order_book.{market}
+       PkgType=SNAPSHOT: full top-N levels
+       PkgType=DELTA:    incremental updates (qty=0 means remove level)
+
+       Interactive feed fields (bestBidPrice/Size, bestAskPrice/Size, relativeSpread)
+       are null/zero when not provided (non-interactive snapshot/delta feeds).
+
+       History note: the interactive and API-feed best price/size fields were
+       added without sinceVersion markers, because they predate version
+       marking. An 89-byte block is what every client has always received as
+       version 0; no shorter layout was ever served.
+       ────────────────────────────────────────────────── -->
+  <sbe:message name="BookEvent" id="3"
+    description="Order book update — snapshot or delta (public)">
+    <field id="1"  name="ts"             type="Timestamp"/>
+    <field id="2"  name="seq"            type="int64"
+           description="Sequence number; DELTA must be applied in order"/>
+    <field id="3"  name="pkgType"        type="PkgType"/>
+    <!-- Interactive-feed best prices; null for snapshot/delta non-interactive feeds -->
+    <field id="7"  name="bestBidPrice"   type="Price8NULL"
+           description="Best bid price including RPI; null for non-interactive feeds"/>
+    <field id="8"  name="bestBidSize"    type="Qty8NULL"
+           description="Best bid size including RPI; null for non-interactive feeds"/>
+    <field id="9"  name="bestAskPrice"   type="Price8NULL"
+           description="Best ask price including RPI; null for non-interactive feeds"/>
+    <field id="10" name="bestAskSize"    type="Qty8NULL"
+           description="Best ask size including RPI; null for non-interactive feeds"/>
+    <field id="11" name="relativeSpread" type="Rate8NULL"
+           description="(ask-bid)/midpoint; null for non-interactive feeds"/>
+    <!-- API-feed best prices (excluding RPI orders) -->
+    <field id="12" name="bestBidApiPrice" type="Price8NULL"
+           description="Best bid price from API orders (excluding RPI); null when not available"/>
+    <field id="13" name="bestBidApiSize"  type="Qty8NULL"
+           description="Best bid size from API orders (excluding RPI); null when not available"/>
+    <field id="14" name="bestAskApiPrice" type="Price8NULL"
+           description="Best ask price from API orders (excluding RPI); null when not available"/>
+    <field id="15" name="bestAskApiSize"  type="Qty8NULL"
+           description="Best ask size from API orders (excluding RPI); null when not available"/>
+    <!-- repeating groups come after all fixed fields -->
+    <group id="4"  name="bids"           dimensionType="groupSizeEncoding"
+           description="Bid levels. qty=0 means remove level from local book">
+      <field id="1" name="price" type="Price8"/>
+      <field id="2" name="size"  type="Qty8"
+             description="0 = remove this price level"/>
+    </group>
+    <group id="5"  name="asks"           dimensionType="groupSizeEncoding">
+      <field id="1" name="price" type="Price8"/>
+      <field id="2" name="size"  type="Qty8"/>
+    </group>
+    <data  id="6"  name="market"         type="varString8"/>
+  </sbe:message>
+
+  <!-- ──────────────────────────────────────────────────
+       templateId=4  MARKET SUMMARY (ticker)
+       Channel: markets_summary.{market}
+       24h rolling statistics
+
+       Field parity with JSON MarketSummaryResp:
+         markPrice       = mark_price
+         indexPrice      = underlying_price
+         lastPrice       = last_traded_price
+         volumeUsd24h    = volume_24h (in USD)
+         bid/ask         = best bid/ask
+         totalVolume     = total_volume (lifetime USD)
+         priceChangeRate24h = price_change_rate_24h
+         Options-only fields (null for perpetual futures):
+           markIv/bidIv/askIv/lastIv, delta/gamma/vega,
+           futureFundingRate, externalFairPrice,
+           forwardRate, riskFreeRate
+       ────────────────────────────────────────────────── -->
+  <sbe:message name="MarketSummaryEvent" id="4"
+    description="24h rolling market statistics (public)">
+    <field id="1"  name="ts"                 type="Timestamp"/>
+    <field id="2"  name="seq"                type="int64"/>
+    <field id="3"  name="markPrice"          type="Price8"
+           description="Current mark price (mark_price)"/>
+    <field id="4"  name="indexPrice"         type="Price8"
+           description="Underlying/spot index price (underlying_price)"/>
+    <field id="5"  name="lastPrice"          type="Price8"
+           description="Last traded price (last_traded_price)"/>
+    <field id="10" name="volumeUsd24h"       type="Value8"
+           description="24h volume in USD (volume_24h)"/>
+    <field id="11" name="openInterest"       type="Qty8"
+           description="Open interest in base currency (open_interest)"/>
+    <field id="13" name="fundingRate"        type="Rate8"
+           description="Current funding rate (funding_rate)"/>
+    <field id="15" name="bid"                type="Price8NULL"
+           description="Best bid price; null if no bids (bid)"/>
+    <field id="16" name="ask"                type="Price8NULL"
+           description="Best ask price; null if no asks (ask)"/>
+    <field id="17" name="totalVolume"        type="Value8"
+           description="Lifetime total traded volume in USD (total_volume)"/>
+    <field id="18" name="priceChangeRate24h" type="Rate8"
+           description="24h price change rate (price_change_rate_24h)"/>
+    <!-- Options-specific fields; null/zero for perpetual futures -->
+    <field id="19" name="markIv"             type="Rate8NULL"
+           description="Mark implied volatility; null for non-option markets (mark_iv)"/>
+    <field id="20" name="bidIv"              type="Rate8NULL"
+           description="Bid IV; null for non-option markets (bid_iv)"/>
+    <field id="21" name="askIv"              type="Rate8NULL"
+           description="Ask IV; null for non-option markets (ask_iv)"/>
+    <field id="22" name="lastIv"             type="Rate8NULL"
+           description="Last trade IV; null for non-option markets (last_iv)"/>
+    <field id="23" name="delta"              type="Rate8NULL"
+           description="Greeks delta; null when not available (greeks.delta)"/>
+    <field id="24" name="gamma"              type="Rate8NULL"
+           description="Greeks gamma; null when not available (greeks.gamma)"/>
+    <field id="25" name="vega"               type="Rate8NULL"
+           description="Greeks vega; null when not available (greeks.vega)"/>
+    <field id="31" name="theta"              type="Rate8NULL"
+           description="Greeks theta; null when not available (greeks.theta)"/>
+    <field id="32" name="rho"               type="Rate8NULL"
+           description="Greeks rho; null when not available (greeks.rho)"/>
+    <field id="33" name="volga"             type="Rate8NULL"
+           description="Greeks volga; null when not available (greeks.volga)"/>
+    <field id="34" name="vanna"             type="Rate8NULL"
+           description="Greeks vanna; null when not available (greeks.vanna)"/>
+    <field id="26" name="futureFundingRate"  type="Rate8NULL"
+           description="Smoothed future funding rate (options); null for perps"/>
+    <field id="27" name="externalFairPrice"  type="Price8NULL"
+           description="External fair price (spot + external basis); null if unavailable"/>
+    <field id="29" name="bidSize"            type="Qty8NULL"
+           description="Best bid quantity; null if no bids (bid_size)"/>
+    <field id="30" name="askSize"            type="Qty8NULL"
+           description="Best ask quantity; null if no asks (ask_size)"/>
+    <field id="35" name="forwardRate"        type="Rate8NULL" sinceVersion="1"
+           description="EWMA-smoothed annualized forward rate for dated options; null for non-option markets (forward_rate)"/>
+    <field id="36" name="riskFreeRate"       type="Rate8NULL" sinceVersion="1"
+           description="Risk-free discounting rate used for option pricing; null for non-option markets (risk_free_rate)"/>
+    <!--
+      Full-precision funding rate. Appended LAST among fixed fields so the
+      v1 block layout stays append-only: field 13 (fundingRate, Rate8) is
+      retained unchanged and still truncates to 8dp for version 0 clients.
+      Version 1 clients should prefer this field and fall back to field 13
+      only when this one is null.
+    -->
+    <field id="37" name="fundingRatePrecise" type="Rate12NULL" sinceVersion="1"
+           description="Funding rate at 12dp (funding_rate); prefer over fundingRate"/>
+    <data  id="28" name="market"             type="varString8"/>
+  </sbe:message>
+
+  <!-- ──────────────────────────────────────────────────
+       templateId=5  FUNDING DATA
+       Channel: funding_data.{market}
+       Per-funding-period payment record
+
+       Full parity with JSON FundingDataResult:
+         fundingRate         = funding_rate          (Rate8, exponent -8)
+         fundingIndex        = funding_index          (Price8, unbounded, exponent -8)
+         fundingPremium      = funding_premium        (Rate8, exponent -8)
+         fundingRate8h       = funding_rate_8h        (Rate8, exponent -8)
+         fundingPeriodHours  = funding_period_hours   (int16, plain integer hours e.g. 1, 8)
+       ────────────────────────────────────────────────── -->
+  <sbe:message name="FundingDataEvent" id="5"
+    description="Funding rate settlement record (public)">
+    <field id="1"  name="ts"                  type="Timestamp"/>
+    <field id="2"  name="seq"                 type="int64"/>
+    <field id="3"  name="fundingRate"         type="Rate8"
+           description="Raw funding rate for the actual funding period (funding_rate)"/>
+    <field id="4"  name="fundingIndex"        type="Price8"
+           description="Cumulative funding index; unbounded, 8dp (funding_index)"/>
+    <field id="5"  name="createdAt"           type="Timestamp"/>
+    <field id="6"  name="fundingPremium"      type="Rate8"
+           description="Current funding premium (funding_premium)"/>
+    <field id="7"  name="fundingRate8h"       type="Rate8"
+           description="Normalized 8-hour funding rate (funding_rate_8h)"/>
+    <field id="8"  name="fundingPeriodHours"  type="int16"
+           description="Actual funding period in whole hours, e.g. 1 or 8 (funding_period_hours)"/>
+    <!--
+      Appended in 1:1. sinceVersion=1 keeps the v0 block layout intact, so
+      version 0 clients decode this message unchanged and simply do not see
+      the field. JSON omits it when empty (omitempty) → encode null.
+    -->
+    <field id="10" name="impactPremiumRate"   type="Rate8NULL" sinceVersion="1"
+           description="Impact premium rate (impact_premium_rate); null when absent"/>
+    <data  id="9"  name="market"              type="varString8"/>
+  </sbe:message>
+
+  <!-- ──────────────────────────────────────────────────
+       templateId=6  FUNDING RATE COMPARISON            (added in 1:1)
+       Channel: funding_rate_comparison.ALL@{refresh_rate}
+       Cross-venue hourly funding rate comparison
+
+       Full parity with JSON FundingRateComparisonResp:
+         assetKind         = asset_kind           (AssetKind enum)
+         source            = source               (FundingRateSource enum)
+         lastUpdatedAt     = last_updated_at      (Timestamp)
+         hourlyFundingRate = hourly_funding_rate  (Rate8, exponent -8)
+         market            = symbol               (varString8)
+       ────────────────────────────────────────────────── -->
+  <sbe:message name="FundingRateComparisonEvent" id="6"
+    description="Cross-venue funding rate comparison (public)">
+    <field id="1" name="ts"                type="Timestamp"/>
+    <field id="2" name="lastUpdatedAt"     type="Timestamp"
+           description="Source-reported update time (last_updated_at)"/>
+    <field id="3" name="hourlyFundingRate" type="Rate12"
+           description="Hourly funding rate at 12dp (hourly_funding_rate). Rate12
+                        rather than Rate8: cross-venue hourly rates are small
+                        enough that 8dp loses real precision (1e-12 truncates to
+                        zero), which would make the binary feed disagree with JSON."/>
+    <field id="4" name="assetKind"         type="AssetKind"/>
+    <field id="5" name="source"            type="FundingRateSource"
+           description="Venue; unrecognised values decode as UNSPECIFIED"/>
+    <data  id="6" name="market"            type="varString8"
+           description="Market symbol (symbol), e.g. BTC-USD-PERP"/>
+  </sbe:message>
+
+  <!-- ──────────────────────────────────────────────────
+       templateId=20  ORDER UPDATE  (private)
+       Channel: orders.{account}
+       Emitted on every order state transition
+       ────────────────────────────────────────────────── -->
+  <sbe:message name="OrderEvent" id="20"
+    description="Order state update (private, account-scoped)">
+    <field id="1"  name="ts"              type="Timestamp"/>
+    <field id="2"  name="seq"             type="int64"/>
+    <field id="3"  name="status"          type="OrderStatus"/>
+    <field id="4"  name="side"            type="Side"/>
+    <field id="5"  name="orderType"       type="OrderType"/>
+    <field id="6"  name="timeInForce"     type="TimeInForce"/>
+    <field id="8"  name="price"           type="Price8NULL"
+           description="Limit price; null for MARKET orders"/>
+    <field id="9"  name="triggerPrice"    type="Price8NULL"
+           description="Stop/take-profit trigger; null if not conditional"/>
+    <field id="10" name="size"            type="Qty8"
+           description="Original order size"/>
+    <field id="12" name="sizeOpen"        type="Qty8"
+           description="Remaining open quantity (remaining_size)"/>
+    <field id="13" name="avgFillPrice"    type="Price8NULL"
+           description="Volume-weighted average fill price; null if unfilled"/>
+    <field id="14" name="createdAt"       type="Timestamp"/>
+    <field id="15" name="updatedAt"       type="Timestamp"
+           description="Last update timestamp (last_updated_at)"/>
+    <field id="19" name="account"         type="AccountAddress"
+           description="Paradex account address (32 bytes, big-endian)"/>
+    <field id="20" name="receivedAt"      type="Timestamp"
+           description="When the API service received the order (received_at)"/>
+    <field id="21" name="publishedAt"     type="Timestamp"
+           description="When the update was published to the client (published_at)"/>
+    <field id="22" name="stp"             type="STPMode"
+           description="Self-trade prevention mode; NONE if not set (stp)"/>
+    <field id="24" name="flags"           type="OrderFlags"
+           description="Order flags bitset (flags array in JSON)"/>
+    <!-- variable-length fields last -->
+    <data  id="16" name="orderId"         type="varString8"/>
+    <data  id="17" name="clientOrderId"   type="varString8"
+           description="Client-supplied idempotency key"/>
+    <data  id="18" name="market"          type="varString8"/>
+    <data  id="23" name="cancelReason"    type="varString8"
+           description="Cancellation reason; empty if not cancelled (cancel_reason)"/>
+  </sbe:message>
+
+  <!-- ──────────────────────────────────────────────────
+       templateId=21  FILL  (private)
+       Channel: fills.{account}
+       Emitted on every partial or full fill
+       ────────────────────────────────────────────────── -->
+  <sbe:message name="FillEvent" id="21"
+    description="Trade fill for authenticated account (private)">
+    <field id="1"  name="ts"            type="Timestamp"/>
+    <field id="2"  name="seq"           type="int64"/>
+    <field id="3"  name="fillType"      type="FillType"/>
+    <field id="4"  name="side"          type="Side"/>
+    <field id="5"  name="liquidity"     type="LiquiditySide"/>
+    <field id="6"  name="price"         type="Price8"
+           description="Fill execution price"/>
+    <field id="7"  name="size"          type="Qty8"
+           description="Filled quantity in this event"/>
+    <field id="8"  name="fee"           type="Value8"
+           description="Fee charged (positive = paid, negative = rebate)"/>
+    <field id="9"  name="realizedPnl"   type="Value8NULL"
+           description="Realized PnL from this fill; null if position not closed"/>
+    <field id="10" name="createdAt"     type="Timestamp"/>
+    <field id="16" name="account"         type="AccountAddress"
+           description="Paradex account address (32 bytes, big-endian)"/>
+    <field id="17" name="underlyingPrice" type="Price8"
+           description="Underlying/spot index price at fill time (underlying_price)"/>
+    <field id="18" name="realizedFunding" type="Value8"
+           description="Realized funding PnL from this fill (realized_funding)"/>
+    <data  id="11" name="fillId"        type="varString8"/>
+    <data  id="12" name="orderId"       type="varString8"/>
+    <data  id="13" name="clientOrderId" type="varString8"/>
+    <data  id="14" name="tradeId"       type="varString8"/>
+    <data  id="15" name="market"        type="varString8"/>
+  </sbe:message>
+
+  <!-- ──────────────────────────────────────────────────
+       templateId=22  POSITION UPDATE  (private)
+       Channel: positions.{account}
+       ────────────────────────────────────────────────── -->
+  <sbe:message name="PositionEvent" id="22"
+    description="Position snapshot for a single market (private)">
+    <field id="1"  name="ts"               type="Timestamp"/>
+    <field id="2"  name="seq"              type="int64"/>
+    <field id="3"  name="side"             type="Side"
+           description="BUY=long, SELL=short"/>
+    <field id="4"  name="size"             type="Qty8"
+           description="Position size (absolute)"/>
+    <field id="5"  name="avgEntryPrice"    type="Price8"/>
+    <field id="6"  name="unrealizedPnl"    type="Value8"/>
+    <field id="7"  name="realizedPnl"      type="Value8"/>
+    <field id="8"  name="markPrice"        type="Price8"/>
+    <field id="9"  name="liquidationPrice" type="Price8NULL"
+           description="Estimated liquidation price; null if not at risk"/>
+    <field id="10" name="leverage"              type="Rate8"
+           description="Effective leverage (8dp)"/>
+    <field id="11" name="updatedAt"             type="Timestamp"/>
+    <field id="13" name="account"               type="AccountAddress"
+           description="Paradex account address (32 bytes, big-endian)"/>
+    <field id="14" name="avgEntryPriceUsd"      type="Price8"
+           description="Average entry price in USD (average_entry_price_usd)"/>
+    <field id="15" name="cost"                  type="Value8"
+           description="Position cost (signed) (cost)"/>
+    <field id="16" name="costUsd"               type="Value8"
+           description="Position cost in USD (signed) (cost_usd)"/>
+    <field id="17" name="cachedFundingIndex"    type="Price8"
+           description="Cached funding index (cached_funding_index)"/>
+    <field id="18" name="unrealizedFundingPnl"  type="Value8"
+           description="Unrealized funding PnL (signed) (unrealized_funding_pnl)"/>
+    <field id="19" name="status"                type="PositionStatus"
+           description="Position status (status)"/>
+    <data  id="12" name="market"                type="varString8"/>
+    <data  id="50" name="lastFillId"            type="varString8"
+           description="Last fill ID (last_fill_id)"/>
+  </sbe:message>
+
+  <!-- ──────────────────────────────────────────────────
+       templateId=23  ACCOUNT SUMMARY  (private)
+       Channel: account.{account}
+       Emitted on every balance/margin change
+       ────────────────────────────────────────────────── -->
+  <sbe:message name="AccountEvent" id="23"
+    description="Account-level balance and margin snapshot (private)">
+    <field id="1"  name="ts"                  type="Timestamp"/>
+    <field id="2"  name="seq"                 type="int64"/>
+    <field id="3"  name="totalCollateral"     type="Value8"
+           description="Total collateral value in USD"/>
+    <field id="4"  name="freeCollateral"      type="Value8"
+           description="Collateral available for new orders"/>
+    <field id="5"  name="initialMarginReq"    type="Value8"
+           description="Total initial margin requirement"/>
+    <field id="6"  name="maintenanceMarginReq" type="Value8"
+           description="Total maintenance margin requirement"/>
+    <field id="7"  name="accountValue"        type="Value8"
+           description="Portfolio value including unrealized PnL"/>
+    <field id="8"  name="unrealizedPnl"       type="Value8"/>
+    <field id="9"  name="updatedAt"           type="Timestamp"/>
+    <field id="10" name="account"             type="AccountAddress"
+           description="Paradex account address (32 bytes, big-endian)"/>
+    <field id="11" name="marginCushion"       type="Value8"
+           description="Account value in excess of maintenance margin (margin_cushion)"/>
+    <field id="12" name="status"              type="AccountStatus"
+           description="Account status: ACTIVE, LIQUIDATION (status)"/>
+    <data  id="50" name="settlementAsset"     type="varString8"
+           description="Settlement asset e.g. USDC (settlement_asset)"/>
+  </sbe:message>
+
+  <!-- ──────────────────────────────────────────────────
+       templateId=40  HEARTBEAT  (system)
+       Server sends every 20s on idle connections
+       ────────────────────────────────────────────────── -->
+  <sbe:message name="HeartbeatEvent" id="40"
+    description="Keepalive heartbeat from server">
+    <field id="1" name="ts"  type="Timestamp"/>
+    <field id="2" name="seq" type="int64"/>
+  </sbe:message>
+
+  <!-- ──────────────────────────────────────────────────
+       templateId=41  SUBSCRIPTION ACK  (system)
+       NOTE: subscribed/error acks are always JSON text frames.
+       This SBE message is reserved for future binary ack path.
+       ────────────────────────────────────────────────── -->
+  <sbe:message name="SubscribedEvent" id="41"
+    description="Reserved — subscription acks currently use JSON text frames">
+    <field id="1" name="ts"     type="Timestamp"/>
+    <field id="2" name="seq"    type="int64"/>
+    <field id="3" name="status" type="uint8"
+           description="0=ok, 1=error"/>
+    <data  id="4" name="channel" type="varString8"/>
+  </sbe:message>
+
+</sbe:messageSchema>
