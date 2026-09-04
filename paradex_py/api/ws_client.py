@@ -970,9 +970,10 @@ class ParadexWebsocketClient:
                 )
             )
             response = await asyncio.wait_for(future, timeout=timeout)
-        except asyncio.TimeoutError:
+        finally:
+            # Every exit drops the entry: a failed send and a cancelled caller left it
+            # behind, and nothing else reclaims it while the connection stays up.
             self._pending_requests.pop(msg_id, None)
-            raise
         if "error" in response:
             raise WsRpcError(response["error"])
         return response.get("result", {})
