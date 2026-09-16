@@ -339,18 +339,30 @@ class ParadexAccount:
         expiration = time_now_milli_secs() + expiration_minutes * 60 * 1000
         return nonce, expiration
 
+    def _settlement_token_address(self) -> str:
+        """L2 address of the settlement token.
+
+        Selected by symbol rather than by position: `bridged_tokens` is not
+        ordered, and on every environment checked its first entry is ETH, so
+        indexing it sent the transfer against the wrong token.
+        """
+        for token in self.config.bridged_tokens:
+            if token.symbol == "USDC":
+                return token.l2_token_address
+        raise_value_error("Paradex: No USDC entry in bridged_tokens")
+
     async def transfer_on_l2(self, target_l2_address: str, amount_decimal: Decimal):
         try:
             # Load contracts
             paraclear_address = int_from_hex(self.config.paraclear_address)
-            usdc_address = int_from_hex(self.config.bridged_tokens[0].l2_token_address)
+            usdc_address = int_from_hex(self._settlement_token_address())
             paraclear_contract = await self.starknet.load_contract(paraclear_address, is_cairo0_contract=False)
             account_contract = await self.starknet.load_contract(self.l2_address, is_cairo0_contract=True)
 
             paraclear_decimals = self.config.paraclear_decimals
 
             # Get token asset balance
-            token_asset_balance = await paraclear_contract.functions["getTokenAssetBalance"].call(
+            token_asset_balance = await paraclear_contract.functions["get_token_asset_balance"].call(
                 account=self.l2_address, token_address=usdc_address
             )
             logging.info(f"USDC balance on Paraclear: {token_asset_balance[0] / 10**paraclear_decimals}")
