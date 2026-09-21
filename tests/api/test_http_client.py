@@ -73,6 +73,28 @@ class TestHttpClient:
             self.http_client.request(url="https://api.example.com/test", http_method=HttpMethod.POST)
 
     @patch("httpx.Client.request")
+    def test_request_error_body_that_is_not_json_reports_the_status(self, mock_request):
+        """A gateway answering with HTML must not mask the status code."""
+        mock_response = Mock()
+        mock_response.status_code = 502
+        mock_response.text = "<html>502 Bad Gateway</html>"
+        mock_request.return_value = mock_response
+
+        with pytest.raises(ValueError, match="HTTP 502"):
+            self.http_client.request(url="https://api.example.com/test", http_method=HttpMethod.GET)
+
+    @patch("httpx.Client.request")
+    def test_request_error_body_missing_a_required_field_reports_the_status(self, mock_request):
+        """An error body shaped differently than ApiError must still surface."""
+        mock_response = Mock()
+        mock_response.status_code = 400
+        mock_response.text = '{"message": "boom"}'
+        mock_request.return_value = mock_response
+
+        with pytest.raises(ValueError, match="HTTP 400"):
+            self.http_client.request(url="https://api.example.com/test", http_method=HttpMethod.POST)
+
+    @patch("httpx.Client.request")
     def test_request_204_no_content(self, mock_request, caplog):
         """Test handling of 204 No Content responses (no warning expected)."""
         mock_response = Mock()

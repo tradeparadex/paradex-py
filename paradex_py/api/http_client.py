@@ -115,7 +115,13 @@ class HttpClient:
         if res.status_code == 429:
             return raise_value_error("Rate limit exceeded")
         if res.status_code >= 300:
-            error = ApiErrorSchema().loads(res.text)
+            try:
+                error = ApiErrorSchema().loads(res.text)
+            except Exception:
+                # A gateway can answer with HTML and the server may omit a field
+                # the schema requires; neither must mask the status code.
+                self.logger.warning(f"HttpClient: Unparseable error body request({url}, {http_method.value})")
+                return raise_value_error(f"HTTP {res.status_code}: {res.text[:200]}")
             return raise_value_error(str(error))
 
         # Handle 204 No Content - expected to have no body
