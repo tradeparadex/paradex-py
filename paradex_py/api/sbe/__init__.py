@@ -1,6 +1,8 @@
 """SBE (Simple Binary Encoding) decoder for Paradex WebSocket binary frames.
 
-Schema ID=1, Version=0 (paradex_1_0.xml).
+Schema ID=1 (paradex_1_0.xml). The decoder understands ``codec._SCHEMA_VERSION``;
+what it asks for on connect is ``NEGOTIATED_SCHEMA_VERSION``, which lags behind
+on purpose — see below.
 
 Field name divergence from JSON API:
   SBE ``trade_id``   ↔ JSON ``id``
@@ -25,7 +27,15 @@ from .codec import (
     decode_frame,
 )
 
+# Version requested in the connect URL. Every environment caps negotiation at
+# FEATURE_FLAG_SBE_MAX_VERSION, and anything above the cap is a 400 at connect,
+# not a downgrade — so a decoder that can read a newer version must still ask
+# for the served one. The order is: ship the decoder, let installs turn over,
+# then raise this once the server cap goes up.
+NEGOTIATED_SCHEMA_VERSION = 1
+
 __all__ = [
+    "NEGOTIATED_SCHEMA_VERSION",
     "AccountEventData",
     "BboEventData",
     "BookEventData",

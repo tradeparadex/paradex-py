@@ -296,10 +296,11 @@ class ParadexWebsocketClient:
 
             ws_url = self.api_url
             if self.sbe_enabled:
-                from paradex_py.api.sbe.codec import _SCHEMA_ID, _SCHEMA_VERSION
+                from paradex_py.api.sbe import NEGOTIATED_SCHEMA_VERSION
+                from paradex_py.api.sbe.codec import _SCHEMA_ID
 
                 sep = "&" if "?" in ws_url else "?"
-                ws_url += f"{sep}sbeSchemaId={_SCHEMA_ID}&sbeSchemaVersion={_SCHEMA_VERSION}"
+                ws_url += f"{sep}sbeSchemaId={_SCHEMA_ID}&sbeSchemaVersion={NEGOTIATED_SCHEMA_VERSION}"
 
             # Use custom connector if provided, otherwise use default websockets.connect
             if self.connector is not None:

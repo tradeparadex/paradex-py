@@ -36,8 +36,8 @@ MARKET = b"BTC-USD-PERP"
 ACCOUNT_BYTES = b"\x00" * 28 + b"\xde\xad\xbe\xef"
 
 
-def _hdr(block_len: int, tmpl_id: int) -> bytes:
-    return HEADER.pack(block_len, tmpl_id, 1, 0)
+def _hdr(block_len: int, tmpl_id: int, version: int = 0) -> bytes:
+    return HEADER.pack(block_len, tmpl_id, 1, version)
 
 
 def _var(s: bytes) -> bytes:
@@ -644,7 +644,7 @@ def test_fill_event_new_fill_types():
 _POS_STRUCT = struct.Struct("<qqBqqqqqqqq32sqqqqqB")
 
 
-def _make_position_frame(side: int = 1, liq_price: int = INT64_MIN) -> bytes:
+def _make_position_frame(side: int = 1, liq_price: int = INT64_MIN, mark_price: int = 4190000000000) -> bytes:
     block_len = _POS_STRUCT.size
     payload = _POS_STRUCT.pack(
         1710000000000000,  # ts
@@ -654,7 +654,7 @@ def _make_position_frame(side: int = 1, liq_price: int = INT64_MIN) -> bytes:
         4200000000000,  # avgEntryPrice
         -5000000000,  # unrealizedPnl (negative)
         1000000000,  # realizedPnl
-        4190000000000,  # markPrice
+        mark_price,  # markPrice (Price8NULL since 1:2)
         liq_price,  # liquidationPrice (null by default)
         5_00000000,  # leverage → 5.00000000
         1710000001000000,  # updatedAt
@@ -705,7 +705,7 @@ def test_position_event_negative_unrealized_pnl():
 _ACC_STRUCT = struct.Struct("<qqqqqqqqq32sqB")
 
 
-def _make_account_frame() -> bytes:
+def _make_account_frame(unrealized_pnl: int = 500_00000000) -> bytes:
     block_len = _ACC_STRUCT.size
     payload = _ACC_STRUCT.pack(
         1710000000000000,  # ts
@@ -715,7 +715,7 @@ def _make_account_frame() -> bytes:
         2000_00000000,  # initialMarginReq
         1000_00000000,  # maintenanceMarginReq
         10500_00000000,  # accountValue
-        500_00000000,  # unrealizedPnl
+        unrealized_pnl,  # unrealizedPnl (Value8NULL since 1:2)
         1710000001000000,  # updatedAt
         ACCOUNT_BYTES,  # account (32-byte fixed)
         9000_00000000,  # marginCushion → 9000.00000000
@@ -849,3 +849,153 @@ def test_frc_event_unknown_enum_is_none():
 def test_frc_event_negative_rate():
     _, model = decode_frame(_make_frc_frame(rate=-125000000))
     assert model.hourly_funding_rate == "-0.000125000000"
+
+
+# ── Schema 1:2 additions ─────────────────────────────────────────────────
+#
+# The SDK still negotiates 1:1, so both shapes have to decode: a 1:1 frame
+# (107-byte block, no feeCurrency) and a 1:2 one (116-byte block, feeCurrency
+# after market). The server trims the block and cuts the var-data section to
+# the negotiated version and stamps the header to match, so block_len gates the
+# appended block fields and the header version gates the appended var-data.
+
+_FILL_V2_TAIL = struct.Struct("<BQ")  # flags + orderbookSeqNo, appended in 1:2
+
+
+def _make_fill_frame_v2(
+    flags: int = 0b011,  # INTERACTIVE | RPI
+    orderbook_seq_no: int = 987654,
+    fee_currency: bytes = b"DIME",
+    seq: int = 8,
+) -> bytes:
+    block = _FILL_STRUCT.pack(
+        1710000000000000,  # ts
+        seq,  # seq (optional since 1:2)
+        1,  # fillType FILL
+        1,  # side BUY
+        1,  # liquidity MAKER
+        4200000000000,  # price
+        50_000_000,  # size
+        210_000_000,  # fee
+        INT64_MIN,  # realizedPnl null
+        1710000000000000,  # createdAt
+        ACCOUNT_BYTES,  # account
+        4199000000000,  # underlyingPrice
+        0,  # realizedFunding
+    ) + _FILL_V2_TAIL.pack(flags, orderbook_seq_no)
+    payload = block + _var(b"fill-1") + _var(b"order-1") + _var(b"client-1") + _var(b"trade-1") + _var(MARKET)
+    payload += _var(fee_currency)
+    return _hdr(len(block), 21, version=2) + payload
+
+
+def test_fill_v2_block_grew_to_116():
+    assert _FILL_STRUCT.size == 107
+    assert _FILL_STRUCT.size + _FILL_V2_TAIL.size == 116
+
+
+def test_fill_v2_appended_fields():
+    channel, model = decode_frame(_make_fill_frame_v2())
+    assert channel == "fills.BTC-USD-PERP"
+    assert model.flags == ["INTERACTIVE", "RPI"]
+    assert model.orderbook_seq_no == 987654
+    assert model.fee_currency == "DIME"
+    # The var-data before feeCurrency must still land on the right offsets.
+    assert model.market == "BTC-USD-PERP"
+    assert model.trade_id == "trade-1"
+
+
+def test_fill_v2_fee_currency_usdc():
+    _, model = decode_frame(_make_fill_frame_v2(fee_currency=b"USDC"))
+    assert model.fee_currency == "USDC"
+
+
+def test_fill_flags_unknown_bit():
+    """UNKNOWN is set server-side for a fill flag this schema has no bit for."""
+    _, model = decode_frame(_make_fill_frame_v2(flags=1 << 7))
+    assert model.flags == ["UNKNOWN"]
+
+
+def test_fill_flags_fastfill():
+    _, model = decode_frame(_make_fill_frame_v2(flags=1 << 2))
+    assert model.flags == ["FASTFILL"]
+
+
+def test_fill_flags_empty_is_not_absent():
+    """No bits set decodes to [], which is distinct from the None of a 1:1 frame."""
+    _, model = decode_frame(_make_fill_frame_v2(flags=0))
+    assert model.flags == []
+
+
+def test_fill_seq_optional_null():
+    """seq is null for position transfers, which carry no orderbook sequence."""
+    _, model = decode_frame(_make_fill_frame_v2(seq=INT64_MIN))
+    assert model.seq_no is None
+
+
+def test_fill_seq_optional_present():
+    _, model = decode_frame(_make_fill_frame_v2(seq=42))
+    assert model.seq_no == 42
+
+
+def test_fill_v1_frame_leaves_v2_fields_absent():
+    """A 1:1 frame has none of the appended fields and must not read past its block."""
+    _, model = decode_frame(_make_fill_frame(market=MARKET))
+    assert model.flags is None
+    assert model.orderbook_seq_no is None
+    assert model.fee_currency is None
+    # A short block must not desync the var-data that follows it.
+    assert model.market == "BTC-USD-PERP"
+    assert model.fill_id == "fill-1"
+
+
+def test_order_flags_mmp_bit():
+    """OrderFlags.MMP is bit 5, added in 1:2."""
+    _, model = decode_frame(_make_order_frame_with_flags(1 << 5))
+    assert model.flags == ["MMP"]
+
+
+def _make_order_frame_with_flags(flags: int) -> bytes:
+    payload = _ORDER_STRUCT.pack(
+        1710000000000000,
+        7,
+        3,  # status OPEN
+        1,  # side BUY
+        1,  # orderType LIMIT
+        1,  # timeInForce GTC
+        4200000000000,
+        INT64_MIN,
+        100_000_000,
+        50_000_000,
+        4200000000000,
+        1710000000000000,
+        1710000001000000,
+        ACCOUNT_BYTES,
+        1710000002000000,
+        1710000003000000,
+        0,  # stp NONE
+        flags,
+    )
+    payload += _var(b"order-123") + _var(b"client-456") + _var(MARKET) + _var(b"")
+    return _hdr(_ORDER_STRUCT.size, 20, version=2) + payload
+
+
+def test_position_mark_price_null():
+    """markPrice became Price8NULL in 1:2 — nothing upstream feeds it."""
+    _, model = decode_frame(_make_position_frame(mark_price=INT64_MIN))
+    assert model.mark_price is None
+
+
+def test_position_mark_price_present():
+    _, model = decode_frame(_make_position_frame(mark_price=4190000000000))
+    assert model.mark_price == "41900.00000000"
+
+
+def test_account_unrealized_pnl_null():
+    """unrealizedPnl became Value8NULL in 1:2 — nothing upstream feeds it."""
+    _, model = decode_frame(_make_account_frame(unrealized_pnl=INT64_MIN))
+    assert model.unrealized_pnl is None
+
+
+def test_account_unrealized_pnl_present():
+    _, model = decode_frame(_make_account_frame(unrealized_pnl=500_00000000))
+    assert model.unrealized_pnl == "500.00000000"
