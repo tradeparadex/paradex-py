@@ -5,6 +5,11 @@ import marshmallow_dataclass
 
 @dataclass
 class ApiError:
+    class Meta:
+        # Error bodies are loaded without an explicit `unknown`, so tolerate
+        # fields the server adds rather than raising while handling an error.
+        unknown = "exclude"
+
     error: str
     message: str
     data: dict | None
@@ -12,6 +17,12 @@ class ApiError:
 
 @dataclass
 class BridgedToken:
+    class Meta:
+        # `unknown` passed to load() does not reach a nested schema, so say it
+        # here or a released SDK breaks on the first field the server adds to a
+        # bridged token -- and fetch_system_config() runs at client startup.
+        unknown = "exclude"
+
     name: str
     symbol: str
     decimals: int
@@ -23,6 +34,9 @@ class BridgedToken:
 
 @dataclass
 class SystemConfig:
+    class Meta:
+        unknown = "exclude"
+
     starknet_fullnode_rpc_url: str
     starknet_fullnode_rpc_base_url: str
     starknet_chain_id: str
@@ -43,6 +57,9 @@ class SystemConfig:
 
 @dataclass
 class AccountSummary:
+    class Meta:
+        unknown = "exclude"
+
     account: str
     initial_margin_requirement: str
     maintenance_margin_requirement: str
@@ -58,6 +75,9 @@ class AccountSummary:
 
 @dataclass
 class Auth:
+    class Meta:
+        unknown = "exclude"
+
     jwt_token: str
 
 
