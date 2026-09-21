@@ -894,4 +894,14 @@ def decode_frame(data: bytes) -> tuple[str | None, BaseModel | None]:
     dec = _DECODERS.get(tmpl_id)
     if dec is None:
         raise SbeDecodeError(f"Unknown templateId {tmpl_id}")
-    return dec(data[8:], block_len, version)  # ty: ignore[call-non-callable]
+    payload = data[8:]
+    # blockLength comes off the wire and drives every unpack offset below,
+    # so a frame that does not carry the block it advertises has to be
+    # rejected here. struct.error is not what the ws client catches, and
+    # from pump_once it would escape and take the connection down.
+    if block_len > len(payload):
+        raise SbeDecodeError(f"Truncated frame: blockLength {block_len}, payload is {len(payload)} bytes")
+    try:
+        return dec(payload, block_len, version)  # ty: ignore[call-non-callable]
+    except struct.error as exc:
+        raise SbeDecodeError(f"Malformed frame for templateId {tmpl_id}: {exc}") from exc

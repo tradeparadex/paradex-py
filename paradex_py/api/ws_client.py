@@ -146,6 +146,8 @@ class ParadexWebsocketClient:
         reader_sleep_on_error (float, optional): Sleep duration after connection errors. Set to 0 for no sleep. Defaults to 1.0.
         reader_sleep_on_no_connection (float, optional): Sleep duration when no connection. Set to 0 for no sleep. Defaults to 1.0.
         validate_messages (bool, optional): Enable pydantic message validation. Requires pydantic. Defaults to False.
+            Applies to JSON frames only — SBE frames are already decoded into pydantic models, so this is inert
+            when sbe_enabled is set.
         ping_interval (float, optional): WebSocket ping interval in seconds. None uses websockets default. Defaults to None.
         disable_reconnect (bool, optional): Disable automatic reconnection for tight simulation control. Defaults to False.
         enable_compression (bool, optional): Enable WebSocket per-message compression (RFC 7692). Defaults to True.
@@ -241,6 +243,14 @@ class ParadexWebsocketClient:
 
         # SBE binary encoding opt-in
         self.sbe_enabled = sbe_enabled
+        if sbe_enabled and validate_messages:
+            # _process_binary_message returns generated models directly and never
+            # reaches validate_ws_message, so the two options together look like
+            # validation is running when it is not.
+            self.logger.info(
+                f"{self.classname}: validate_messages does not apply to SBE frames, "
+                "which are decoded into models by the codec"
+            )
 
         if auto_start_reader:
             try:

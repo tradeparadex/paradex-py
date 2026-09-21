@@ -889,8 +889,15 @@ def _make_fill_frame_v2(
 
 
 def test_fill_v2_block_grew_to_116():
-    assert _FILL_STRUCT.size == 107
-    assert _FILL_STRUCT.size + _FILL_V2_TAIL.size == 116
+    """The decoder's own tier boundary is 107 -> 116, not just this file's copy of it."""
+    from paradex_py.api.sbe.codec import _FILLEVENT_STRUCT, _FILLEVENT_STRUCT_V2
+
+    assert _FILLEVENT_STRUCT.size == 107
+    assert _FILLEVENT_STRUCT.size + _FILLEVENT_STRUCT_V2.size == 116
+    # The frames this file builds have to match the layout the decoder expects,
+    # or every other assertion here passes against the wrong shape.
+    assert _FILL_STRUCT.size == _FILLEVENT_STRUCT.size
+    assert _FILL_V2_TAIL.size == _FILLEVENT_STRUCT_V2.size
 
 
 def test_fill_v2_appended_fields():
@@ -1020,3 +1027,87 @@ def test_var_data_length_past_end_raises_decode_error():
     frame[-5] = 200  # feeCurrency length prefix, far past the end
     with pytest.raises(SbeDecodeError, match="Truncated frame"):
         decode_frame(bytes(frame))
+
+
+# ── Blocks trimmed to an earlier version ─────────────────────────────────
+#
+# MarketSummary and FundingData already carried sinceVersion=1 fields before
+# this change, and both went from an unconditional unpack to a block_len gate.
+# A server capped below 1:1 sends the trimmed block, which no other frame in
+# this file exercises.
+
+_MS_V0_STRUCT = struct.Struct("<" + "q" * 27)  # schema 1:0 MarketSummaryEvent block
+_FD_V0_STRUCT = struct.Struct("<qqqqqqqh")  # schema 1:0 FundingDataEvent block
+
+
+def _make_ms_v0_frame() -> bytes:
+    payload = _MS_V0_STRUCT.pack(*([1710000000000000, 5] + [4200000000000] * 25))
+    payload += _var(MARKET)
+    return _hdr(_MS_V0_STRUCT.size, 4, version=0) + payload
+
+
+def _make_fd_v0_frame() -> bytes:
+    payload = _FD_V0_STRUCT.pack(1710000000000000, 3, 1_000_000, 4200000000000, 1710000000000000, 500_000, 800_000, 8)
+    payload += _var(MARKET)
+    return _hdr(_FD_V0_STRUCT.size, 5, version=0) + payload
+
+
+def test_ms_v0_block_sizes():
+    from paradex_py.api.sbe.codec import _MARKETSUMMARYEVENT_STRUCT, _MARKETSUMMARYEVENT_STRUCT_V1
+
+    assert _MARKETSUMMARYEVENT_STRUCT.size == 216
+    assert _MARKETSUMMARYEVENT_STRUCT.size + _MARKETSUMMARYEVENT_STRUCT_V1.size == 240
+    assert _MS_V0_STRUCT.size == _MARKETSUMMARYEVENT_STRUCT.size
+
+
+def test_ms_v0_frame_leaves_v1_fields_absent():
+    channel, model = decode_frame(_make_ms_v0_frame())
+    assert channel == "markets_summary.BTC-USD-PERP"
+    assert model.forward_rate is None
+    assert model.risk_free_rate is None
+    assert model.funding_rate_precise is None
+    # A trimmed block must not shift the var-data that follows it.
+    assert model.market == "BTC-USD-PERP"
+    assert model.mark_price == "42000.00000000"
+
+
+def test_fd_v0_block_sizes():
+    from paradex_py.api.sbe.codec import _FUNDINGDATAEVENT_STRUCT, _FUNDINGDATAEVENT_STRUCT_V1
+
+    assert _FUNDINGDATAEVENT_STRUCT.size == 58
+    assert _FUNDINGDATAEVENT_STRUCT.size + _FUNDINGDATAEVENT_STRUCT_V1.size == 66
+    assert _FD_V0_STRUCT.size == _FUNDINGDATAEVENT_STRUCT.size
+
+
+def test_fd_v0_frame_leaves_v1_field_absent():
+    channel, model = decode_frame(_make_fd_v0_frame())
+    assert channel == "funding_data.BTC-USD-PERP"
+    assert model.impact_premium_rate is None
+    assert model.market == "BTC-USD-PERP"
+    assert model.funding_rate == "0.01000000"
+    assert model.funding_period_hours == 8
+
+
+# ── Malformed frames must not escape as struct.error ─────────────────────
+
+
+def test_block_len_past_payload_raises_decode_error():
+    """blockLength drives every unpack offset, so it has to be bounded.
+
+    struct.error is not what _process_binary_message catches, and from
+    pump_once it escapes the try and takes the connection down.
+    """
+    frame = _make_fill_frame_v2()
+    truncated = frame[: 8 + 110]  # header + 110 bytes, but blockLength says 116
+    with pytest.raises(SbeDecodeError, match="Truncated frame"):
+        decode_frame(truncated)
+
+
+def test_block_shorter_than_base_raises_decode_error():
+    """A block_len inside the payload but a payload shorter than the base block."""
+    payload = _FILL_STRUCT.pack(
+        1710000000000000, 1, 1, 1, 1, 4200000000000, 50_000_000, 0, INT64_MIN, 1710000000000000, ACCOUNT_BYTES, 0, 0
+    )
+    frame = _hdr(20, 21, version=1) + payload[:20]
+    with pytest.raises(SbeDecodeError):
+        decode_frame(frame)

@@ -143,8 +143,20 @@ def parse_schema(schema_path: str):  # noqa: C901
         groups = []
         for group in msg.findall("group"):
             group_name = group.get("name")
+            # Groups are decoded unconditionally: a repeating group cannot be
+            # walked by version the way the root block and the var-data section
+            # can, so a gated group or gated group field would desync
+            # everything after it rather than simply going missing. Refuse to
+            # emit a decoder that would do that silently.
+            if group.get("sinceVersion") or group.get("presence") == "optional":
+                raise ValueError(f"Version-gated or optional group is not supported: {msg_name}.{group_name}")
             group_fields = []
             for gf in group.findall("field"):
+                if gf.get("sinceVersion") or gf.get("presence") == "optional":
+                    raise ValueError(
+                        f"Version-gated or optional group field is not supported: "
+                        f"{msg_name}.{group_name}.{gf.get('name')}"
+                    )
                 group_fields.append({"name": gf.get("name"), "type": gf.get("type")})
             groups.append({"name": group_name, "fields": group_fields})
 
@@ -700,9 +712,19 @@ def _read_str(buf: bytes, pos: int) -> tuple[str, int]:
         "    dec = _DECODERS.get(tmpl_id)",
         "    if dec is None:",
         '        raise SbeDecodeError(f"Unknown templateId {tmpl_id}")',
+        "    payload = data[8:]",
+        "    # blockLength comes off the wire and drives every unpack offset below,",
+        "    # so a frame that does not carry the block it advertises has to be",
+        "    # rejected here. struct.error is not what the ws client catches, and",
+        "    # from pump_once it would escape and take the connection down.",
+        "    if block_len > len(payload):",
+        '        raise SbeDecodeError(f"Truncated frame: blockLength {block_len}, payload is {len(payload)} bytes")',
+        "    try:",
         # ty (not mypy) is what CI runs, so the suppression must use its
         # syntax; a `type: ignore` here leaves the diagnostic unsuppressed.
-        "    return dec(data[8:], block_len, version)  # ty: ignore[call-non-callable]",
+        "        return dec(payload, block_len, version)  # ty: ignore[call-non-callable]",
+        "    except struct.error as exc:",
+        '        raise SbeDecodeError(f"Malformed frame for templateId {tmpl_id}: {exc}") from exc',
         "",
     ]
 
