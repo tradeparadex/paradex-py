@@ -81,7 +81,7 @@ async def main(env: Environment, market: str) -> None:
     paradex = Paradex(
         env=env,
         logger=logger,
-        ws_sbe_enabled=True,  # enables SBE on ws_direct_client
+        ws_sbe_enabled=True,  # enables SBE on ws_client and ws_direct_client
         auto_start_ws_reader=True,
     )
 

@@ -62,6 +62,12 @@ def test_sbe_via_paradex_constructor():
     assert paradex.ws_direct_client.sbe_enabled is True
 
 
+def test_sbe_via_paradex_constructor_reaches_default_client():
+    """ws_client is the common path; the flag has to reach it too."""
+    paradex = Paradex(env=TESTNET, ws_sbe_enabled=True)
+    assert paradex.ws_client.sbe_enabled is True
+
+
 def test_sbe_off_via_paradex_constructor():
     paradex = Paradex(env=TESTNET)
     assert paradex.ws_client.sbe_enabled is False
@@ -83,6 +89,37 @@ async def test_sbe_url_params_appended(mock_connect: AsyncMock):
     url_called = mock_connect.call_args.args[0]
     assert "sbeSchemaId=1" in url_called
     assert "sbeSchemaVersion=1" in url_called
+
+
+def test_negotiated_version_lags_decoder_version():
+    """The decoder reads 1:2 but must keep asking for the version the server serves.
+
+    Every environment caps negotiation at 1, and a request above the cap is a
+    400 at connect rather than a downgrade, so raising this before the cap goes
+    up would stop the SDK connecting at all.
+    """
+    from paradex_py.api.sbe import NEGOTIATED_SCHEMA_VERSION
+    from paradex_py.api.sbe.codec import _SCHEMA_VERSION
+
+    assert NEGOTIATED_SCHEMA_VERSION == 1
+    assert _SCHEMA_VERSION == 2
+    assert NEGOTIATED_SCHEMA_VERSION <= _SCHEMA_VERSION
+
+
+@pytest.mark.asyncio
+@patch("websockets.connect", new_callable=AsyncMock)
+async def test_sbe_url_requests_negotiated_not_decoder_version(mock_connect: AsyncMock):
+    """The connect URL carries the negotiated version, not the decoder's."""
+    from paradex_py.api.sbe import NEGOTIATED_SCHEMA_VERSION
+
+    mock_ws = _make_mock_ws()
+    mock_connect.return_value = mock_ws
+
+    ws_client = ParadexWebsocketClient(env=TESTNET, sbe_enabled=True, auto_start_reader=False)
+    await ws_client.connect()
+
+    url_called = mock_connect.call_args.args[0]
+    assert f"sbeSchemaVersion={NEGOTIATED_SCHEMA_VERSION}" in url_called
 
 
 @pytest.mark.asyncio
