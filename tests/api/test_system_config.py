@@ -1,6 +1,8 @@
 import copy
 from unittest.mock import patch
 
+import pytest
+
 from paradex_py import Paradex
 from paradex_py.api.api_client import ParadexApiClient
 from paradex_py.environment import TESTNET
@@ -38,3 +40,32 @@ class TestSystemConfigUnknownFields:
         assert config.starknet_chain_id == "PRIVATE_SN_POTC_SEPOLIA"
         assert config.bridged_tokens[0].name == "TEST USDC"
         assert config.bridged_tokens[0].l2_bridge_address == MOCK_CONFIG["bridged_tokens"][0]["l2_bridge_address"]
+
+    @pytest.mark.parametrize(
+        "drop,expected",
+        [
+            (lambda res: res.pop("liquidation_fee"), "liquidation_fee"),
+            (lambda res: res["bridged_tokens"][0].pop("l1_bridge_address"), "l1_bridge_address"),
+        ],
+        ids=["top_level", "nested"],
+    )
+    def test_fetch_system_config_names_a_field_the_server_stopped_sending(self, drop, expected):
+        """The mirror case: a field that goes away must fail clearly.
+
+        The SDK cannot carry on without a field its dataclass requires, so this
+        stays an error. `partial=True` used to suppress marshmallow's check only
+        for the dataclass constructor to raise a bare TypeError a caller cannot
+        map back to the response, so the load is strict and says what is missing.
+        """
+        res = copy.deepcopy(MOCK_CONFIG)
+        drop(res)
+
+        with patch.object(self.api_client, "request") as mock_request:
+            mock_request.return_value = res
+
+            with pytest.raises(Exception) as exc_info:
+                self.api_client.fetch_system_config()
+
+        assert not isinstance(exc_info.value, TypeError)
+        assert expected in str(exc_info.value)
+        assert "Missing data for required field" in str(exc_info.value)

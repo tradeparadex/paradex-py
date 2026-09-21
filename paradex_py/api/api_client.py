@@ -192,7 +192,7 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         res = self.post(
             api_url=self.api_url, path=f"auth/{hex(self.account.l2_public_key)}", headers=headers, params=params
         )
-        data = AuthSchema().load(res, unknown="exclude", partial=True)
+        data = AuthSchema().load(res, unknown="exclude")
         self.auth_timestamp = int(time.time())
         self._token_exp = _jwt_exp(data.jwt_token)
         self.account.set_jwt_token(data.jwt_token)
@@ -234,7 +234,7 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
             raise ValueError("EVM account not initialized")
         headers = self._evm_account.auth_headers()
         res = self.post(api_url=self._v2_api_url, path="auth", headers=headers, params=params)
-        data = AuthSchema().load(res, unknown="exclude", partial=True)
+        data = AuthSchema().load(res, unknown="exclude")
         self.auth_timestamp = int(time.time())
         self._token_exp = _jwt_exp(data.jwt_token)
         self._evm_account.set_jwt_token(data.jwt_token)
@@ -515,7 +515,7 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         Private endpoint requires authorization.
         """
         res = self._get_authorized(path="account")
-        return AccountSummarySchema().load(res, unknown="exclude", partial=True)
+        return AccountSummarySchema().load(res, unknown="exclude")
 
     def fetch_account_profile(self) -> dict:
         """Fetch profile for this account.
@@ -877,7 +877,7 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         if "starknet_fullnode_rpc_base_url" not in res and "starknet_fullnode_rpc_url" in res:
             base_url = re.sub(r"/rpc/v\d+[._]\d+.*$", "", res["starknet_fullnode_rpc_url"])
             res["starknet_fullnode_rpc_base_url"] = base_url
-        config = SystemConfigSchema().load(res, unknown="exclude", partial=True)
+        config = SystemConfigSchema().load(res, unknown="exclude")
         self.logger.info(f"{self.classname}: SystemConfig:{config}")
         return config
 
