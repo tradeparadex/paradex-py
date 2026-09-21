@@ -444,10 +444,17 @@ def generate_codec(schema: dict) -> str:  # noqa: C901
     lines += ["# ── Pydantic models ──────────────────────────────────────────────────────", ""]
 
     # Helper to read var strings
+    # Bounds-checked so a frame shorter than the layout says raises the error
+    # the ws client already handles, instead of an IndexError that escapes
+    # _process_binary_message and gets logged as a connection failure.
     READ_STR_HELPER = """\
 def _read_str(buf: bytes, pos: int) -> tuple[str, int]:
-    ln = buf[pos]
-    return buf[pos + 1 : pos + 1 + ln].decode(), pos + 1 + ln
+    if pos >= len(buf):
+        raise SbeDecodeError(f"Truncated frame: var-length field at {pos}, payload is {len(buf)} bytes")
+    end = pos + 1 + buf[pos]
+    if end > len(buf):
+        raise SbeDecodeError(f"Truncated frame: var-length field needs {end} bytes, payload is {len(buf)}")
+    return buf[pos + 1 : end].decode(), end
 """
 
     # Build a per-message model

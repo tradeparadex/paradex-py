@@ -1,6 +1,6 @@
 """SBE WebSocket example: markets summary + order book snapshot.
 
-Connects with SBE binary encoding enabled (?sbeSchemaId=1&sbeSchemaVersion=0),
+Connects with SBE binary encoding enabled (?sbeSchemaId=1&sbeSchemaVersion=1),
 subscribes to:
   - markets_summary.<MARKET>  (24h rolling stats)
   - order_book.<MARKET>.snapshot@15@100ms  (top-15 levels, 100ms refresh)
@@ -85,7 +85,7 @@ async def main(env: Environment, market: str) -> None:
         auto_start_ws_reader=True,
     )
 
-    # SBE binary encoding is on ws_direct_client (ws.api.{env}.paradex.trade)
+    # This example uses the direct endpoint (ws.api.{env}.paradex.trade)
     client = paradex.ws_direct_client
     connected = False
     while not connected:

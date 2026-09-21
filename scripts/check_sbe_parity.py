@@ -76,9 +76,13 @@ async def _connect(client, label: str) -> bool:
 
 
 async def run_parity(env: Environment, market: str, n_samples: int) -> bool:  # noqa: C901
-    paradex = Paradex(env=env, logger=logger, ws_sbe_enabled=True)
+    # ws_sbe_enabled would turn SBE on for both clients, which would make this
+    # script compare SBE against SBE and pass vacuously. Enable it on the direct
+    # client only, so the public client stays the JSON side of the comparison.
+    paradex = Paradex(env=env, logger=logger)
     json_client = paradex.ws_client
     sbe_client = paradex.ws_direct_client
+    sbe_client.sbe_enabled = True
 
     if not await _connect(json_client, "JSON") or not await _connect(sbe_client, "SBE"):
         logger.error("Failed to connect")

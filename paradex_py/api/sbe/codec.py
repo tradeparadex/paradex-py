@@ -396,8 +396,12 @@ class SubscribedEventData(BaseModel):
 
 
 def _read_str(buf: bytes, pos: int) -> tuple[str, int]:
-    ln = buf[pos]
-    return buf[pos + 1 : pos + 1 + ln].decode(), pos + 1 + ln
+    if pos >= len(buf):
+        raise SbeDecodeError(f"Truncated frame: var-length field at {pos}, payload is {len(buf)} bytes")
+    end = pos + 1 + buf[pos]
+    if end > len(buf):
+        raise SbeDecodeError(f"Truncated frame: var-length field needs {end} bytes, payload is {len(buf)}")
+    return buf[pos + 1 : end].decode(), end
 
 
 _TRADEEVENT_STRUCT = struct.Struct("<qqqBqqqB")

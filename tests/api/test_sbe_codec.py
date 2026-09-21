@@ -999,3 +999,24 @@ def test_account_unrealized_pnl_null():
 def test_account_unrealized_pnl_present():
     _, model = decode_frame(_make_account_frame(unrealized_pnl=500_00000000))
     assert model.unrealized_pnl == "500.00000000"
+
+
+def test_truncated_var_data_raises_decode_error():
+    """A frame whose var-data stops short must raise the error the ws client handles.
+
+    Reachable if a server ever stamps its own schema version on a frame trimmed
+    to an older one: the decoder would look for feeCurrency that is not there.
+    An IndexError here would escape _process_binary_message and surface as a
+    connection failure instead of a dropped frame.
+    """
+    frame = _make_fill_frame_v2()
+    with pytest.raises(SbeDecodeError, match="Truncated frame"):
+        decode_frame(frame[:-3])
+
+
+def test_var_data_length_past_end_raises_decode_error():
+    """A length prefix longer than the bytes that follow it must not slice silently."""
+    frame = bytearray(_make_fill_frame_v2())
+    frame[-5] = 200  # feeCurrency length prefix, far past the end
+    with pytest.raises(SbeDecodeError, match="Truncated frame"):
+        decode_frame(bytes(frame))
