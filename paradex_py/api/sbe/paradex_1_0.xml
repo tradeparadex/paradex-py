@@ -2,7 +2,7 @@
 <!--
   Paradex SBE Market Data Schema
   Schema ID : 1
-  Version   : 1  (schema 1:1)
+  Version   : 2  (schema 1:2)
   Released  : 2026-03-17
   Status    : ACTIVE
 
@@ -15,6 +15,15 @@
             * FundingDataEvent.impactPremiumRate appended (was JSON-only)
           Version 0 clients remain supported: appended fields are
           absent-by-version, and unknown templateIds must be skipped.
+    1:2 — non-breaking additions:
+            * FillEvent.flags / .orderbookSeqNo appended, .feeCurrency
+              appended last, and .seq made optional
+            * PositionEvent.markPrice made nullable
+            * OrderFlags.MMP (bit 5), marked sinceVersion=2 so the encoder
+              keeps it off frames negotiated at 1:1
+          Not yet negotiable: every environment still caps negotiation
+          at 1:1, so 1:2 frames are not served yet. Ship a decoder that
+          understands 1:2 now; keep requesting 1:1 until the cap is raised.
 
   Versioning policy:
     - id is incremented on any BREAKING change (field removed, type changed, order changed)
@@ -47,7 +56,8 @@
 
   Negotiation:
     WebSocket URL parameter:  ?sbeSchemaId=1&sbeSchemaVersion=1
-    REST header:              X-PARADEX-SBE: 1:1
+    An unsupported schema or version is rejected with HTTP 400 at connect.
+    SBE applies to the WebSocket feed only; REST is JSON.
 
   Timestamps: all int64, microseconds since Unix epoch (UTC)
 
@@ -58,7 +68,7 @@
   xmlns:pdx="https://docs.paradex.trade/sbe"
   package="paradex.sbe"
   id="1"
-  version="1"
+  version="2"
   semanticVersion="1.0.0"
   description="Paradex perpetuals DEX — SBE market data and order response schema"
   byteOrder="littleEndian"
@@ -331,6 +341,24 @@
       <choice name="STOP_CONDITION_ABOVE_TRIGGER"   >2</choice>
       <choice name="INTERACTIVE"                    >3</choice>
       <choice name="TARGET_STRATEGY_VWAP"           >4</choice>
+      <!-- Added during 1:2, alongside FillFlags. sinceVersion is what the
+           encoder gates on, so a client that negotiates 1:1 never receives
+           the bit. Nothing has been served either shape, since 1:2 has never
+           been negotiable. -->
+      <choice name="MMP" sinceVersion="2"           >5</choice>
+    </set>
+
+    <!-- FillFlags bitset — bit-per-flag, matches responses.FillFlag constants.
+         Added in 1:2 alongside FillEvent.flags. -->
+    <set name="FillFlags" encodingType="uint8" description="Fill flags bitset">
+      <choice name="INTERACTIVE"                    >0</choice>
+      <choice name="RPI"                            >1</choice>
+      <choice name="FASTFILL"                       >2</choice>
+      <!-- Set when a responses.FillFlag has no bit here, so a subscriber can
+           tell "no flags" from "a flag this schema cannot name". Bits 3-6 stay
+           free for real flags; this is the set analogue of the
+           NON_REPRESENTABLE value every enum below reserves. -->
+      <choice name="UNKNOWN"                        >7</choice>
     </set>
 
     <enum name="PositionStatus" encodingType="uint8">
@@ -665,7 +693,10 @@
   <sbe:message name="FillEvent" id="21"
     description="Trade fill for authenticated account (private)">
     <field id="1"  name="ts"            type="Timestamp"/>
-    <field id="2"  name="seq"           type="int64"/>
+    <field id="2"  name="seq"           type="int64" presence="optional"
+           description="Orderbook sequence after execution; null for position
+                        transfers, which carry no sequence. Same 8 bytes as the
+                        non-optional form, so the block layout is unchanged."/>
     <field id="3"  name="fillType"      type="FillType"/>
     <field id="4"  name="side"          type="Side"/>
     <field id="5"  name="liquidity"     type="LiquiditySide"/>
@@ -684,11 +715,22 @@
            description="Underlying/spot index price at fill time (underlying_price)"/>
     <field id="18" name="realizedFunding" type="Value8"
            description="Realized funding PnL from this fill (realized_funding)"/>
+    <!-- Appended in 1:2. sinceVersion=2 keeps the v0/v1 block layout intact,
+         so a client on an earlier version reads the same 107-byte block. -->
+    <field id="19" name="flags"           type="FillFlags" sinceVersion="2"
+           description="Fill flags bitset (flags array in JSON)"/>
+    <field id="20" name="orderbookSeqNo"  type="uint64" sinceVersion="2"
+           description="Orderbook sequence number after execution; 0 for
+                        position transfers (orderbook_seq_no)"/>
     <data  id="11" name="fillId"        type="varString8"/>
     <data  id="12" name="orderId"       type="varString8"/>
     <data  id="13" name="clientOrderId" type="varString8"/>
     <data  id="14" name="tradeId"       type="varString8"/>
     <data  id="15" name="market"        type="varString8"/>
+    <data  id="21" name="feeCurrency"   type="varString8" sinceVersion="2"
+           description="Asset the fee was charged in, e.g. USDC or DIME
+                        (fee_currency). Appended last so a v0/v1 decoder stops
+                        after market."/>
   </sbe:message>
 
   <!-- ──────────────────────────────────────────────────
@@ -706,7 +748,10 @@
     <field id="5"  name="avgEntryPrice"    type="Price8"/>
     <field id="6"  name="unrealizedPnl"    type="Value8"/>
     <field id="7"  name="realizedPnl"      type="Value8"/>
-    <field id="8"  name="markPrice"        type="Price8"/>
+    <field id="8"  name="markPrice"        type="Price8NULL"
+           description="Mark price at update time; always null — PositionResp
+                        carries no mark price, and the JSON position channel
+                        has never exposed one"/>
     <field id="9"  name="liquidationPrice" type="Price8NULL"
            description="Estimated liquidation price; null if not at risk"/>
     <field id="10" name="leverage"              type="Rate8"
@@ -750,7 +795,9 @@
            description="Total maintenance margin requirement"/>
     <field id="7"  name="accountValue"        type="Value8"
            description="Portfolio value including unrealized PnL"/>
-    <field id="8"  name="unrealizedPnl"       type="Value8"/>
+    <field id="8"  name="unrealizedPnl"       type="Value8NULL"
+           description="Unrealized PnL; always null — neither the AccountSummary
+                        proto nor AccountSummaryResponse carries this value"/>
     <field id="9"  name="updatedAt"           type="Timestamp"/>
     <field id="10" name="account"             type="AccountAddress"
            description="Paradex account address (32 bytes, big-endian)"/>

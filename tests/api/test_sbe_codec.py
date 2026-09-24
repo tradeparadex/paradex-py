@@ -36,8 +36,8 @@ MARKET = b"BTC-USD-PERP"
 ACCOUNT_BYTES = b"\x00" * 28 + b"\xde\xad\xbe\xef"
 
 
-def _hdr(block_len: int, tmpl_id: int) -> bytes:
-    return HEADER.pack(block_len, tmpl_id, 1, 0)
+def _hdr(block_len: int, tmpl_id: int, version: int = 0) -> bytes:
+    return HEADER.pack(block_len, tmpl_id, 1, version)
 
 
 def _var(s: bytes) -> bytes:
@@ -644,7 +644,7 @@ def test_fill_event_new_fill_types():
 _POS_STRUCT = struct.Struct("<qqBqqqqqqqq32sqqqqqB")
 
 
-def _make_position_frame(side: int = 1, liq_price: int = INT64_MIN) -> bytes:
+def _make_position_frame(side: int = 1, liq_price: int = INT64_MIN, mark_price: int = 4190000000000) -> bytes:
     block_len = _POS_STRUCT.size
     payload = _POS_STRUCT.pack(
         1710000000000000,  # ts
@@ -654,7 +654,7 @@ def _make_position_frame(side: int = 1, liq_price: int = INT64_MIN) -> bytes:
         4200000000000,  # avgEntryPrice
         -5000000000,  # unrealizedPnl (negative)
         1000000000,  # realizedPnl
-        4190000000000,  # markPrice
+        mark_price,  # markPrice (Price8NULL since 1:2)
         liq_price,  # liquidationPrice (null by default)
         5_00000000,  # leverage → 5.00000000
         1710000001000000,  # updatedAt
@@ -705,7 +705,7 @@ def test_position_event_negative_unrealized_pnl():
 _ACC_STRUCT = struct.Struct("<qqqqqqqqq32sqB")
 
 
-def _make_account_frame() -> bytes:
+def _make_account_frame(unrealized_pnl: int = 500_00000000) -> bytes:
     block_len = _ACC_STRUCT.size
     payload = _ACC_STRUCT.pack(
         1710000000000000,  # ts
@@ -715,7 +715,7 @@ def _make_account_frame() -> bytes:
         2000_00000000,  # initialMarginReq
         1000_00000000,  # maintenanceMarginReq
         10500_00000000,  # accountValue
-        500_00000000,  # unrealizedPnl
+        unrealized_pnl,  # unrealizedPnl (Value8NULL since 1:2)
         1710000001000000,  # updatedAt
         ACCOUNT_BYTES,  # account (32-byte fixed)
         9000_00000000,  # marginCushion → 9000.00000000
@@ -849,3 +849,265 @@ def test_frc_event_unknown_enum_is_none():
 def test_frc_event_negative_rate():
     _, model = decode_frame(_make_frc_frame(rate=-125000000))
     assert model.hourly_funding_rate == "-0.000125000000"
+
+
+# ── Schema 1:2 additions ─────────────────────────────────────────────────
+#
+# The SDK still negotiates 1:1, so both shapes have to decode: a 1:1 frame
+# (107-byte block, no feeCurrency) and a 1:2 one (116-byte block, feeCurrency
+# after market). The server trims the block and cuts the var-data section to
+# the negotiated version and stamps the header to match, so block_len gates the
+# appended block fields and the header version gates the appended var-data.
+
+_FILL_V2_TAIL = struct.Struct("<BQ")  # flags + orderbookSeqNo, appended in 1:2
+
+
+def _make_fill_frame_v2(
+    flags: int = 0b011,  # INTERACTIVE | RPI
+    orderbook_seq_no: int = 987654,
+    fee_currency: bytes = b"DIME",
+    seq: int = 8,
+) -> bytes:
+    block = _FILL_STRUCT.pack(
+        1710000000000000,  # ts
+        seq,  # seq (optional since 1:2)
+        1,  # fillType FILL
+        1,  # side BUY
+        1,  # liquidity MAKER
+        4200000000000,  # price
+        50_000_000,  # size
+        210_000_000,  # fee
+        INT64_MIN,  # realizedPnl null
+        1710000000000000,  # createdAt
+        ACCOUNT_BYTES,  # account
+        4199000000000,  # underlyingPrice
+        0,  # realizedFunding
+    ) + _FILL_V2_TAIL.pack(flags, orderbook_seq_no)
+    payload = block + _var(b"fill-1") + _var(b"order-1") + _var(b"client-1") + _var(b"trade-1") + _var(MARKET)
+    payload += _var(fee_currency)
+    return _hdr(len(block), 21, version=2) + payload
+
+
+def test_fill_v2_block_grew_to_116():
+    """The decoder's own tier boundary is 107 -> 116, not just this file's copy of it."""
+    from paradex_py.api.sbe.codec import _FILLEVENT_STRUCT, _FILLEVENT_STRUCT_V2
+
+    assert _FILLEVENT_STRUCT.size == 107
+    assert _FILLEVENT_STRUCT.size + _FILLEVENT_STRUCT_V2.size == 116
+    # The frames this file builds have to match the layout the decoder expects,
+    # or every other assertion here passes against the wrong shape.
+    assert _FILL_STRUCT.size == _FILLEVENT_STRUCT.size
+    assert _FILL_V2_TAIL.size == _FILLEVENT_STRUCT_V2.size
+
+
+def test_fill_v2_appended_fields():
+    channel, model = decode_frame(_make_fill_frame_v2())
+    assert channel == "fills.BTC-USD-PERP"
+    assert model.flags == ["INTERACTIVE", "RPI"]
+    assert model.orderbook_seq_no == 987654
+    assert model.fee_currency == "DIME"
+    # The var-data before feeCurrency must still land on the right offsets.
+    assert model.market == "BTC-USD-PERP"
+    assert model.trade_id == "trade-1"
+
+
+def test_fill_v2_fee_currency_usdc():
+    _, model = decode_frame(_make_fill_frame_v2(fee_currency=b"USDC"))
+    assert model.fee_currency == "USDC"
+
+
+def test_fill_flags_unknown_bit():
+    """UNKNOWN is set server-side for a fill flag this schema has no bit for."""
+    _, model = decode_frame(_make_fill_frame_v2(flags=1 << 7))
+    assert model.flags == ["UNKNOWN"]
+
+
+def test_fill_flags_fastfill():
+    _, model = decode_frame(_make_fill_frame_v2(flags=1 << 2))
+    assert model.flags == ["FASTFILL"]
+
+
+def test_fill_flags_empty_is_not_absent():
+    """No bits set decodes to [], which is distinct from the None of a 1:1 frame."""
+    _, model = decode_frame(_make_fill_frame_v2(flags=0))
+    assert model.flags == []
+
+
+def test_fill_seq_optional_null():
+    """seq is null for position transfers, which carry no orderbook sequence."""
+    _, model = decode_frame(_make_fill_frame_v2(seq=INT64_MIN))
+    assert model.seq_no is None
+
+
+def test_fill_seq_optional_present():
+    _, model = decode_frame(_make_fill_frame_v2(seq=42))
+    assert model.seq_no == 42
+
+
+def test_fill_v1_frame_leaves_v2_fields_absent():
+    """A 1:1 frame has none of the appended fields and must not read past its block."""
+    _, model = decode_frame(_make_fill_frame(market=MARKET))
+    assert model.flags is None
+    assert model.orderbook_seq_no is None
+    assert model.fee_currency is None
+    # A short block must not desync the var-data that follows it.
+    assert model.market == "BTC-USD-PERP"
+    assert model.fill_id == "fill-1"
+
+
+def test_order_flags_mmp_bit():
+    """OrderFlags.MMP is bit 5, added in 1:2."""
+    _, model = decode_frame(_make_order_frame_with_flags(1 << 5))
+    assert model.flags == ["MMP"]
+
+
+def _make_order_frame_with_flags(flags: int) -> bytes:
+    payload = _ORDER_STRUCT.pack(
+        1710000000000000,
+        7,
+        3,  # status OPEN
+        1,  # side BUY
+        1,  # orderType LIMIT
+        1,  # timeInForce GTC
+        4200000000000,
+        INT64_MIN,
+        100_000_000,
+        50_000_000,
+        4200000000000,
+        1710000000000000,
+        1710000001000000,
+        ACCOUNT_BYTES,
+        1710000002000000,
+        1710000003000000,
+        0,  # stp NONE
+        flags,
+    )
+    payload += _var(b"order-123") + _var(b"client-456") + _var(MARKET) + _var(b"")
+    return _hdr(_ORDER_STRUCT.size, 20, version=2) + payload
+
+
+def test_position_mark_price_null():
+    """markPrice became Price8NULL in 1:2 — nothing upstream feeds it."""
+    _, model = decode_frame(_make_position_frame(mark_price=INT64_MIN))
+    assert model.mark_price is None
+
+
+def test_position_mark_price_present():
+    _, model = decode_frame(_make_position_frame(mark_price=4190000000000))
+    assert model.mark_price == "41900.00000000"
+
+
+def test_account_unrealized_pnl_null():
+    """unrealizedPnl became Value8NULL in 1:2 — nothing upstream feeds it."""
+    _, model = decode_frame(_make_account_frame(unrealized_pnl=INT64_MIN))
+    assert model.unrealized_pnl is None
+
+
+def test_account_unrealized_pnl_present():
+    _, model = decode_frame(_make_account_frame(unrealized_pnl=500_00000000))
+    assert model.unrealized_pnl == "500.00000000"
+
+
+def test_truncated_var_data_raises_decode_error():
+    """A frame whose var-data stops short must raise the error the ws client handles.
+
+    Reachable if a server ever stamps its own schema version on a frame trimmed
+    to an older one: the decoder would look for feeCurrency that is not there.
+    An IndexError here would escape _process_binary_message and surface as a
+    connection failure instead of a dropped frame.
+    """
+    frame = _make_fill_frame_v2()
+    with pytest.raises(SbeDecodeError, match="Truncated frame"):
+        decode_frame(frame[:-3])
+
+
+def test_var_data_length_past_end_raises_decode_error():
+    """A length prefix longer than the bytes that follow it must not slice silently."""
+    frame = bytearray(_make_fill_frame_v2())
+    frame[-5] = 200  # feeCurrency length prefix, far past the end
+    with pytest.raises(SbeDecodeError, match="Truncated frame"):
+        decode_frame(bytes(frame))
+
+
+# ── Blocks trimmed to an earlier version ─────────────────────────────────
+#
+# MarketSummary and FundingData already carried sinceVersion=1 fields before
+# this change, and both went from an unconditional unpack to a block_len gate.
+# A server capped below 1:1 sends the trimmed block, which no other frame in
+# this file exercises.
+
+_MS_V0_STRUCT = struct.Struct("<" + "q" * 27)  # schema 1:0 MarketSummaryEvent block
+_FD_V0_STRUCT = struct.Struct("<qqqqqqqh")  # schema 1:0 FundingDataEvent block
+
+
+def _make_ms_v0_frame() -> bytes:
+    payload = _MS_V0_STRUCT.pack(*([1710000000000000, 5] + [4200000000000] * 25))
+    payload += _var(MARKET)
+    return _hdr(_MS_V0_STRUCT.size, 4, version=0) + payload
+
+
+def _make_fd_v0_frame() -> bytes:
+    payload = _FD_V0_STRUCT.pack(1710000000000000, 3, 1_000_000, 4200000000000, 1710000000000000, 500_000, 800_000, 8)
+    payload += _var(MARKET)
+    return _hdr(_FD_V0_STRUCT.size, 5, version=0) + payload
+
+
+def test_ms_v0_block_sizes():
+    from paradex_py.api.sbe.codec import _MARKETSUMMARYEVENT_STRUCT, _MARKETSUMMARYEVENT_STRUCT_V1
+
+    assert _MARKETSUMMARYEVENT_STRUCT.size == 216
+    assert _MARKETSUMMARYEVENT_STRUCT.size + _MARKETSUMMARYEVENT_STRUCT_V1.size == 240
+    assert _MS_V0_STRUCT.size == _MARKETSUMMARYEVENT_STRUCT.size
+
+
+def test_ms_v0_frame_leaves_v1_fields_absent():
+    channel, model = decode_frame(_make_ms_v0_frame())
+    assert channel == "markets_summary.BTC-USD-PERP"
+    assert model.forward_rate is None
+    assert model.risk_free_rate is None
+    assert model.funding_rate_precise is None
+    # A trimmed block must not shift the var-data that follows it.
+    assert model.market == "BTC-USD-PERP"
+    assert model.mark_price == "42000.00000000"
+
+
+def test_fd_v0_block_sizes():
+    from paradex_py.api.sbe.codec import _FUNDINGDATAEVENT_STRUCT, _FUNDINGDATAEVENT_STRUCT_V1
+
+    assert _FUNDINGDATAEVENT_STRUCT.size == 58
+    assert _FUNDINGDATAEVENT_STRUCT.size + _FUNDINGDATAEVENT_STRUCT_V1.size == 66
+    assert _FD_V0_STRUCT.size == _FUNDINGDATAEVENT_STRUCT.size
+
+
+def test_fd_v0_frame_leaves_v1_field_absent():
+    channel, model = decode_frame(_make_fd_v0_frame())
+    assert channel == "funding_data.BTC-USD-PERP"
+    assert model.impact_premium_rate is None
+    assert model.market == "BTC-USD-PERP"
+    assert model.funding_rate == "0.01000000"
+    assert model.funding_period_hours == 8
+
+
+# ── Malformed frames must not escape as struct.error ─────────────────────
+
+
+def test_block_len_past_payload_raises_decode_error():
+    """blockLength drives every unpack offset, so it has to be bounded.
+
+    struct.error is not what _process_binary_message catches, and from
+    pump_once it escapes the try and takes the connection down.
+    """
+    frame = _make_fill_frame_v2()
+    truncated = frame[: 8 + 110]  # header + 110 bytes, but blockLength says 116
+    with pytest.raises(SbeDecodeError, match="Truncated frame"):
+        decode_frame(truncated)
+
+
+def test_block_shorter_than_base_raises_decode_error():
+    """A block_len inside the payload but a payload shorter than the base block."""
+    payload = _FILL_STRUCT.pack(
+        1710000000000000, 1, 1, 1, 1, 4200000000000, 50_000_000, 0, INT64_MIN, 1710000000000000, ACCOUNT_BYTES, 0, 0
+    )
+    frame = _hdr(20, 21, version=1) + payload[:20]
+    with pytest.raises(SbeDecodeError):
+        decode_frame(frame)

@@ -6,10 +6,18 @@ Usage:
     uv run python scripts/generate_sbe_decoder.py \\
         --schema /path/to/paradex_1_0.xml \\
         --output paradex_py/api/sbe/codec.py
+    uv run ruff check --fix paradex_py/api/sbe/codec.py
+    uv run ruff format paradex_py/api/sbe/codec.py
+
+The ruff passes are part of the procedure, not a cleanup: the emitter writes
+Optional[X] and does not wrap long literals, so the committed codec is
+generator output that has been through both. Skipping them leaves a diff that
+looks like a schema change.
 """
 
 import argparse
 import re
+import struct
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -26,6 +34,14 @@ _PRIM_TO_CHAR = {
     "int8": "b",
     "int16": "h",
     "uint32": "I",
+    "uint64": "Q",
+}
+
+# Primitives that carry a null sentinel when the field is presence="optional".
+# Only int64 has one (MinInt64); anything else would need its own sentinel and
+# is rejected rather than silently decoded as a plain value.
+_OPTIONAL_PRIM = {
+    "int64": ("_i64n({v})", "Optional[int]"),
 }
 
 # Composite name → (struct_char, helper_call_template, python_type_str)
@@ -53,6 +69,7 @@ _FIXED_FIELDS = {
 # The helper name matches the generated _decode_{setname_lower}() function.
 _SET_FIELDS = {
     "OrderFlags": ("B", "_decode_orderflags({v})", "list[str]"),
+    "FillFlags": ("B", "_decode_fillflags({v})", "list[str]"),
 }
 
 
@@ -114,19 +131,38 @@ def parse_schema(schema_path: str):  # noqa: C901
         for field in msg.findall("field"):
             field_name = field.get("name")
             field_type = field.get("type")
-            fields.append({"name": field_name, "type": field_type})
+            fields.append(
+                {
+                    "name": field_name,
+                    "type": field_type,
+                    "since": int(field.get("sinceVersion", "0")),
+                    "optional": field.get("presence") == "optional",
+                }
+            )
 
         groups = []
         for group in msg.findall("group"):
             group_name = group.get("name")
+            # Groups are decoded unconditionally: a repeating group cannot be
+            # walked by version the way the root block and the var-data section
+            # can, so a gated group or gated group field would desync
+            # everything after it rather than simply going missing. Refuse to
+            # emit a decoder that would do that silently.
+            if group.get("sinceVersion") or group.get("presence") == "optional":
+                raise ValueError(f"Version-gated or optional group is not supported: {msg_name}.{group_name}")
             group_fields = []
             for gf in group.findall("field"):
+                if gf.get("sinceVersion") or gf.get("presence") == "optional":
+                    raise ValueError(
+                        f"Version-gated or optional group field is not supported: "
+                        f"{msg_name}.{group_name}.{gf.get('name')}"
+                    )
                 group_fields.append({"name": gf.get("name"), "type": gf.get("type")})
             groups.append({"name": group_name, "fields": group_fields})
 
         data_fields = []
         for data in msg.findall("data"):
-            data_fields.append(data.get("name"))
+            data_fields.append({"name": data.get("name"), "since": int(data.get("sinceVersion", "0"))})
 
         messages.append(
             {
@@ -150,6 +186,41 @@ def parse_schema(schema_path: str):  # noqa: C901
     }
 
 
+def _raw_var(field: dict) -> str:
+    """Name of the local holding a field's undecoded value.
+
+    Keyed off the XML spelling, so ts/seq stay ts_raw/seq_raw even though the
+    model renames them to timestamp/seq_no.
+    """
+    return f"{_to_snake(field['name'])}_raw"
+
+
+def _absent_by_version(python_type: str, since: int) -> str:
+    """Annotate a field that a frame negotiated below `since` will not carry."""
+    if since == 0:
+        return python_type
+    if not python_type.startswith("Optional["):
+        python_type = f"Optional[{python_type}]"
+    return f"{python_type} = None"
+
+
+def _tiers(fields: list) -> list:
+    """Split fields into consecutive runs of equal sinceVersion.
+
+    Appended fields always sit at the end of the block, so the runs come out in
+    ascending version order and each one starts where the previous ended.
+    """
+    tiers: list = []
+    for f in fields:
+        since = f["since"]
+        if not tiers or tiers[-1][0] != since:
+            if tiers and since < tiers[-1][0]:
+                raise ValueError(f"sinceVersion must not decrease within a message: {f['name']}")
+            tiers.append((since, []))
+        tiers[-1][1].append(f)
+    return tiers
+
+
 def _field_struct_char(field_type: str, enums: dict, enum_encoding: dict) -> str:
     """Return the struct char for a field type."""
     if field_type in _FIXED_FIELDS:
@@ -165,8 +236,12 @@ def _field_struct_char(field_type: str, enums: dict, enum_encoding: dict) -> str
     raise ValueError(f"Unknown field type: {field_type}")
 
 
-def _field_helper(field_type: str, var: str, enums: dict) -> str:
+def _field_helper(field_type: str, var: str, enums: dict, optional: bool = False) -> str:
     """Return the Python expression to convert a raw value."""
+    if optional:
+        if field_type not in _OPTIONAL_PRIM:
+            raise ValueError(f'presence="optional" is not supported for type {field_type}')
+        return _OPTIONAL_PRIM[field_type][0].replace("{v}", var)
     if field_type in _FIXED_FIELDS:
         tmpl = _FIXED_FIELDS[field_type][1]
         return tmpl.replace("{v}", var)
@@ -184,8 +259,12 @@ def _field_helper(field_type: str, var: str, enums: dict) -> str:
     return var
 
 
-def _field_python_type(field_type: str, enums: dict) -> str:
+def _field_python_type(field_type: str, enums: dict, optional: bool = False) -> str:
     """Return the Python type annotation string."""
+    if optional:
+        if field_type not in _OPTIONAL_PRIM:
+            raise ValueError(f'presence="optional" is not supported for type {field_type}')
+        return _OPTIONAL_PRIM[field_type][1]
     if field_type in _FIXED_FIELDS:
         return _FIXED_FIELDS[field_type][2]
     if field_type in _SET_FIELDS:
@@ -307,6 +386,11 @@ def generate_codec(schema: dict) -> str:  # noqa: C901
         "    return None if x == INT64_MIN else _f8(x)",
         "",
         "",
+        "def _i64n(x: int) -> Optional[int]:",
+        '    """Nullable int64; INT64_MIN sentinel → None."""',
+        "    return None if x == INT64_MIN else x",
+        "",
+        "",
         "def _f12(x: int) -> str:",
         '    """Decode fixed-point int64 with exponent -12 to decimal string."""',
         '    sign = "-" if x < 0 else ""',
@@ -372,10 +456,17 @@ def generate_codec(schema: dict) -> str:  # noqa: C901
     lines += ["# ── Pydantic models ──────────────────────────────────────────────────────", ""]
 
     # Helper to read var strings
+    # Bounds-checked so a frame shorter than the layout says raises the error
+    # the ws client already handles, instead of an IndexError that escapes
+    # _process_binary_message and gets logged as a connection failure.
     READ_STR_HELPER = """\
 def _read_str(buf: bytes, pos: int) -> tuple[str, int]:
-    ln = buf[pos]
-    return buf[pos + 1 : pos + 1 + ln].decode(), pos + 1 + ln
+    if pos >= len(buf):
+        raise SbeDecodeError(f"Truncated frame: var-length field at {pos}, payload is {len(buf)} bytes")
+    end = pos + 1 + buf[pos]
+    if end > len(buf):
+        raise SbeDecodeError(f"Truncated frame: var-length field needs {end} bytes, payload is {len(buf)}")
+    return buf[pos + 1 : end].decode(), end
 """
 
     # Build a per-message model
@@ -401,7 +492,10 @@ def _read_str(buf: bytes, pos: int) -> tuple[str, int]:
             lines += ["", ""]
             continue
 
-        # Generate model fields
+        # Generate model fields. Anything carrying sinceVersion can be absent
+        # from a frame negotiated at an earlier version, so it is optional with
+        # a None default — None means "this frame predates the field", which is
+        # not the same as a field the server sent empty.
         model_fields = []
         for f in fields:
             fname = _to_snake(f["name"])
@@ -411,14 +505,14 @@ def _read_str(buf: bytes, pos: int) -> tuple[str, int]:
                 fname = "timestamp"
             elif fname == "seq":
                 fname = "seq_no"
-            python_type = _field_python_type(ftype, enums)
-            model_fields.append((fname, python_type))
+            python_type = _field_python_type(ftype, enums, f["optional"])
+            model_fields.append((fname, _absent_by_version(python_type, f["since"])))
 
         for g in groups:
             model_fields.append((g["name"], "list[list[str]]"))
 
         for d in data_fields:
-            model_fields.append((_to_snake(d), "str"))
+            model_fields.append((_to_snake(d["name"]), _absent_by_version("str", d["since"])))
 
         lines += [
             f"class {model_name}(BaseModel):",
@@ -444,19 +538,33 @@ def _read_str(buf: bytes, pos: int) -> tuple[str, int]:
         groups = msg["groups"]
         data_fields = msg["data"]
 
-        # Build struct format
-        fmt_chars = ""
-        for f in fields:
-            fmt_chars += _field_struct_char(f["type"], enums, enum_encoding)
+        # Build one struct per sinceVersion tier. The base tier is the block
+        # every client receives; each later tier is appended after it and is
+        # only present when block_len reaches that far, because the server trims
+        # the block to the negotiated version's length.
         struct_var = f"_{msg_name.upper()}_STRUCT"
-        lines += [
-            f'{struct_var} = struct.Struct("<{fmt_chars}")',
-            "",
-        ]
+        tier_structs = []
+        tier_offset = 0
+        for since, tier_fields in _tiers(fields):
+            fmt_chars = "".join(_field_struct_char(f["type"], enums, enum_encoding) for f in tier_fields)
+            tier_var = struct_var if since == 0 else f"{struct_var}_V{since}"
+            lines.append(f'{tier_var} = struct.Struct("<{fmt_chars}")')
+            tier_size = struct.calcsize(f"<{fmt_chars}")
+            tier_structs.append(
+                {
+                    "since": since,
+                    "var": tier_var,
+                    "offset": tier_offset,
+                    "end": tier_offset + tier_size,
+                    "fields": tier_fields,
+                }
+            )
+            tier_offset += tier_size
+        lines.append("")
 
         if msg_id in (40, 41):
             lines += [
-                f"def _decode_{msg_id}(payload: bytes, block_len: int) -> tuple[None, None]:",
+                f"def _decode_{msg_id}(payload: bytes, block_len: int, version: int) -> tuple[None, None]:",
                 f'    """Discard {msg_name} — no callback routing."""',
                 "    return None, None",
                 "",
@@ -464,31 +572,33 @@ def _read_str(buf: bytes, pos: int) -> tuple[str, int]:
             ]
             continue
 
-        # Unpack vars (rename ts→timestamp_raw, seq→seq_raw for clarity in decode)
-        var_names = []
-        for f in fields:
-            fname = _to_snake(f["name"])
-            if fname == "ts":
-                var_names.append("ts_raw")
-            elif fname == "seq":
-                var_names.append("seq_raw")
-            else:
-                var_names.append(f"{fname}_raw")
-
         # Determine return type
         ret_type = "tuple[None, None]" if msg_id in (40, 41) else f"tuple[str, {model_name}]"
 
         lines += [
-            f"def _decode_{msg_id}(payload: bytes, block_len: int) -> {ret_type}:",
+            f"def _decode_{msg_id}(payload: bytes, block_len: int, version: int) -> {ret_type}:",
         ]
 
-        # Unpack line
-        vars_str = ", ".join(var_names)
+        # Unpack the base tier, then each appended tier the frame is long enough
+        # to carry. Absent tiers leave their raw vars as None.
+        base = tier_structs[0]
+        base_vars = ", ".join(_raw_var(f) for f in base["fields"])
         lines += [
-            f"    {vars_str} = \\",
-            f"        {struct_var}.unpack_from(payload, 0)",
-            "    offset = block_len",
+            f"    {base_vars} = \\",
+            f"        {base['var']}.unpack_from(payload, 0)",
         ]
+        for tier in tier_structs[1:]:
+            tier_vars = [_raw_var(f) for f in tier["fields"]]
+            for v in tier_vars:
+                lines.append(f"    {v} = None")
+            lines.append(f"    # Appended in schema version {tier['since']}; a frame negotiated below it")
+            lines.append(f"    # carries only the first {tier['offset']} bytes of block.")
+            lines.append(f"    if block_len >= {tier['end']}:")
+            if len(tier_vars) == 1:
+                lines.append(f"        {tier_vars[0]} = {tier['var']}.unpack_from(payload, {tier['offset']})[0]")
+            else:
+                lines.append(f"        {', '.join(tier_vars)} = {tier['var']}.unpack_from(payload, {tier['offset']})")
+        lines.append("    offset = block_len")
 
         # Groups
         for g in groups:
@@ -510,10 +620,19 @@ def _read_str(buf: bytes, pos: int) -> tuple[str, int]:
             lines.append(f"        {gname}.append([{', '.join(gexprs)}])")
             lines.append("        offset += _grp_blk")
 
-        # Data fields
+        # Data fields. Var-length data sits after the block, so trimming the
+        # block does not remove it — the server cuts the var-data section
+        # instead, and the negotiated version in the header is what says where.
         for d in data_fields:
-            dname = _to_snake(d)
-            lines.append(f"    {dname}, offset = _read_str(payload, offset)")
+            dname = _to_snake(d["name"])
+            if d["since"] == 0:
+                lines.append(f"    {dname}, offset = _read_str(payload, offset)")
+            else:
+                lines += [
+                    f"    {dname} = None",
+                    f"    if version >= {d['since']}:",
+                    f"        {dname}, offset = _read_str(payload, offset)",
+                ]
 
         # Channel
         channel_info = _CHANNEL_BY_ID.get(msg_id)
@@ -525,7 +644,7 @@ def _read_str(buf: bytes, pos: int) -> tuple[str, int]:
             model_args = []
             for f in fields:
                 fname = _to_snake(f["name"])
-                raw_var = "ts_raw" if fname == "ts" else ("seq_raw" if fname == "seq" else f"{fname}_raw")
+                raw_var = _raw_var(f)
                 # Map field name
                 if fname == "ts":
                     model_fname = "timestamp"
@@ -538,14 +657,18 @@ def _read_str(buf: bytes, pos: int) -> tuple[str, int]:
                 if msg_id == 22 and fname == "side":
                     expr = f"_ENUM_SIDE_LONG_SHORT.get({raw_var})"
                 else:
-                    expr = _field_helper(f["type"], raw_var, enums)
+                    expr = _field_helper(f["type"], raw_var, enums, f["optional"])
+                # A version-gated field is None when the frame predates it, and
+                # the decode helpers take an int, so guard before converting.
+                if f["since"] > 0:
+                    expr = f"None if {raw_var} is None else {expr}"
                 model_args.append(f"{model_fname}={expr}")
 
             for g in groups:
                 model_args.append(f"{g['name']}={g['name']}")
 
             for d in data_fields:
-                dname = _to_snake(d)
+                dname = _to_snake(d["name"])
                 model_args.append(f"{dname}={dname}")
 
             lines.append(f"    {ret_prefix}{model_name}(")
@@ -583,15 +706,25 @@ def _read_str(buf: bytes, pos: int) -> tuple[str, int]:
         '    """',
         "    if len(data) < 8:",
         '        raise SbeDecodeError(f"Frame too short: {len(data)} bytes")',
-        "    block_len, tmpl_id, schema_id, _ = _HEADER.unpack_from(data, 0)",
+        "    block_len, tmpl_id, schema_id, version = _HEADER.unpack_from(data, 0)",
         "    if schema_id != _SCHEMA_ID:",
         '        raise SbeDecodeError(f"Unsupported schemaId {schema_id}, expected {_SCHEMA_ID}")',
         "    dec = _DECODERS.get(tmpl_id)",
         "    if dec is None:",
         '        raise SbeDecodeError(f"Unknown templateId {tmpl_id}")',
+        "    payload = data[8:]",
+        "    # blockLength comes off the wire and drives every unpack offset below,",
+        "    # so a frame that does not carry the block it advertises has to be",
+        "    # rejected here. struct.error is not what the ws client catches, and",
+        "    # from pump_once it would escape and take the connection down.",
+        "    if block_len > len(payload):",
+        '        raise SbeDecodeError(f"Truncated frame: blockLength {block_len}, payload is {len(payload)} bytes")',
+        "    try:",
         # ty (not mypy) is what CI runs, so the suppression must use its
         # syntax; a `type: ignore` here leaves the diagnostic unsuppressed.
-        "    return dec(data[8:], block_len)  # ty: ignore[call-non-callable]",
+        "        return dec(payload, block_len, version)  # ty: ignore[call-non-callable]",
+        "    except struct.error as exc:",
+        '        raise SbeDecodeError(f"Malformed frame for templateId {tmpl_id}: {exc}") from exc',
         "",
     ]
 

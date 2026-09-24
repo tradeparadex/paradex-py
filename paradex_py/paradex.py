@@ -55,7 +55,10 @@ class Paradex(_ClientBase):
         ping_interval (float, optional): WebSocket ping interval in seconds. Defaults to None.
         disable_reconnect (bool, optional): Disable automatic WebSocket reconnection. Defaults to False.
         enable_ws_compression (bool, optional): Enable WebSocket per-message compression (RFC 7692). Defaults to True.
-        ws_sbe_enabled (bool, optional): Enable SBE binary encoding on the WebSocket connection. Defaults to False.
+        ws_sbe_enabled (bool, optional): Enable SBE binary encoding on both ws_client and ws_direct_client.
+            Defaults to False. Callbacks then receive SBE-decoded models rather than JSON dicts, and some field
+            names differ (trade_id/seq_no/order_type for JSON id/seq/type; order_book gives bids/asks rather than
+            inserts/updates/deletes). validate_ws_messages does not apply to SBE frames.
         auto_auth (bool, optional): Whether to automatically handle onboarding/auth. Defaults to True.
         auth_provider (AuthProvider, optional): Custom authentication provider. Defaults to None.
         auth_params (dict, optional): Extra query parameters sent with every ``/auth`` request
@@ -164,6 +167,7 @@ class Paradex(_ClientBase):
             disable_reconnect=disable_reconnect,
             enable_compression=enable_ws_compression,
             api_client=self.api_client,
+            sbe_enabled=ws_sbe_enabled,
         )
         # Direct endpoint (opt-in): ws.api.{env}.paradex.trade
         self.ws_direct_client = ParadexWebsocketClient(
