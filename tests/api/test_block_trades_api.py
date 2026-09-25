@@ -2,6 +2,7 @@ from typing import cast
 from unittest.mock import Mock, patch
 
 import pytest
+from pydantic import ValidationError
 
 from paradex_py.api.api_client import ParadexApiClient
 from paradex_py.api.generated.requests import (
@@ -378,3 +379,126 @@ class TestBlockTradesApi:
 
             with pytest.raises(Exception, match="DELETE Error"):
                 self.api_client.cancel_block_trade("test_id")
+
+
+class TestBlockTradeResponseParsing:
+    """Parsing of block trade detail responses, including flags the SDK is new to."""
+
+    def setup_method(self):
+        self.api_client = ParadexApiClient(env=TESTNET)
+        self.api_client.account = Mock()
+        self.api_client._validate_auth = Mock()
+
+    @staticmethod
+    def _detail(flag: str) -> dict:
+        order = {
+            "account": "0x1",
+            "market": "BTC-USD-PERP",
+            "side": "BUY",
+            "size": "1",
+            "price": "100",
+            "type": "LIMIT",
+            "flags": [flag],
+        }
+        return {
+            "block_id": "0xabc",
+            "status": "CREATED",
+            "nonce": "1",
+            "block_expiration": 1,
+            "trades": {
+                "BTC-USD-PERP": {
+                    "market": "BTC-USD-PERP",
+                    "price": "100",
+                    "size": "1",
+                    "trade_id": "t1",
+                    "maker_account": "0x1",
+                    "taker_account": "0x2",
+                    "maker_order": order,
+                    "taker_order": {**order, "account": "0x2", "side": "SELL"},
+                }
+            },
+        }
+
+    @pytest.mark.parametrize("flag", ["REDUCE_ONLY", "MMP"])
+    def test_detail_response_keeps_trades(self, flag):
+        """An MMP leg must parse like any other, trades intact.
+
+        A leg whose maker opted into Market Maker Protection comes back with
+        flags ["MMP"]. Before MMP was a known flag the whole response failed to
+        parse, the fallback below replaced it with block_id alone, and signing
+        that empty block failed with "Cannot build Merkle tree from an empty
+        list of leaves" -- nowhere near the actual cause.
+        """
+        with patch.object(self.api_client, "get") as mock_get:
+            mock_get.return_value = self._detail(flag)
+
+            block = self.api_client.get_block_trade("0xabc")
+
+            assert block.block_id == "0xabc"
+            assert block.trades is not None
+            assert block.trades["BTC-USD-PERP"].maker_order.flags == [flag]
+
+    def test_unparseable_response_without_trades_still_falls_back(self):
+        """A response with no trades to lose keeps the lenient id-only fallback."""
+        with patch.object(self.api_client, "get") as mock_get:
+            mock_get.return_value = {"id": "0xabc", "status": "NOT_A_STATUS"}
+
+            assert self.api_client.get_block_trade("0xabc").block_id == "0xabc"
+
+    def test_offer_collection_block_is_not_treated_as_a_parse_failure(self):
+        """A block still collecting offers has an empty counter-side, and that is normal.
+
+        web-api builds both orders whenever a trade has a fill, reading the
+        side nobody has taken through proto getters that return zero values, so
+        it arrives with side "" and type "". Both are required enums, so the
+        response does not parse -- but raising on it would break every
+        get_block_trade call against an OFFER_COLLECTION block.
+        """
+        detail = self._detail("REDUCE_ONLY")
+        detail["status"] = "OFFER_COLLECTION"
+        detail["trades"]["BTC-USD-PERP"]["taker_order"] = {
+            "account": "",
+            "market": "",
+            "side": "",
+            "type": "",
+            "size": "0",
+            "price": "0",
+            "signature_timestamp": 0,
+        }
+
+        with patch.object(self.api_client, "get") as mock_get:
+            mock_get.return_value = detail
+
+            block = self.api_client.get_block_trade("0xabc")
+
+            assert block.block_id == "0xabc"
+
+    def test_offer_collection_block_with_an_unknown_flag_still_raises(self):
+        """An empty counter-side excuses nothing else in the same response.
+
+        This is the case the exemption has to get right: a block collecting
+        offers whose maker also carries a flag this SDK does not know. Tolerating
+        it because *some* error is an empty side would silently drop the trades
+        again, which is the bug the raise exists to prevent.
+        """
+        detail = self._detail("REDUCE_ONLY")
+        detail["status"] = "OFFER_COLLECTION"
+        detail["trades"]["BTC-USD-PERP"]["taker_order"] = {"side": "", "type": ""}
+        detail["trades"]["BTC-USD-PERP"]["maker_order"]["flags"] = ["FLAG_FROM_THE_FUTURE"]
+
+        with patch.object(self.api_client, "get") as mock_get:
+            mock_get.return_value = detail
+
+            with pytest.raises(ValidationError):
+                self.api_client.get_block_trade("0xabc")
+
+    def test_unparseable_response_with_trades_raises(self):
+        """A response carrying trades must not degrade into a tradeless block."""
+        detail = self._detail("REDUCE_ONLY")
+        detail["trades"]["BTC-USD-PERP"]["maker_order"]["side"] = "SIDEWAYS"
+
+        with patch.object(self.api_client, "get") as mock_get:
+            mock_get.return_value = detail
+
+            with pytest.raises(ValidationError):
+                self.api_client.get_block_trade("0xabc")

@@ -33,6 +33,22 @@ from paradex_py.utils import raise_value_error, time_now_milli_secs
 FULLNODE_SIGNATURE_VERSION = "1.0.0"
 
 
+def _require_trades(block_trade: BlockTrade, block_id: str) -> None:
+    """Refuse to sign a block with no trade leaves.
+
+    The trades slice signs as a merkle tree, and an empty one raises "Cannot
+    build Merkle tree from an empty list of leaves" deep inside the typed-data
+    library, naming leaves rather than the block that had none. A block arrives
+    here empty when its response could not be parsed and was reduced to its id,
+    or when every leg lacks both orders and trade constraints.
+    """
+    if not block_trade.trades:
+        raise_value_error(
+            f"block {block_id} has no trades to sign."
+            " Its response may have failed to parse: re-fetch it and check the trades it carries."
+        )
+
+
 # For matching existing chainId type
 class CustomStarknetChainId(IntEnum):
     PRIVATE_SN_MAINNET = int_from_bytes(b"PRIVATE_SN_PARACLEAR_MAINNET")
@@ -309,6 +325,7 @@ class ParadexAccount:
             raise ValueError("block_response.block_id is required")  # noqa: TRY003
         nonce, expiration = self._executor_nonce_expiration(nonce, expiration_minutes)
         bt = block_trade_from_response(block_response, nonce, expiration)
+        _require_trades(bt, block_response.block_id)
         return {block_response.block_id: self.build_block_trade_signature(bt)}
 
     def build_executor_signatures_for_offers(
@@ -330,6 +347,7 @@ class ParadexAccount:
             if not offer.block_id:
                 raise ValueError("each offer_response must have block_id set")  # noqa: TRY003
             bt = block_trade_from_response(offer, nonce, expiration)
+            _require_trades(bt, offer.block_id)
             sigs[offer.block_id] = self.build_block_trade_signature(bt)
         return sigs
 
