@@ -843,6 +843,7 @@ class OrderFlag(str, Enum):
     flags_stop_condition_above_trigger = "STOP_CONDITION_ABOVE_TRIGGER"
     flags_interactive = "INTERACTIVE"
     flags_target_strategy_vwap = "TARGET_STRATEGY_VWAP"
+    flags_mmp = "MMP"
 
 
 class OrderInstruction(str, Enum):
