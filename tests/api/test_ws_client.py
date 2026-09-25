@@ -74,3 +74,11 @@ async def test_connect_unauthenticated_with_user_agent(mock_connect: AsyncMock) 
     assert headers["User-Agent"].startswith("paradex-py/")
     # No Authorization header in unauthenticated mode
     assert "Authorization" not in headers
+
+
+def test_mmp_channel_resolves_from_message_name():
+    """The `mmp` channel carries MMP state changes for the account."""
+    from paradex_py.api.ws_client import ParadexWebsocketChannel, _get_ws_channel_from_name
+
+    assert ParadexWebsocketChannel.MMP.value == "mmp"
+    assert _get_ws_channel_from_name("mmp") == ParadexWebsocketChannel.MMP
