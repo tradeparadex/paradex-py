@@ -4,6 +4,7 @@ import logging
 import re
 import time
 from collections.abc import Callable
+from decimal import Decimal, InvalidOperation, localcontext
 from typing import TYPE_CHECKING, Any, cast
 
 import httpx
@@ -11,9 +12,28 @@ import httpx
 from paradex_py.account.account import ParadexAccount
 from paradex_py.api.block_trades_api import BlockTradesMixin
 from paradex_py.api.http_client import HttpClient, HttpMethod
-from paradex_py.api.models import AccountSummary, AccountSummarySchema, AuthSchema, SystemConfig, SystemConfigSchema
+from paradex_py.api.models import (
+    AccountMmpConfigs,
+    AccountMmpConfigsSchema,
+    AccountMmpReset,
+    AccountMmpResetSchema,
+    AccountSummary,
+    AccountSummarySchema,
+    AuthSchema,
+    MmpConfig,
+    MmpConfigSchema,
+    SystemConfig,
+    SystemConfigSchema,
+)
 from paradex_py.api.protocols import AuthProvider, RetryStrategy, Signer
 from paradex_py.common.order import Order
+from paradex_py.constants import (
+    MMP_LIMIT_MIN_INCREMENT,
+    MMP_MAX_FROZEN_TIME_MS,
+    MMP_MAX_INTERVAL_MS,
+    MMP_MIN_FROZEN_TIME_MS,
+    MMP_MIN_INTERVAL_MS,
+)
 from paradex_py.environment import Environment
 from paradex_py.utils import raise_value_error
 
@@ -35,6 +55,40 @@ def _jwt_exp(token: str) -> float | None:
     else:
         exp = payload.get("exp")
         return float(exp) if exp is not None else None
+
+
+def _mmp_limit(value: Decimal | str | int | None) -> str | None:
+    """Render an MMP limit as a plain decimal string, or None if it is not a number.
+
+    ``None`` and ``""`` are "0", the disabled limit the server reads an empty
+    one as. Exponent notation is rejected by the server, so ``1E+3`` is sent as
+    ``1000``. Infinity and NaN are numbers Decimal accepts but the server does
+    not, and they would pass the increment check, so they are not rendered.
+    """
+    if value is None or value == "":
+        return "0"
+    try:
+        limit = Decimal(str(value))
+    except InvalidOperation:
+        return None
+    if not limit.is_finite():
+        return None
+    return f"{limit:f}"
+
+
+def _off_increment(limit: str) -> bool:
+    """Whether a limit is finer than the smallest increment the server accepts.
+
+    The modulo runs in a wider context because the default 28 digits raise
+    InvalidOperation on an absurd value, and such a value is the server's to
+    reject as too large rather than this check's to misreport.
+    """
+    try:
+        with localcontext() as ctx:
+            ctx.prec = 60
+            return Decimal(limit) % MMP_LIMIT_MIN_INCREMENT != 0
+    except InvalidOperation:
+        return False
 
 
 class ParadexApiClient(BlockTradesMixin, HttpClient):
@@ -597,6 +651,142 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         Private endpoint requires authorization.
         """
         return self._get_authorized(path="account/info")
+
+    # MARKET MAKER PROTECTION
+
+    def fetch_mmp_configs(self, params: dict | None = None) -> AccountMmpConfigs:
+        """Fetch Market Maker Protection configs for this account, one per base asset.
+        Private endpoint requires authorization.
+
+        Available whether or not MMP is enabled for the account: when
+        `enabled` is False the configs listed are still enforced, and can only
+        be removed.
+
+        Args:
+            params:
+                `base_asset`: Only return the config for this base asset\n
+
+        Returns:
+            AccountMmpConfigs with `account`, `enabled` and `results`
+        """
+        res = self._get_authorized(path="account/mmp", params=params)
+        return AccountMmpConfigsSchema().load(res, unknown="exclude")
+
+    def set_mmp_config(
+        self,
+        base_asset: str,
+        interval_ms: int,
+        frozen_time_ms: int,
+        size_limit: Decimal | str | int | None = None,
+        delta_limit: Decimal | str | int | None = None,
+        vega_limit: Decimal | str | int | None = None,
+    ) -> MmpConfig:
+        """Replace the Market Maker Protection config for a base asset.
+            Private endpoint requires authorization.
+
+        This is a full replacement, not a patch: an omitted limit is sent as 0,
+        which disables that check. At least one limit must be greater than 0.
+        The base asset must have dated option or perpetual markets, and MMP must
+        be enabled for the account (otherwise the server answers 403
+        `MMP_NOT_ENABLED`). Use `delete_mmp_config` to turn MMP off for a base
+        asset; there is no interval that removes a config.
+
+        Args:
+            base_asset: Base asset the config applies to, e.g. "BTC". It covers
+                every dated option and the perpetual on that asset.
+            interval_ms: Sliding window length in milliseconds, between
+                `MMP_MIN_INTERVAL_MS` and `MMP_MAX_INTERVAL_MS`.
+            frozen_time_ms: How long a trip freezes MMP orders, in milliseconds,
+                between `MMP_MIN_FROZEN_TIME_MS` and `MMP_MAX_FROZEN_TIME_MS`.
+                0 does not mean "no freeze": it freezes until `reset_mmp` is
+                called.
+            size_limit: Trips when the sum of fill sizes in the window exceeds
+                it, in base asset units. 0 disables it.
+            delta_limit: Trips when the absolute net delta of fills in the window
+                exceeds it, in base asset units. 0 disables it.
+            vega_limit: Trips when the absolute net vega of fills in the window
+                exceeds it, in USD. 0 disables it. It counts dated option fills
+                only, so it cannot be the only limit on a base asset with no
+                dated option markets.
+
+        Every limit must be a multiple of `MMP_LIMIT_MIN_INCREMENT` (0.0001).
+
+        Returns:
+            MmpConfig as stored
+        """
+        if not MMP_MIN_INTERVAL_MS <= interval_ms <= MMP_MAX_INTERVAL_MS:
+            raise_value_error(
+                f"{self.classname}: interval_ms must be between {MMP_MIN_INTERVAL_MS} and {MMP_MAX_INTERVAL_MS}"
+            )
+        if not MMP_MIN_FROZEN_TIME_MS <= frozen_time_ms <= MMP_MAX_FROZEN_TIME_MS:
+            raise_value_error(
+                f"{self.classname}: frozen_time_ms must be between"
+                f" {MMP_MIN_FROZEN_TIME_MS} and {MMP_MAX_FROZEN_TIME_MS}"
+            )
+        limits = {}
+        for name, value in (
+            ("size_limit", size_limit),
+            ("delta_limit", delta_limit),
+            ("vega_limit", vega_limit),
+        ):
+            rendered = _mmp_limit(value)
+            if rendered is None:
+                raise_value_error(f"{self.classname}: {name} must be a decimal number")
+            limits[name] = rendered
+        for name, limit in limits.items():
+            if Decimal(limit) < 0:
+                raise_value_error(f"{self.classname}: {name} must not be negative")
+            if _off_increment(limit):
+                raise_value_error(f"{self.classname}: {name} must be a multiple of {MMP_LIMIT_MIN_INCREMENT}")
+        if all(Decimal(limit) == 0 for limit in limits.values()):
+            raise_value_error(
+                f"{self.classname}: at least one of size_limit, delta_limit and vega_limit must be greater than 0"
+            )
+
+        payload: dict[str, Any] = {"interval_ms": interval_ms, "frozen_time_ms": frozen_time_ms, **limits}
+        res = self._post_authorized(path=f"account/mmp/{base_asset}", payload=payload)
+        return MmpConfigSchema().load(res, unknown="exclude")
+
+    def delete_mmp_config(self, base_asset: str) -> None:
+        """Remove the Market Maker Protection config for a base asset, turning MMP
+            off for it. Succeeds when there is no config.
+            Private endpoint requires authorization.
+
+        Stays available when MMP is not enabled for the account, so a config that
+        is still enforced can be removed.
+
+        Args:
+            base_asset: Base asset of the config to remove, e.g. "BTC".
+        """
+        self._delete_authorized(path=f"account/mmp/{base_asset}")
+
+    def reset_mmp(self, base_asset: str | None = None) -> AccountMmpReset:
+        """Clear a Market Maker Protection freeze and its window.
+            Private endpoint requires authorization.
+
+        The only way to lift a freeze without deleting the config, and the only
+        way out of one configured with `frozen_time_ms=0`.
+
+        A reset within the first second of a freeze is refused with 400
+        `MMP_MIN_FREEZE_NOT_ELAPSED`, so the cancel sweep can catch up. When no
+        base asset is given, that refusal is partial: the error carries `data`
+        naming the base assets it refused and those it reset anyway, so a
+        failure here does not mean nothing was reset.
+
+        Args:
+            base_asset: Base asset to reset, e.g. "BTC". Every base asset with
+                MMP enabled when omitted. An empty string is rejected rather
+                than treated as omitted, since resetting every base asset is
+                rarely what an unset variable was meant to do.
+
+        Returns:
+            AccountMmpReset with `results`, one entry per base asset reset
+        """
+        if base_asset is not None and not base_asset:
+            raise_value_error(f"{self.classname}: base_asset must not be empty; omit it to reset every base asset")
+        payload = {"base_asset": base_asset} if base_asset else {}
+        res = self._post_authorized(path="account/mmp/reset", payload=payload)
+        return AccountMmpResetSchema().load(res, unknown="exclude")
 
     # SUBKEY MANAGEMENT
 

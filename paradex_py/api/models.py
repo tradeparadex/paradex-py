@@ -98,7 +98,81 @@ class RateLimitInfo:
     window: int | None
 
 
+@dataclass
+class MmpConfig:
+    """Market Maker Protection config for one base asset, with its live state.
+
+    A limit of "0" means that check is disabled.
+
+    The live fields are None when the matching engine could not be asked, or is
+    still enforcing an older version of the config: right after a change its
+    window belongs to the old limits, so the server omits it rather than showing
+    it beside the new ones. `frozen_until` is 0 both when a freeze lasts until a
+    manual reset and when nothing is frozen, so read `is_frozen` for that.
+    """
+
+    class Meta:
+        unknown = "exclude"
+
+    base_asset: str
+    interval_ms: int
+    frozen_time_ms: int
+    size_limit: str
+    delta_limit: str
+    vega_limit: str
+    updated_at: int
+    is_frozen: bool | None = None
+    frozen_until: int | None = None
+    window_size: str | None = None
+    window_delta: str | None = None
+    window_vega: str | None = None
+
+
+@dataclass
+class AccountMmpConfigs:
+    """All Market Maker Protection configs of an account, one per base asset.
+
+    A base asset with no entry has MMP off. `enabled` is whether the account may
+    use MMP at all: when it is false the configs listed are still enforced, and
+    can only be removed.
+    """
+
+    class Meta:
+        unknown = "exclude"
+
+    account: str
+    enabled: bool
+    results: list[MmpConfig]
+
+
+@dataclass
+class MmpResetResult:
+    """One base asset whose Market Maker Protection freeze and window were cleared."""
+
+    class Meta:
+        unknown = "exclude"
+
+    base_asset: str
+    reset_at: int
+
+
+@dataclass
+class AccountMmpReset:
+    """Base assets a reset cleared, ordered by base asset.
+
+    Empty when no base asset has MMP enabled.
+    """
+
+    class Meta:
+        unknown = "exclude"
+
+    results: list[MmpResetResult]
+
+
 ApiErrorSchema = marshmallow_dataclass.class_schema(ApiError)
 SystemConfigSchema = marshmallow_dataclass.class_schema(SystemConfig)
 AuthSchema = marshmallow_dataclass.class_schema(Auth)
 AccountSummarySchema = marshmallow_dataclass.class_schema(AccountSummary)
+MmpConfigSchema = marshmallow_dataclass.class_schema(MmpConfig)
+AccountMmpConfigsSchema = marshmallow_dataclass.class_schema(AccountMmpConfigs)
+AccountMmpResetSchema = marshmallow_dataclass.class_schema(AccountMmpReset)
