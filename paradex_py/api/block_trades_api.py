@@ -1,6 +1,6 @@
 from typing import Any, Protocol
 
-from pydantic import TypeAdapter
+from pydantic import TypeAdapter, ValidationError
 
 from paradex_py.api.generated.requests import (
     BlockExecuteRequest,
@@ -13,6 +13,26 @@ from paradex_py.api.generated.responses import (
     BlockTradeDetailFullResponse,
     PaginatedAPIResults,
 )
+
+
+def _is_unfilled_counter_side(exc: ValidationError) -> bool:
+    """Whether every error is an empty side or type on a block trade order.
+
+    A block still collecting offers has one side filled. web-api builds both
+    `maker_order` and `taker_order` whenever a trade has a fill, reading the
+    missing side through proto getters that return zero values, so the side
+    nobody has taken yet arrives as `{"side": "", "type": "", ...}`. Both are
+    required enums here, so the response does not parse -- but it is the normal
+    shape of an OFFER_COLLECTION block, not a response worth raising on.
+    """
+    errors = exc.errors()
+    for err in errors:
+        loc = err.get("loc", ())
+        if len(loc) < 2 or loc[-1] not in ("side", "type") or loc[-2] not in ("maker_order", "taker_order"):
+            return False
+        if err.get("input") != "":
+            return False
+    return bool(errors)
 
 
 class ApiClientProtocol(Protocol):
@@ -88,8 +108,22 @@ class BlockTradesMixin:
 
         try:
             return BlockTradeDetailFullResponse.model_validate(response)
-        except Exception:
-            # Fallback to simple response with just the ID
+        except Exception as exc:
+            # Dropping trades here returns a block that looks valid and signs as
+            # an empty merkle tree, failing much later with an error naming
+            # leaves rather than the field that was rejected. So a response that
+            # carries trades and cannot be parsed is raised where it happened,
+            # unless it is the shape below, which is normal.
+            if (
+                isinstance(response, dict)
+                and response.get("trades")
+                and not (isinstance(exc, ValidationError) and _is_unfilled_counter_side(exc))
+            ):
+                raise
+            # Whatever is left is reduced to the block's id. The caller can
+            # still identify the block, and the executor helpers in
+            # account.py refuse to sign one with no trades rather than letting
+            # it fail later as an empty merkle tree.
             block_id = response.get("id") or response.get("block_id") if isinstance(response, dict) else None
             return BlockTradeDetailFullResponse.model_validate({"block_id": block_id})
 
