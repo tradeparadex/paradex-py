@@ -30,6 +30,44 @@ class OrderStatus(Enum):
     CLOSED = "CLOSED"
 
 
+class OrderFlag(Enum):
+    """Flags sent in the `flags` array of an order.
+
+    `MMP` opts the order into Market Maker Protection for its account and base
+    asset. It is accepted on LIMIT orders on dated options and perpetuals only,
+    needs MMP enabled for the account and a config for the base asset, and is
+    rejected on block trade legs. A modify keeps the flags of the resting order,
+    so MMP cannot be turned on or off by modifying.
+    """
+
+    ReduceOnly = "REDUCE_ONLY"
+    Mmp = "MMP"
+
+
+class MmpCancelReason(Enum):
+    """`cancel_reason` values set when Market Maker Protection cancels an order.
+
+    Attributes:
+        Triggered: A size, delta or vega limit tripped for the account and base asset.
+        Frozen: The order arrived while the account and base asset were frozen.
+        Disabled: MMP was disabled for the account and base asset.
+        GreeksUnavailable: The market has no usable greeks - missing, stale, or
+            not MMP-eligible.
+        NotConfigured: The account and base asset have no MMP config, so the
+            order cannot be protected.
+
+    Matching on a value it does not know is safe: `cancel_reason` is a plain
+    string everywhere in this SDK, never parsed through this enum, so a reason
+    added server-side still reaches the caller.
+    """
+
+    Triggered = "MMP_TRIGGERED"
+    Frozen = "MMP_FROZEN"
+    Disabled = "MMP_DISABLED"
+    GreeksUnavailable = "MMP_GREEKS_UNAVAILABLE"
+    NotConfigured = "MMP_NOT_CONFIGURED"
+
+
 class OrderSide(Enum):
     Buy = "BUY"
     Sell = "SELL"
@@ -63,6 +101,7 @@ class Order:
         ) = None,  # Self Trade Prevention, EXPIRE_MAKER, EXPIRE_TAKER or EXPIRE_BOTH, default: EXPIRE_TAKER
         trigger_price: Decimal | None = None,
         order_id: str | None = None,
+        mmp: bool = False,  # Opt into Market Maker Protection; LIMIT orders on dated options and perps only
     ) -> None:
         ts = time_now_milli_secs()
         self.id = order_id
@@ -77,6 +116,7 @@ class Order:
         self.client_id = client_id
         self.instruction = instruction
         self.reduce_only = reduce_only
+        self.mmp = mmp
         self.created_at = ts  # milliseconds
         self.cancel_reason = ""
         self.last_action = OrderAction.NAN
@@ -126,8 +166,13 @@ class Order:
             order_dict["price"] = str(self.limit_price)
         if self.trigger_price:
             order_dict["trigger_price"] = str(self.trigger_price)
+        flags = []
         if self.reduce_only:
-            order_dict["flags"] = ["REDUCE_ONLY"]
+            flags.append(OrderFlag.ReduceOnly.value)
+        if self.mmp:
+            flags.append(OrderFlag.Mmp.value)
+        if flags:
+            order_dict["flags"] = flags
 
         # For modify order
         if self.id:
