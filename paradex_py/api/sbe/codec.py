@@ -166,7 +166,7 @@ class TradeEventData(BaseModel):
     timestamp: int
     seq_no: int
     trade_id: int = Field(
-        deprecated="DEPRECATED, use tradeIdStr. Unique trade identifier, truncated to the low 64 bits of the real id and negative when those exceed 2^63."
+        deprecated="DEPRECATED, use trade_id_str. Unique trade identifier, truncated to the low 64 bits of the real id and negative when those exceed 2^63."
     )
     side: str | None
     price: str

@@ -537,7 +537,10 @@ def _read_str(buf: bytes, pos: int) -> tuple[str, int]:
             if f["deprecated"]:
                 if f["since"] > 0:
                     raise ValueError(f"Deprecating a version-gated field is not supported: {msg_name}.{f['name']}")
-                annotation = f"{annotation} = Field(deprecated={f['deprecated']!r})"
+                # The schema names the replacement by its XML spelling; point
+                # Python callers at the attribute they will actually find.
+                message = re.sub(r"\buse (\w+)", lambda m: f"use {_to_snake(m.group(1))}", f["deprecated"])
+                annotation = f"{annotation} = Field(deprecated={message!r})"
             model_fields.append((fname, annotation))
 
         for g in groups:

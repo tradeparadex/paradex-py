@@ -19,8 +19,7 @@ end of the frame, is reported but is not a failure: it is what a server that
 predates an in-place 1:2 addition sends, and the decoder tolerates it.
 
 For trades it also checks that trade_id_str carries a full id: the int64
-trade_id must equal its low 64 bits, and the two must differ once the id is
-past int64.
+trade_id must equal its low 64 bits.
 
 Only public templates (1-6) can be checked this way; orders, fills, positions
 and account need an authenticated session. A version above the decoder's is
@@ -77,6 +76,8 @@ def _int64_wrap(n: int) -> int:
 
 def check_frame(data: bytes, layouts: dict, stats: dict) -> list[str]:  # noqa: C901
     """Return the problems with one frame; record tolerated shortfalls in stats."""
+    if len(data) < _HEADER.size:
+        return [f"frame of {len(data)} bytes is shorter than the SBE header"]
     block_len, tmpl_id, schema_id, version = _HEADER.unpack_from(data, 0)
     if schema_id != _SCHEMA_ID:
         return [f"schemaId {schema_id}, expected {_SCHEMA_ID}"]
@@ -132,7 +133,9 @@ def check_frame(data: bytes, layouts: dict, stats: dict) -> list[str]:  # noqa: 
 
 def _channels(market: str) -> list[str]:
     return [
-        f"trades.{market}",
+        # ALL rather than one market: a single market can go minutes without a
+        # trade, and the trade frame is the one that carries tradeIdStr.
+        "trades.ALL",
         f"bbo.{market}",
         f"order_book.{market}.snapshot@15@100ms",
         f"markets_summary.{market}",

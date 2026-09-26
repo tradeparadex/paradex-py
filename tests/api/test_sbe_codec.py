@@ -1194,7 +1194,7 @@ def test_trade_reads_block_length_from_header():
 
 def test_trade_id_access_is_deprecated():
     _channel, model = decode_frame(_make_trade_frame())
-    with pytest.warns(DeprecationWarning, match="tradeIdStr"):
+    with pytest.warns(DeprecationWarning, match="use trade_id_str"):
         _ = model.trade_id
 
 
