@@ -91,6 +91,15 @@ The `api/generated/` directory contains auto-generated Pydantic models from the 
 uv run python scripts/generate_models_simple.py
 ```
 
+### SBE Schema
+
+`paradex_py/api/sbe/paradex_1_0.xml` is a copy of the upstream server schema, with prose curated for a
+public repo, and `codec.py` is generated from it (do not edit `codec.py` by hand). The copy goes stale
+silently when the upstream schema changes. Before touching SBE, run `scripts/check_sbe_schema.py` against
+the upstream file; the sync procedure is in `scripts/README.md`. Keep internal names (repos, services,
+flags, metrics, proto/Go types) out of this public repo. Never raise `NEGOTIATED_SCHEMA_VERSION` before the decoder and
+every environment support that version.
+
 ### Testing Strategy
 
 - Unit tests in `tests/` mirror the source structure
