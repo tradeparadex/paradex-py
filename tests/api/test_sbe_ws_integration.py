@@ -79,7 +79,7 @@ def test_sbe_off_via_paradex_constructor():
 @pytest.mark.asyncio
 @patch("websockets.connect", new_callable=AsyncMock)
 async def test_sbe_url_params_appended(mock_connect: AsyncMock):
-    """SBE enabled → ?sbeSchemaId=1&sbeSchemaVersion=1 appended to URL."""
+    """SBE enabled → ?sbeSchemaId=1&sbeSchemaVersion=2 appended to URL."""
     mock_ws = _make_mock_ws()
     mock_connect.return_value = mock_ws
 
@@ -88,22 +88,29 @@ async def test_sbe_url_params_appended(mock_connect: AsyncMock):
 
     url_called = mock_connect.call_args.args[0]
     assert "sbeSchemaId=1" in url_called
-    assert "sbeSchemaVersion=1" in url_called
+    assert "sbeSchemaVersion=2" in url_called
 
 
-def test_negotiated_version_lags_decoder_version():
-    """The decoder reads 1:2 but must keep asking for the version the server serves.
+def test_negotiated_version_matches_decoder_version():
+    """The SDK asks for exactly the version its decoder was generated for.
 
-    Every environment caps negotiation at 1, and a request above the cap is a
-    400 at connect rather than a downgrade, so raising this before the cap goes
-    up would stop the SDK connecting at all.
+    v0.7.1 shipped the 1:2 decoder while still negotiating 1:1, because every
+    environment capped negotiation at 1 and a request above the cap is a 400 at
+    connect. nightly, testnet and prod now serve 1:2, so the split is closed.
+
+    Both directions stay forbidden. Negotiating above the decoder would decode
+    frames with a layout it does not know. Negotiating below it is allowed
+    only as a deliberate hold-back while the server cap catches up with a
+    newer schema, so if this fails because the schema moved ahead, lower the
+    expectation here on purpose rather than bumping NEGOTIATED_SCHEMA_VERSION
+    to match: the server must be serving the new version first.
     """
     from paradex_py.api.sbe import NEGOTIATED_SCHEMA_VERSION
     from paradex_py.api.sbe.codec import _SCHEMA_VERSION
 
-    assert NEGOTIATED_SCHEMA_VERSION == 1
+    assert NEGOTIATED_SCHEMA_VERSION == 2
     assert _SCHEMA_VERSION == 2
-    assert NEGOTIATED_SCHEMA_VERSION <= _SCHEMA_VERSION
+    assert NEGOTIATED_SCHEMA_VERSION == _SCHEMA_VERSION
 
 
 @pytest.mark.asyncio

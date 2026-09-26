@@ -151,7 +151,9 @@ def test_trade_event_fields():
     _channel, model = decode_frame(_make_trade_frame())
     assert model.timestamp == 1710000000123
     assert model.seq_no == 42
-    assert model.trade_id == 999
+    with pytest.warns(DeprecationWarning):
+        assert model.trade_id == 999
+    assert model.trade_id_str is None  # a 1:0 frame predates it
     assert model.side == "BUY"
     assert model.price == "42000.50000000"
     assert model.size == "0.00100000"
@@ -1111,3 +1113,194 @@ def test_block_shorter_than_base_raises_decode_error():
     frame = _hdr(20, 21, version=1) + payload[:20]
     with pytest.raises(SbeDecodeError):
         decode_frame(frame)
+
+
+# ── Schema 1:2 fields added in place (tradeIdStr, request_info, lastSeenNotification) ──
+#
+# These landed in 1:2 after it was first served, so version 2 describes two
+# layouts of each message and the header version byte cannot tell them apart.
+# The decoder has to go by blockLength for fixed fields and by what is left in
+# the frame for appended var-data.
+
+# A real Paradex trade id: 28 digits, far past int64. The short ids in the
+# fixtures above are why the int64 truncation went unnoticed.
+_REAL_TRADE_ID = "1790243311180201709220570002"
+
+
+def _int64_wrap(n: int) -> int:
+    """What the server puts in the legacy int64 tradeId: the low 64 bits, signed."""
+    low = n & 0xFFFF_FFFF_FFFF_FFFF
+    return low - (1 << 64) if low >= 1 << 63 else low
+
+
+def _make_trade_frame_v2(trade_id_str: bytes | None = _REAL_TRADE_ID.encode(), version: int = 2) -> bytes:
+    trade_id = _int64_wrap(int(_REAL_TRADE_ID))
+    payload = _TRADE_STRUCT.pack(1710000000123456, 42, trade_id, 1, 4200050000000, 100000, 1710000000100000, 1)
+    payload += _var(MARKET)
+    if trade_id_str is not None:
+        payload += _var(trade_id_str)
+    return _hdr(_TRADE_STRUCT.size, 1, version=version) + payload
+
+
+def test_trade_v2_round_trips_28_digit_trade_id():
+    _channel, model = decode_frame(_make_trade_frame_v2())
+    assert model.trade_id_str == _REAL_TRADE_ID
+    assert model.model_dump()["trade_id_str"] == _REAL_TRADE_ID
+    # The legacy int64 cannot hold it: it is the wrapped low 64 bits, not the id.
+    with pytest.warns(DeprecationWarning):
+        assert model.trade_id == _int64_wrap(int(_REAL_TRADE_ID))
+        assert str(model.trade_id) != _REAL_TRADE_ID
+
+
+def test_trade_int64_trade_id_can_be_negative():
+    """Some real ids wrap to a negative int64; trade_id_str is still exact."""
+    real = str((1 << 90) + (1 << 63) + 7)  # low 64 bits have the sign bit set
+    trade_id = _int64_wrap(int(real))
+    assert trade_id < 0
+    payload = _TRADE_STRUCT.pack(0, 0, trade_id, 1, 0, 0, 0, 1) + _var(MARKET) + _var(real.encode())
+    _channel, model = decode_frame(_hdr(_TRADE_STRUCT.size, 1, version=2) + payload)
+    assert model.trade_id_str == real
+
+
+def test_trade_v2_without_trade_id_str_is_absent_not_malformed():
+    """A 1:2 frame from a server that predates tradeIdStr ends after market."""
+    _channel, model = decode_frame(_make_trade_frame_v2(trade_id_str=None))
+    assert model.market == "BTC-USD-PERP"
+    assert model.trade_id_str is None
+
+
+def test_trade_v1_frame_ignores_trade_id_str():
+    """Below 1:2 the server cuts the var-data before tradeIdStr; the header gates it."""
+    _channel, model = decode_frame(_make_trade_frame_v2(trade_id_str=None, version=1))
+    assert model.trade_id_str is None
+    assert model.market == "BTC-USD-PERP"
+
+
+def test_trade_v2_trade_id_str_cut_short_raises():
+    """Absent at the end of the frame is tolerated; started and cut short is not."""
+    with pytest.raises(SbeDecodeError, match="Truncated frame"):
+        decode_frame(_make_trade_frame_v2()[:-5])
+
+
+def test_trade_reads_block_length_from_header():
+    """A longer block from a newer schema must be skipped, not read as var-data."""
+    payload = _TRADE_STRUCT.pack(1710000000123456, 42, 1, 1, 4200050000000, 100000, 1710000000100000, 1)
+    payload += b"\xaa" * 8  # a fixed field this decoder does not know
+    payload += _var(MARKET) + _var(_REAL_TRADE_ID.encode())
+    _channel, model = decode_frame(_hdr(_TRADE_STRUCT.size + 8, 1, version=2) + payload)
+    assert model.market == "BTC-USD-PERP"
+    assert model.trade_id_str == _REAL_TRADE_ID
+
+
+def test_trade_id_access_is_deprecated():
+    _channel, model = decode_frame(_make_trade_frame())
+    with pytest.warns(DeprecationWarning, match="use trade_id_str"):
+        _ = model.trade_id
+
+
+_ORDER_V2_TAIL = struct.Struct("<BB")  # requestStatus, requestType
+
+
+def _make_order_frame_v2(
+    request_status: int | None = 1,  # PENDING
+    request_type: int = 1,  # MODIFY_ORDER
+    request_id: bytes | None = b"req-789",
+    request_message: bytes | None = b"",
+    version: int = 2,
+) -> bytes:
+    """An order frame at 1:2. request_status=None leaves the block at its 1:1 length."""
+    base = _make_order_frame()[8:]
+    block, var_data = base[: _ORDER_STRUCT.size], base[_ORDER_STRUCT.size :]
+    if request_status is not None:
+        block += _ORDER_V2_TAIL.pack(request_status, request_type)
+    if request_id is not None:
+        var_data += _var(request_id)
+    if request_message is not None:
+        var_data += _var(request_message)
+    return _hdr(len(block), 20, version=version) + block + var_data
+
+
+def test_order_v2_block_grew_to_128():
+    frame = _make_order_frame_v2()
+    assert HEADER.unpack_from(frame, 0)[0] == 128
+
+
+def test_order_v2_request_info_present():
+    _channel, model = decode_frame(_make_order_frame_v2(request_message=b"price out of band"))
+    assert model.request_status == "PENDING"
+    assert model.request_type == "MODIFY_ORDER"
+    assert model.request_id == "req-789"
+    assert model.request_message == "price out of band"
+    assert model.request_info == {
+        "id": "req-789",
+        "message": "price out of band",
+        "request_type": "MODIFY_ORDER",
+        "status": "PENDING",
+    }
+    # Everything before the appended fields still decodes where it did.
+    assert model.cancel_reason == ""
+    assert model.market == "BTC-USD-PERP"
+
+
+def test_order_v2_both_unspecified_means_no_request_info():
+    """UNSPECIFIED on both enums is how SBE says the JSON omitted request_info."""
+    _channel, model = decode_frame(_make_order_frame_v2(request_status=0, request_type=0, request_id=b""))
+    assert model.request_status == "UNSPECIFIED"
+    assert model.request_type == "UNSPECIFIED"
+    assert model.request_info is None
+
+
+def test_order_v1_frame_leaves_request_fields_absent():
+    frame = _make_order_frame_v2(request_status=None, request_id=None, request_message=None, version=1)
+    assert HEADER.unpack_from(frame, 0)[0] == 126
+    _channel, model = decode_frame(frame)
+    assert model.request_status is None
+    assert model.request_type is None
+    assert model.request_id is None
+    assert model.request_message is None
+    assert model.request_info is None
+    assert model.cancel_reason == ""
+
+
+def test_order_v2_from_server_predating_request_info():
+    """1:2 header, 1:1 block and var-data: what a server before request_info sends."""
+    frame = _make_order_frame_v2(request_status=None, request_id=None, request_message=None)
+    _channel, model = decode_frame(frame)
+    assert model.request_status is None
+    assert model.request_id is None
+    assert model.request_info is None
+    assert model.market == "BTC-USD-PERP"
+
+
+_ACC_V2_TAIL = struct.Struct("<q")  # lastSeenNotification
+
+
+def _make_account_frame_v2(last_seen_us: int | None = 1713400000000000, version: int = 2) -> bytes:
+    base = _make_account_frame()[8:]
+    block, var_data = base[: _ACC_STRUCT.size], base[_ACC_STRUCT.size :]
+    if last_seen_us is not None:
+        block += _ACC_V2_TAIL.pack(last_seen_us)
+    return _hdr(len(block), 23, version=version) + block + var_data
+
+
+def test_account_v2_last_seen_notification():
+    frame = _make_account_frame_v2()
+    assert HEADER.unpack_from(frame, 0)[0] == 121
+    _channel, model = decode_frame(frame)
+    # Microseconds on the wire, milliseconds out — the same as JSON carries it.
+    assert model.last_seen_notification == 1713400000000
+    assert model.settlement_asset == "USDC"
+    assert model.status == "ACTIVE"
+
+
+def test_account_v2_never_acknowledged_is_zero_not_absent():
+    _channel, model = decode_frame(_make_account_frame_v2(last_seen_us=0))
+    assert model.last_seen_notification == 0
+
+
+def test_account_v1_frame_leaves_last_seen_notification_absent():
+    frame = _make_account_frame_v2(last_seen_us=None, version=1)
+    assert HEADER.unpack_from(frame, 0)[0] == 113
+    _channel, model = decode_frame(frame)
+    assert model.last_seen_notification is None
+    assert model.settlement_asset == "USDC"
