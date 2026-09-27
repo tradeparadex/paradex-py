@@ -1227,10 +1227,6 @@ def test_order_v2_block_grew_to_128():
 
 def test_order_v2_request_info_present():
     _channel, model = decode_frame(_make_order_frame_v2(request_message=b"price out of band"))
-    assert model.request_status == "PENDING"
-    assert model.request_type == "MODIFY_ORDER"
-    assert model.request_id == "req-789"
-    assert model.request_message == "price out of band"
     assert model.request_info == {
         "id": "req-789",
         "message": "price out of band",
@@ -1242,22 +1238,33 @@ def test_order_v2_request_info_present():
     assert model.market == "BTC-USD-PERP"
 
 
+def test_order_request_state_is_exposed_once():
+    """request_info is the only copy: the flat wire fields are not on the model."""
+    _channel, model = decode_frame(_make_order_frame_v2())
+    dumped = model.model_dump()
+    for flat in ("request_status", "request_type", "request_id", "request_message"):
+        assert flat not in dumped
+    assert dumped["request_info"]["status"] == "PENDING"
+
+
 def test_order_v2_both_unspecified_means_no_request_info():
     """UNSPECIFIED on both enums is how SBE says the JSON omitted request_info."""
     _channel, model = decode_frame(_make_order_frame_v2(request_status=0, request_type=0, request_id=b""))
-    assert model.request_status == "UNSPECIFIED"
-    assert model.request_type == "UNSPECIFIED"
     assert model.request_info is None
 
 
-def test_order_v1_frame_leaves_request_fields_absent():
+def test_order_v2_non_representable_status_is_none():
+    """A status this schema cannot name is None, as on every other SBE enum, not ""."""
+    _channel, model = decode_frame(_make_order_frame_v2(request_status=254))
+    assert model.request_info is not None
+    assert model.request_info["status"] is None
+    assert model.request_info["request_type"] == "MODIFY_ORDER"
+
+
+def test_order_v1_frame_leaves_request_info_absent():
     frame = _make_order_frame_v2(request_status=None, request_id=None, request_message=None, version=1)
     assert HEADER.unpack_from(frame, 0)[0] == 126
     _channel, model = decode_frame(frame)
-    assert model.request_status is None
-    assert model.request_type is None
-    assert model.request_id is None
-    assert model.request_message is None
     assert model.request_info is None
     assert model.cancel_reason == ""
 
@@ -1266,8 +1273,6 @@ def test_order_v2_from_server_predating_request_info():
     """1:2 header, 1:1 block and var-data: what a server before request_info sends."""
     frame = _make_order_frame_v2(request_status=None, request_id=None, request_message=None)
     _channel, model = decode_frame(frame)
-    assert model.request_status is None
-    assert model.request_id is None
     assert model.request_info is None
     assert model.market == "BTC-USD-PERP"
 

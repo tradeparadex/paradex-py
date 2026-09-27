@@ -298,15 +298,11 @@ class OrderEventData(BaseModel):
     published_at: int
     stp: str | None
     flags: list[str]
-    request_status: str | None = None
-    request_type: str | None = None
     order_id: str
     client_order_id: str
     market: str
     cancel_reason: str
-    request_id: str | None = None
-    request_message: str | None = None
-    request_info: dict[str, str] | None = None
+    request_info: dict[str, str | None] | None = None
 
 
 class FillEventData(BaseModel):
@@ -699,8 +695,8 @@ def _decode_20(payload: bytes, block_len: int, version: int) -> tuple[str, Order
         request_info = {
             "id": request_id or "",
             "message": request_message or "",
-            "request_type": _ENUM_REQUESTTYPE.get(request_type_raw) or "",
-            "status": _ENUM_REQUESTSTATUS.get(request_status_raw) or "",
+            "request_type": _ENUM_REQUESTTYPE.get(request_type_raw),
+            "status": _ENUM_REQUESTSTATUS.get(request_status_raw),
         }
     return "orders." + market, OrderEventData(
         timestamp=_ts(ts_raw),
@@ -721,14 +717,10 @@ def _decode_20(payload: bytes, block_len: int, version: int) -> tuple[str, Order
         published_at=_ts(published_at_raw),
         stp=_ENUM_STPMODE.get(stp_raw),
         flags=_decode_orderflags(flags_raw),
-        request_status=None if request_status_raw is None else _ENUM_REQUESTSTATUS.get(request_status_raw),
-        request_type=None if request_type_raw is None else _ENUM_REQUESTTYPE.get(request_type_raw),
         order_id=order_id,
         client_order_id=client_order_id,
         market=market,
         cancel_reason=cancel_reason,
-        request_id=request_id,
-        request_message=request_message,
         request_info=request_info,
     )
 

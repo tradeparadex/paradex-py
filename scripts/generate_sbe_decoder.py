@@ -339,17 +339,28 @@ _CHANNEL_BY_ID = {
 # both enums UNSPECIFIED standing for "omitted". Rebuild the JSON shape so a
 # callback sees request_info the same way on both transports: None when the
 # frame predates the fields or the JSON payload would have left it out.
+#
+# The flat fields are decoded but not put on the model: exposing the same state
+# twice would be two public copies that can disagree, and removing either one
+# later would break callers. An enum value this schema cannot name comes out
+# as None, as it does on every other SBE enum.
 _REQUEST_INFO_IDS = {20}
+_REQUEST_INFO_FOLDED = {"requestStatus", "requestType", "requestId", "requestMessage"}
 _REQUEST_INFO_LINES = [
     "    request_info = None",
     "    if request_status_raw is not None and request_type_raw is not None and (request_status_raw, request_type_raw) != (0, 0):",
     "        request_info = {",
     '            "id": request_id or "",',
     '            "message": request_message or "",',
-    '            "request_type": _ENUM_REQUESTTYPE.get(request_type_raw) or "",',
-    '            "status": _ENUM_REQUESTSTATUS.get(request_status_raw) or "",',
+    '            "request_type": _ENUM_REQUESTTYPE.get(request_type_raw),',
+    '            "status": _ENUM_REQUESTSTATUS.get(request_status_raw),',
     "        }",
 ]
+
+
+def _on_model(msg_id: int, schema_name: str) -> bool:
+    """Whether a decoded schema field becomes an attribute of the model."""
+    return not (msg_id in _REQUEST_INFO_IDS and schema_name in _REQUEST_INFO_FOLDED)
 
 
 def generate_codec(schema: dict) -> str:  # noqa: C901
@@ -541,16 +552,18 @@ def _read_str(buf: bytes, pos: int) -> tuple[str, int]:
                 # Python callers at the attribute they will actually find.
                 message = re.sub(r"\buse (\w+)", lambda m: f"use {_to_snake(m.group(1))}", f["deprecated"])
                 annotation = f"{annotation} = Field(deprecated={message!r})"
-            model_fields.append((fname, annotation))
+            if _on_model(msg_id, f["name"]):
+                model_fields.append((fname, annotation))
 
         for g in groups:
             model_fields.append((g["name"], "list[list[str]]"))
 
         for d in data_fields:
-            model_fields.append((_to_snake(d["name"]), _absent_by_version("str", d["since"])))
+            if _on_model(msg_id, d["name"]):
+                model_fields.append((_to_snake(d["name"]), _absent_by_version("str", d["since"])))
 
         if msg_id in _REQUEST_INFO_IDS:
-            model_fields.append(("request_info", "Optional[dict[str, str]] = None"))
+            model_fields.append(("request_info", "Optional[dict[str, Optional[str]]] = None"))
 
         lines += [
             f"class {model_name}(BaseModel):",
@@ -709,14 +722,16 @@ def _read_str(buf: bytes, pos: int) -> tuple[str, int]:
                 # the decode helpers take an int, so guard before converting.
                 if f["since"] > 0:
                     expr = f"None if {raw_var} is None else {expr}"
-                model_args.append(f"{model_fname}={expr}")
+                if _on_model(msg_id, f["name"]):
+                    model_args.append(f"{model_fname}={expr}")
 
             for g in groups:
                 model_args.append(f"{g['name']}={g['name']}")
 
             for d in data_fields:
                 dname = _to_snake(d["name"])
-                model_args.append(f"{dname}={dname}")
+                if _on_model(msg_id, d["name"]):
+                    model_args.append(f"{dname}={dname}")
 
             if msg_id in _REQUEST_INFO_IDS:
                 model_args.append("request_info=request_info")
