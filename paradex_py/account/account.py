@@ -254,7 +254,19 @@ class ParadexAccount:
         Auto-populates `signer_public_key` with the account's signing key (main account or
         subkey, depending on which account class instantiated this). The server uses this
         hint to look up the right pubkey for verification.
+
+        Refuses a block with no trade leaves. The trades slice signs as a merkle tree, and
+        an empty one raises "Cannot build Merkle tree from an empty list of leaves" deep
+        inside the typed-data library, naming leaves rather than the block that had none. A
+        block arrives here empty when its response could not be parsed and was reduced to
+        its id, or when every leg lacks both orders and trade constraints. Every caller
+        signs through here, so the check sits here rather than at each of them.
         """
+        if not block_trade.trades:
+            raise_value_error(
+                "block trade has no trades to sign."
+                " Its response may have failed to parse: re-fetch it and check the trades it carries."
+            )
         return self._build_block_trade_signature_dto(
             self.sign_block_trade(block_trade), block_trade.nonce, block_trade.expiration
         )

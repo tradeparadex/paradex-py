@@ -15,6 +15,38 @@ from paradex_py.api.generated.responses import (
 )
 
 
+def _without_absent_orders(response: dict) -> dict:
+    """Drop a block trade order that stands for a side nobody has taken yet.
+
+    A block still collecting offers has one side filled. web-api omits the
+    absent leg now (`convertOrderToBlockTradeOrder` returns nil for a nil
+    order), but it used to build both from proto getters that return zero
+    values, so servers predating that change send `{"side": "", "type": ""}`.
+    Both are required enums here, so such a response would not parse at all.
+
+    Dropping the placeholder leaves the rest of the block -- status, trades and
+    the side that *is* filled -- to parse normally, which an exemption that
+    fell back to the id alone did not. Delete this once no environment serves
+    the old shape.
+    """
+    trades = response.get("trades")
+    if not isinstance(trades, dict):
+        return response
+
+    cleaned: dict[str, Any] = {}
+    for key, trade in trades.items():
+        if not isinstance(trade, dict):
+            cleaned[key] = trade
+            continue
+        orders = {
+            side: order
+            for side in ("maker_order", "taker_order")
+            if isinstance(order := trade.get(side), dict) and not order.get("side") and not order.get("type")
+        }
+        cleaned[key] = {**trade, **dict.fromkeys(orders)} if orders else trade
+    return {**response, "trades": cleaned}
+
+
 class ApiClientProtocol(Protocol):
     """Protocol defining the interface expected by BlockTradesMixin."""
 
@@ -79,17 +111,35 @@ class BlockTradesMixin:
             # Fallback to original response if parsing fails
             return PaginatedAPIResults.model_validate(response)
 
-    def _parse_block_trade_response(self, response: dict) -> BlockTradeDetailFullResponse:
-        """Parse single block trade response to typed model."""
+    def _parse_block_trade_response(
+        self, response: dict, *, raise_on_failure: bool = False
+    ) -> BlockTradeDetailFullResponse:
+        """Parse single block trade response to typed model.
+
+        Args:
+            response: Decoded response body.
+            raise_on_failure: Raise when a response carrying trades cannot be
+                parsed, rather than reducing it to the block id. Set on the read
+                paths. The write paths leave it off: their request has already
+                been accepted by the time the body is parsed, and a
+                `ValidationError` there reads to a caller like a rejected
+                request -- it would retry a create that succeeded, or report an
+                accepted execute as refused. Keeping the id is the lesser harm,
+                and signing refuses a block with no trades anyway.
+        """
         # Check if response contains an error
         if "error" in response:
             error = ApiError.model_validate(response)
             raise ValueError(f"API Error {error.error}: {error.message}")
 
         try:
-            return BlockTradeDetailFullResponse.model_validate(response)
+            return BlockTradeDetailFullResponse.model_validate(_without_absent_orders(response))
         except Exception:
-            # Fallback to simple response with just the ID
+            # Reducing a block to its id hides whatever was rejected, and the
+            # block then signs as an empty merkle tree and fails far from the
+            # cause, so a read raises instead.
+            if raise_on_failure and isinstance(response, dict) and response.get("trades"):
+                raise
             block_id = response.get("id") or response.get("block_id") if isinstance(response, dict) else None
             return BlockTradeDetailFullResponse.model_validate({"block_id": block_id})
 
@@ -168,7 +218,7 @@ class BlockTradesMixin:
             raise ValueError("block_id is required")
 
         response = self._get_authorized(path=f"block-trades/{block_trade_id}")
-        return self._parse_block_trade_response(response)
+        return self._parse_block_trade_response(response, raise_on_failure=True)
 
     def cancel_block_trade(self, block_trade_id: str) -> dict:
         """Cancel a pending block trade.
@@ -250,7 +300,7 @@ class BlockTradesMixin:
             Offer details with market-specific order information
         """
         response = self._get_authorized(path=f"block-trades/{block_trade_id}/offers/{offer_id}")
-        return self._parse_block_trade_response(response)
+        return self._parse_block_trade_response(response, raise_on_failure=True)
 
     def cancel_block_trade_offer(self, block_trade_id: str, offer_id: str) -> dict:
         """Cancel a pending offer for a block trade.
