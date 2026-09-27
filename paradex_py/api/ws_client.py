@@ -91,6 +91,7 @@ class ParadexWebsocketChannel(Enum):
         FUNDING_PAYMENTS (str): Private websocket channel to receive funding payments of an account
         FUNDING_RATE_COMPARISON (str): Public websocket channel for hourly funding rates across venues
         MARKETS_SUMMARY (str): Public websocket channel for updates of available markets
+        MMP (str): Private websocket channel for Market Maker Protection state changes on the account
         ORDERS (str): Private websocket channel to receive order updates
         ORDER_BOOK (str): Public websocket channel for orderbook snapshot updates at most every 50ms or 100ms, optionally grouped by price tick (production only)
         POSITIONS (str): Private websocket channel to receive updates when position is changed
@@ -112,6 +113,20 @@ class ParadexWebsocketChannel(Enum):
     # is a payload field rather than a channel parameter.
     FUNDING_RATE_COMPARISON = "funding_rate_comparison.ALL@{refresh_rate}"
     MARKETS_SUMMARY = "markets_summary.{market}"
+    # Payloads reach the callback as raw dicts, like any channel without a
+    # payload model. MMP is young and its kinds and trip reasons are still
+    # growing, so a model here would turn a server-side addition into a
+    # client-side failure. One event per base asset, carrying:
+    #   kind: TRIGGERED, UNFROZEN, RESET or CONFIG_UPDATED
+    #   trip_reason: SIZE, DELTA, VEGA or INVALID_FILL, on TRIGGERED only,
+    #     alongside window_size, window_delta, window_vega and trigger_market
+    #   frozen_until: unix millis the freeze ends, on TRIGGERED only, where 0
+    #     means until a manual reset. It is 0 on every other kind and says
+    #     nothing about whether the base asset is frozen: track that from
+    #     TRIGGERED, UNFROZEN and RESET
+    #   config: the new config, on CONFIG_UPDATED only, with `removed` true
+    #     when MMP was turned off for the base asset
+    MMP = "mmp"
     ORDERS = "orders.{market}"
     ORDER_BOOK = "order_book.{market}.{feed_type}@15@{refresh_rate}@{price_tick}"
     POSITIONS = "positions"
