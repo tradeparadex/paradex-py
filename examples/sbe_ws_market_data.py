@@ -1,6 +1,6 @@
 """SBE WebSocket example: markets summary + order book snapshot.
 
-Connects with SBE binary encoding enabled (?sbeSchemaId=1&sbeSchemaVersion=1),
+Connects with SBE binary encoding enabled (?sbeSchemaId=1&sbeSchemaVersion=2),
 subscribes to:
   - markets_summary.<MARKET>  (24h rolling stats)
   - order_book.<MARKET>.snapshot@15@100ms  (top-15 levels, 100ms refresh)

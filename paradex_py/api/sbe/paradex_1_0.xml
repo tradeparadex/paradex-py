@@ -3,12 +3,12 @@
   Paradex SBE Market Data Schema
   Schema ID : 1
   Version   : 2  (schema 1:2)
-  Released  : 2026-03-17
+  Released  : 2026-09-25
   Status    : ACTIVE
 
   Version history:
-    1:0 — initial release (trades, bbo, order_book, markets_summary,
-          funding_data; private orders/fills/positions/account)
+    1:0 — initial release, 2026-03-17 (trades, bbo, order_book,
+          markets_summary, funding_data; private orders/fills/positions/account)
     1:1 — non-breaking additions:
             * FundingRateComparisonEvent (templateId 6) — public
               funding_rate_comparison channel
@@ -21,13 +21,38 @@
             * PositionEvent.markPrice made nullable
             * OrderFlags.MMP (bit 5), marked sinceVersion=2 so the encoder
               keeps it off frames negotiated at 1:1
-          Not yet negotiable: every environment still caps negotiation
-          at 1:1, so 1:2 frames are not served yet. Ship a decoder that
-          understands 1:2 now; keep requesting 1:1 until the cap is raised.
+            * OrderEvent.requestStatus / .requestType appended, and
+              .requestId / .requestMessage appended last: the order's
+              nullable request_info flattened, with both enums UNSPECIFIED
+              standing for an omitted request_info
+            * AccountEvent.lastSeenNotification appended
+            * TradeEvent.tradeIdStr appended, carrying the full trade id as
+              a string the way FillEvent.tradeId already does. The int64
+              tradeId stays where it is: it cannot hold a Paradex trade id,
+              which is 28 digits, so it wraps to the low 64 bits and to a
+              NEGATIVE number whenever those exceed 2^63. Removing or
+              retyping it would break every deployed decoder, so it is kept
+              and deprecated; a future schema id 2 drops it. Read tradeIdStr
+              in preference to tradeId wherever it is present.
+          Every addition here is sinceVersion=2, so a client that negotiated
+          1:0 or 1:1 reads the block length and var-data section it was
+          generated for.
+          Negotiable on nightly, testnet and prod.
+
+          Decoding 1:2 frames: tradeIdStr, requestStatus, requestType,
+          requestId, requestMessage and lastSeenNotification were added to
+          1:2 in place rather than opening a 1:3, so version 2 describes two
+          layouts of TradeEvent, OrderEvent and AccountEvent, one with those
+          fields and one without, and the header version byte cannot tell
+          them apart. A 1:2 decoder must therefore read blockLength from the
+          header rather than assume it, and treat appended var-data that is
+          absent at the end of the frame as missing rather than malformed.
 
   Versioning policy:
     - id is incremented on any BREAKING change (field removed, type changed, order changed)
-    - version is incremented on NON-BREAKING additions (new optional field appended, new message)
+    - version is incremented on NON-BREAKING additions (new optional field appended, new message).
+      The in-place 1:2 additions above are the one exception on record, not
+      the pattern to copy
     - id increment resets version to 0
     - Schemas are deprecated with 6-month notice before retirement
     - Retired schemas return HTTP 400 / WS close on negotiation
@@ -55,7 +80,7 @@
     - Control acks (subscribed/error) : JSON text frames
 
   Negotiation:
-    WebSocket URL parameter:  ?sbeSchemaId=1&sbeSchemaVersion=1
+    WebSocket URL parameter:  ?sbeSchemaId=1&sbeSchemaVersion=2
     An unsupported schema or version is rejected with HTTP 400 at connect.
     SBE applies to the WebSocket feed only; REST is JSON.
 
@@ -334,7 +359,7 @@
       <validValue name="NON_REPRESENTABLE">254</validValue>
     </enum>
 
-    <!-- OrderFlags bitset — bit-per-flag, matches model.OrderFlag constants -->
+    <!-- OrderFlags bitset — bit-per-flag, matches the REST API's OrderFlag values -->
     <set name="OrderFlags" encodingType="uint8" description="Order flags bitset">
       <choice name="REDUCE_ONLY"                    >0</choice>
       <choice name="STOP_CONDITION_BELOW_TRIGGER"   >1</choice>
@@ -343,18 +368,22 @@
       <choice name="TARGET_STRATEGY_VWAP"           >4</choice>
       <!-- Added during 1:2, alongside FillFlags. sinceVersion is what the
            encoder gates on, so a client that negotiates 1:1 never receives
-           the bit. Nothing has been served either shape, since 1:2 has never
-           been negotiable. -->
+           the bit. A client on 1:2 cannot tell two 1:2 codecs apart: one
+           generated before this bit existed simply has no MMP accessor and
+           reads the flag as an unrecognised bit rather than an error. That
+           is reachable now that 1:2 is negotiable on every deployed
+           environment, so treat OrderFlags as append-only within a
+           version: never reuse bit 5. -->
       <choice name="MMP" sinceVersion="2"           >5</choice>
     </set>
 
-    <!-- FillFlags bitset — bit-per-flag, matches responses.FillFlag constants.
+    <!-- FillFlags bitset — bit-per-flag, matches the REST API's FillFlag values.
          Added in 1:2 alongside FillEvent.flags. -->
     <set name="FillFlags" encodingType="uint8" description="Fill flags bitset">
       <choice name="INTERACTIVE"                    >0</choice>
       <choice name="RPI"                            >1</choice>
       <choice name="FASTFILL"                       >2</choice>
-      <!-- Set when a responses.FillFlag has no bit here, so a subscriber can
+      <!-- Set when a REST API FillFlag has no bit here, so a subscriber can
            tell "no flags" from "a flag this schema cannot name". Bits 3-6 stay
            free for real flags; this is the set analogue of the
            NON_REPRESENTABLE value every enum below reserves. -->
@@ -371,6 +400,36 @@
     <enum name="AccountStatus" encodingType="uint8">
       <validValue name="ACTIVE"           >1</validValue>
       <validValue name="LIQUIDATION"      >2</validValue>
+      <validValue name="NON_REPRESENTABLE">254</validValue>
+    </enum>
+
+    <!--
+      OrderResp.request_info is a nullable struct in JSON: absent on the
+      overwhelming majority of order updates, present only while a modify
+      request is in flight. SBE has no nullable struct, so the two enum
+      members below carry the presence signal: UNSPECIFIED on both means the
+      JSON payload omitted request_info entirely, and a decoder should
+      reconstruct it as absent rather than as a request with empty fields.
+
+      UNSPECIFIED is 0 here, unlike PositionStatus, deliberately: absent is by
+      far the common case, so it should be the value a zero-valued struct
+      already carries. It also matches REQUEST_STATUS_UNSPECIFIED and
+      REQUEST_TYPE_UNSPECIFIED on the JSON feed, which these mirror.
+    -->
+    <enum name="RequestStatus" encodingType="uint8"
+          description="Status of an in-flight order request (modify)">
+      <validValue name="UNSPECIFIED"      >0</validValue>
+      <validValue name="PENDING"          >1</validValue>
+      <validValue name="PROCESSED"        >2</validValue>
+      <validValue name="REJECTED"         >3</validValue>
+      <validValue name="SUCCESS"          >4</validValue>
+      <validValue name="NON_REPRESENTABLE">254</validValue>
+    </enum>
+
+    <enum name="RequestType" encodingType="uint8"
+          description="Kind of order request the status refers to">
+      <validValue name="UNSPECIFIED"      >0</validValue>
+      <validValue name="MODIFY_ORDER"     >1</validValue>
       <validValue name="NON_REPRESENTABLE">254</validValue>
     </enum>
 
@@ -395,9 +454,25 @@
     <field id="1"  name="ts"         type="Timestamp"
            description="Feed publish timestamp (μs UTC)"/>
     <field id="2"  name="seq"        type="int64"
-           description="Monotonically increasing sequence number"/>
+           description="Orderbook sequence number after execution, monotonically
+                        increasing per market — the same counter BboEvent.seq
+                        reports. 0 when the trade has no orderbook sequence:
+                        block trade legs and position transfers (liquidations,
+                        settlements). Not optional: presence would be a type
+                        change to an existing field, which sinceVersion does not
+                        gate, so a deployed decoder would read the null sentinel
+                        where it reads 0 today."/>
+    <!-- DEPRECATED since 1:2, use tradeIdStr. A Paradex trade id is 28
+         digits and does not fit an int64: this field holds the low 64 bits
+         of it, reinterpreted as signed, so it is wrong for every real trade
+         and negative for some. Retained, and left encoding exactly the value
+         it has always encoded, because removing it, retyping it or zeroing it
+         would break decoders deployed against 1:0 through 1:2 that key on it.
+         Wrong but stable is what those clients depend on. -->
     <field id="3"  name="tradeId"    type="int64"
-           description="Unique trade identifier"/>
+           description="DEPRECATED, use tradeIdStr. Unique trade identifier,
+                        truncated to the low 64 bits of the real id and
+                        negative when those exceed 2^63."/>
     <field id="4"  name="side"       type="Side"
            description="Aggressor side"/>
     <field id="5"  name="price"      type="Price8"/>
@@ -409,6 +484,13 @@
     <!-- market is variable-length → must come after all fixed fields -->
     <data  id="9"  name="market"     type="varString8"
            description="Market symbol e.g. BTC-USD-PERP"/>
+    <!-- Appended in 1:2, last so a v0/v1 decoder stops after market.
+         sinceVersion does not trim var-data by itself: the server cuts the
+         var-data section before it for clients that negotiated below 1:2. -->
+    <data  id="10" name="tradeIdStr" type="varString8" sinceVersion="2"
+           description="Full trade id, matching the id on REST and the JSON
+                        feed and FillEvent.tradeId. Authoritative: prefer it
+                        over the truncated int64 tradeId."/>
   </sbe:message>
 
   <!-- ──────────────────────────────────────────────────
@@ -642,7 +724,7 @@
 
   <!-- ──────────────────────────────────────────────────
        templateId=20  ORDER UPDATE  (private)
-       Channel: orders.{account}
+       Channel: orders.{market_symbol}
        Emitted on every order state transition
        ────────────────────────────────────────────────── -->
   <sbe:message name="OrderEvent" id="20"
@@ -676,6 +758,16 @@
            description="Self-trade prevention mode; NONE if not set (stp)"/>
     <field id="24" name="flags"           type="OrderFlags"
            description="Order flags bitset (flags array in JSON)"/>
+    <!-- OrderResp.request_info, flattened. Appended in place at 1:2 with
+         sinceVersion=2, so a client that negotiated 1:0 or 1:1 still reads the
+         126-byte block it was generated for. Both enums UNSPECIFIED means the
+         JSON payload carried no request_info at all. -->
+    <field id="25" name="requestStatus"   type="RequestStatus" sinceVersion="2"
+           description="Status of an in-flight modify request
+                        (request_info.status); UNSPECIFIED if absent"/>
+    <field id="26" name="requestType"     type="RequestType" sinceVersion="2"
+           description="Kind of request the status refers to
+                        (request_info.request_type); UNSPECIFIED if absent"/>
     <!-- variable-length fields last -->
     <data  id="16" name="orderId"         type="varString8"/>
     <data  id="17" name="clientOrderId"   type="varString8"
@@ -683,11 +775,18 @@
     <data  id="18" name="market"          type="varString8"/>
     <data  id="23" name="cancelReason"    type="varString8"
            description="Cancellation reason; empty if not cancelled (cancel_reason)"/>
+    <data  id="27" name="requestId"       type="varString8" sinceVersion="2"
+           description="Identifier of the modify request (request_info.id);
+                        empty if absent. Appended after cancelReason so a
+                        v0/v1 decoder stops there."/>
+    <data  id="28" name="requestMessage"  type="varString8" sinceVersion="2"
+           description="Error message for a failed request
+                        (request_info.message); empty if absent"/>
   </sbe:message>
 
   <!-- ──────────────────────────────────────────────────
        templateId=21  FILL  (private)
-       Channel: fills.{account}
+       Channel: fills.{market_symbol}  (fills.ALL for every market)
        Emitted on every partial or full fill
        ────────────────────────────────────────────────── -->
   <sbe:message name="FillEvent" id="21"
@@ -735,7 +834,7 @@
 
   <!-- ──────────────────────────────────────────────────
        templateId=22  POSITION UPDATE  (private)
-       Channel: positions.{account}
+       Channel: positions  (account-scoped by the authenticated session)
        ────────────────────────────────────────────────── -->
   <sbe:message name="PositionEvent" id="22"
     description="Position snapshot for a single market (private)">
@@ -778,7 +877,7 @@
 
   <!-- ──────────────────────────────────────────────────
        templateId=23  ACCOUNT SUMMARY  (private)
-       Channel: account.{account}
+       Channel: account  (account-scoped by the authenticated session)
        Emitted on every balance/margin change
        ────────────────────────────────────────────────── -->
   <sbe:message name="AccountEvent" id="23"
@@ -796,8 +895,8 @@
     <field id="7"  name="accountValue"        type="Value8"
            description="Portfolio value including unrealized PnL"/>
     <field id="8"  name="unrealizedPnl"       type="Value8NULL"
-           description="Unrealized PnL; always null — neither the AccountSummary
-                        proto nor AccountSummaryResponse carries this value"/>
+           description="Unrealized PnL; always null — AccountSummaryResponse
+                        does not carry this value"/>
     <field id="9"  name="updatedAt"           type="Timestamp"/>
     <field id="10" name="account"             type="AccountAddress"
            description="Paradex account address (32 bytes, big-endian)"/>
@@ -805,6 +904,15 @@
            description="Account value in excess of maintenance margin (margin_cushion)"/>
     <field id="12" name="status"              type="AccountStatus"
            description="Account status: ACTIVE, LIQUIDATION (status)"/>
+    <!-- Appended in place at 1:2 with sinceVersion=2, so a client that
+         negotiated 1:0 or 1:1 still reads the 113-byte block it was
+         generated for. -->
+    <field id="13" name="lastSeenNotification" type="Timestamp" sinceVersion="2"
+           description="Latest notification the account has acknowledged on any
+                        device (last_seen_notification). A monotonic watermark
+                        the client maxes against its own state; 0 means never
+                        acknowledged. Microseconds here, like every other
+                        Timestamp, though JSON carries it in milliseconds."/>
     <data  id="50" name="settlementAsset"     type="varString8"
            description="Settlement asset e.g. USDC (settlement_asset)"/>
   </sbe:message>

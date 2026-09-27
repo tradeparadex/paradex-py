@@ -127,15 +127,16 @@ source = ["paradex_py"]
 
 [tool.deptry]
 # 'utils' is a local helper module in examples/; 'common' is a local helper
-# module in scripts/block_trade/ — neither are PyPI packages.
-known_first_party = ["utils", "common"]
+# module in scripts/block_trade/; 'generate_sbe_decoder' is the codegen script in
+# scripts/, which check_sbe_wire.py imports — none are PyPI packages.
+known_first_party = ["utils", "common", "generate_sbe_decoder"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S101"]
 "paradex_py/api/generated/*" = ["F403", "A003", "S105", "UP006"]
 "paradex_py/margin/*" = ["TRY"]
 "examples/*" = ["TRY"]
-"scripts/*" = ["S306", "S314", "S603", "TRY003"]
+"scripts/*" = ["S306", "S314", "S603", "S607", "TRY003"]
 "tests/integration/*" = ["RUF015", "S311", "TRY"]
 "tests/api/test_account_httpx.py" = ["TRY003"]
 "paradex_py/api/api_client.py" = ["TRY003"]
