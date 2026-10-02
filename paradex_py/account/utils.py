@@ -78,6 +78,24 @@ def _sign_stark_key_message_ledger(message: SignableMessage, eth_account_address
     return signed.signature
 
 
+def sign_l1_typed_data(
+    typed_data: TypedDataDict,
+    l1_address: str,
+    l1_private_key: int | None = None,
+    from_ledger: bool = False,
+) -> str | None:
+    """Sign EIP-712 typed data with the L1 wallet, as ``eth_signTypedData_v4`` would.
+
+    Returns ``None`` when neither an L1 private key nor a Ledger is available.
+    """
+    if l1_private_key is not None:
+        return _sign_stark_key_message(typed_data, l1_private_key)
+    if from_ledger:
+        signable_message = encode_typed_data(full_message=typed_data)  # ty: ignore[invalid-argument-type]
+        return _sign_stark_key_message_ledger(signable_message, l1_address)
+    return None
+
+
 def _get_private_key_from_eth_signature(eth_signature_hex: str) -> int:
     r = eth_signature_hex[2 : 64 + 2]
     return _grind_key(int_from_hex(r), EC_ORDER)

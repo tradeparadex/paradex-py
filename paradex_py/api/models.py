@@ -53,6 +53,9 @@ class SystemConfig:
     liquidation_fee: str
     paraclear_evm_account_hash: str | None = None
     starknet_gateway_url: str | None = None
+    # Paradex environment name, signed into the Ethereum parent link that
+    # POST /v1/onboarding verifies. Optional for servers that predate it.
+    environment: str | None = None
 
 
 @dataclass

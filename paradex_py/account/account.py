@@ -11,7 +11,12 @@ from starknet_py.net.full_node_client import FullNodeClient
 from starknet_py.net.http_client import HttpMethod
 
 from paradex_py.account.starknet import Account as StarknetAccount
-from paradex_py.account.utils import derive_l2_address_starknet, flatten_signature, resolve_l2_keypair
+from paradex_py.account.utils import (
+    derive_l2_address_starknet,
+    flatten_signature,
+    resolve_l2_keypair,
+    sign_l1_typed_data,
+)
 from paradex_py.api.generated.requests import BlockOfferRequest, BlockTradeRequest
 from paradex_py.api.generated.responses import BlockTradeDetailFullResponse, BlockTradeSignature, SignatureType
 from paradex_py.api.models import SystemConfig
@@ -28,6 +33,7 @@ from paradex_py.message.block_trades import (
 )
 from paradex_py.message.onboarding import build_onboarding_message
 from paradex_py.message.order import build_modify_order_message, build_order_message
+from paradex_py.message.parent_link import build_parent_link_message
 from paradex_py.utils import raise_value_error, time_now_milli_secs
 
 FULLNODE_SIGNATURE_VERSION = "1.0.0"
@@ -77,6 +83,7 @@ class ParadexAccount:
         if l1_address is None:
             raise_value_error("Paradex: Provide Ethereum address")
         self.l1_address = l1_address
+        self.l1_private_key_from_ledger = bool(l1_private_key_from_ledger)
 
         if l1_private_key is not None:
             self.l1_private_key = int_from_hex(l1_private_key)
@@ -159,12 +166,34 @@ class ParadexAccount:
         sig = self.starknet.sign_message(message)
         return flatten_signature(sig)
 
+    def parent_link_signature(self, l2_account: str) -> str | None:
+        """EIP-712 signature by the L1 wallet linking it to ``l2_account``.
+
+        ``POST /v1/onboarding`` may require it to accept ``l1_address`` as the
+        parent. ``None`` when there is no L1 key or Ledger to sign with, or the
+        server does not report its ``environment``.
+        """
+        if not self.config.environment:
+            return None
+        message = build_parent_link_message(int(self.config.l1_chain_id), l2_account, self.config.environment)
+        return sign_l1_typed_data(
+            message,
+            l1_address=self.l1_address,
+            l1_private_key=getattr(self, "l1_private_key", None),
+            from_ledger=self.l1_private_key_from_ledger,
+        )
+
     def onboarding_headers(self) -> dict:
-        return {
+        l2_account = hex(self.l2_address)
+        headers = {
             "PARADEX-ETHEREUM-ACCOUNT": self.l1_address,
-            "PARADEX-STARKNET-ACCOUNT": hex(self.l2_address),
+            "PARADEX-STARKNET-ACCOUNT": l2_account,
             "PARADEX-STARKNET-SIGNATURE": self.onboarding_signature(),
         }
+        link_signature = self.parent_link_signature(l2_account)
+        if link_signature is not None:
+            headers["PARADEX-PARENT-LINK-SIGNATURE"] = link_signature
+        return headers
 
     def auth_signature(self, timestamp: int, expiry: int) -> str:
         message = build_auth_message(self.l2_chain_id, timestamp, expiry)

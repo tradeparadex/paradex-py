@@ -1,3 +1,7 @@
+import dataclasses
+
+from eth_account import Account as EthAccount
+from eth_account.messages import encode_typed_data
 from starknet_py.common import int_from_hex
 from starknet_py.net.signer.key_pair import KeyPair
 
@@ -6,6 +10,7 @@ from paradex_py.account.subkey_account import SubkeyAccount
 from paradex_py.account.utils import typed_data_to_message_hash, unflatten_signature, verify_message_signature
 from paradex_py.message.auth import build_auth_message
 from paradex_py.message.onboarding import build_onboarding_message
+from paradex_py.message.parent_link import build_parent_link_message
 from tests.mocks.api_client import MockApiClient
 
 TEST_L1_ADDRESS = "0xd2c7314539dCe7752c8120af4eC2AA750Cf2035e"
@@ -226,3 +231,44 @@ def test_paradex_account_default_still_derives_locally():
 
     assert account.l2_address == TEST_L2_ADDRESS
     assert account.is_onboarded is None
+
+
+def _config_with_environment(environment):
+    return dataclasses.replace(MockApiClient().fetch_system_config(), environment=environment)
+
+
+def test_onboarding_headers_carry_the_parent_link():
+    account = ParadexAccount(
+        config=_config_with_environment("testnet"),
+        l1_address=TEST_L1_ADDRESS,
+        l1_private_key=TEST_L1_PRIVATE_KEY,
+    )
+
+    headers = account.onboarding_headers()
+
+    message = build_parent_link_message(11155111, headers["PARADEX-STARKNET-ACCOUNT"], "testnet")
+    signer = EthAccount.recover_message(
+        encode_typed_data(full_message=message), signature=headers["PARADEX-PARENT-LINK-SIGNATURE"]
+    )
+    # TEST_L1_ADDRESS is not this key's address; the link is signed by the key.
+    assert signer == EthAccount.from_key(TEST_L1_PRIVATE_KEY).address
+
+
+def test_onboarding_headers_omit_the_parent_link_without_an_l1_key():
+    account = ParadexAccount(
+        config=_config_with_environment("testnet"),
+        l1_address=TEST_L1_ADDRESS,
+        l2_private_key=TEST_L2_PRIVATE_KEY,
+    )
+
+    assert "PARADEX-PARENT-LINK-SIGNATURE" not in account.onboarding_headers()
+
+
+def test_onboarding_headers_omit_the_parent_link_without_an_environment():
+    account = ParadexAccount(
+        config=_config_with_environment(None),
+        l1_address=TEST_L1_ADDRESS,
+        l1_private_key=TEST_L1_PRIVATE_KEY,
+    )
+
+    assert "PARADEX-PARENT-LINK-SIGNATURE" not in account.onboarding_headers()
