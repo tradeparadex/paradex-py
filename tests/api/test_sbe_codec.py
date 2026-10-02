@@ -736,9 +736,9 @@ def test_position_event_unrepresentable_side_leaves_size_unsigned():
     assert model.size == "1.00000000"
 
 
-# Golden PositionEvent frames from the server's encoder (encodePosition, schema
-# 1:2), each encoded from the PositionResp below: the struct the JSON positions
-# channel serializes. Decoding the server's bytes and comparing them with the
+# Golden PositionEvent frames from the server's encoder at schema 1:2, each
+# encoded from the position whose JSON (as the positions channel and REST send
+# it) is beside it. Decoding the server's bytes and comparing them with the
 # JSON for the same position is the parity this codec promises.
 _POSITION_JSON_BASE = {
     "account": "0xdeadbeef",
