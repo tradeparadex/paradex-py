@@ -803,7 +803,8 @@ def test_position_event_golden_frame_matches_json(case: str):
         ("leverage", "leverage"),
     ]:
         assert Decimal(getattr(model, sbe_field)) == Decimal(json_pos[json_field]), sbe_field
-    assert not model.size.startswith("-0.00000000")
+    # Decimal("-0") == Decimal("0"), so the loop above cannot see a negative zero.
+    assert model.size != "-0.00000000"
     assert model.side == json_pos["side"]
     assert model.status == json_pos["status"]
     assert model.account == json_pos["account"]
