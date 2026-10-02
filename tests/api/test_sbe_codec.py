@@ -702,6 +702,118 @@ def test_position_event_negative_unrealized_pnl():
     assert model.unrealized_pnl == "-50.00000000"
 
 
+# The server puts the absolute size on the wire and the direction in side, but
+# the JSON positions channel and REST send size signed: negative for a short.
+# The codec has to re-sign it, or a short reads as a long of the same size.
+
+
+def test_position_event_short_size_is_negative():
+    _, model = decode_frame(_make_position_frame(side=2))
+    assert model.side == "SHORT"
+    assert model.size == "-1.00000000"
+
+
+def test_position_event_long_size_is_positive():
+    _, model = decode_frame(_make_position_frame(side=1))
+    assert model.side == "LONG"
+    assert model.size == "1.00000000"
+
+
+def test_position_event_zero_size_is_never_negative_zero():
+    """JSON prints a zero size as "0" whatever the side, so no "-0" here."""
+    for side in (1, 2):
+        frame = bytearray(_make_position_frame(side=side))
+        # size is the int64 after ts, seq and the 1-byte side, past the 8-byte header
+        struct.pack_into("<q", frame, 8 + 17, 0)
+        _, model = decode_frame(bytes(frame))
+        assert model.size == "0.00000000"
+
+
+def test_position_event_unrepresentable_side_leaves_size_unsigned():
+    """With no side there is no direction to apply, so size stays as sent."""
+    _, model = decode_frame(_make_position_frame(side=254))
+    assert model.side is None
+    assert model.size == "1.00000000"
+
+
+# Golden PositionEvent frames from the server's encoder at schema 1:2, each
+# encoded from the position whose JSON (as the positions channel and REST send
+# it) is beside it. Decoding the server's bytes and comparing them with the
+# JSON for the same position is the parity this codec promises.
+_POSITION_JSON_BASE = {
+    "account": "0xdeadbeef",
+    "market": "BTC-USD-PERP",
+    "average_entry_price": "42000",
+    "average_entry_price_usd": "42000",
+    "unrealized_pnl": "-12.5",
+    "unrealized_funding_pnl": "-0.25",
+    "cost": "-21000",
+    "cost_usd": "-21000",
+    "cached_funding_index": "0.1",
+    "leverage": "5",
+    "last_fill_id": "fill-abc",
+    "last_updated_at": 1700000000000,
+    "seq_no": 7,
+}
+_POSITION_GOLDEN = {
+    "short": (
+        {**_POSITION_JSON_BASE, "status": "OPEN", "side": "SHORT", "size": "-0.5"},
+        "9a0016000100020000401e18240a060007000000000000000280f0fa0200000000001082e3d103000080837eb5ffffffff00000000"
+        "00000000000000000000008000000000000000800065cd1d0000000000401e18240a0600000000000000000000000000000000000000"
+        "00000000000000000000deadbeef001082e3d103000000f83e0e17feffff00f83e0e17feffff8096980000000000c08782feffffffff"
+        "010c4254432d5553442d504552500866696c6c2d616263",
+    ),
+    "long": (
+        {**_POSITION_JSON_BASE, "status": "OPEN", "side": "LONG", "size": "0.5"},
+        "9a0016000100020000401e18240a060007000000000000000180f0fa0200000000001082e3d103000080837eb5ffffffff00000000"
+        "00000000000000000000008000000000000000800065cd1d0000000000401e18240a0600000000000000000000000000000000000000"
+        "00000000000000000000deadbeef001082e3d103000000f83e0e17feffff00f83e0e17feffff8096980000000000c08782feffffffff"
+        "010c4254432d5553442d504552500866696c6c2d616263",
+    ),
+    # The server derives side from the sign of size, so a closed (zero) position is LONG.
+    "closed": (
+        {**_POSITION_JSON_BASE, "status": "CLOSED", "side": "LONG", "size": "0"},
+        "9a0016000100020000401e18240a06000700000000000000010000000000000000001082e3d103000080837eb5ffffffff00000000"
+        "00000000000000000000008000000000000000800065cd1d0000000000401e18240a0600000000000000000000000000000000000000"
+        "00000000000000000000deadbeef001082e3d103000000f83e0e17feffff00f83e0e17feffff8096980000000000c08782feffffffff"
+        "020c4254432d5553442d504552500866696c6c2d616263",
+    ),
+}
+
+
+@pytest.mark.parametrize("case", sorted(_POSITION_GOLDEN))
+def test_position_event_golden_frame_matches_json(case: str):
+    from decimal import Decimal
+
+    json_pos, frame_hex = _POSITION_GOLDEN[case]
+    channel, model = decode_frame(bytes.fromhex(frame_hex))
+    assert channel == "positions"
+    assert isinstance(model, PositionEventData)
+
+    # SBE pads to 8dp where JSON trims, so compare numbers, not strings.
+    for sbe_field, json_field in [
+        ("size", "size"),
+        ("avg_entry_price", "average_entry_price"),
+        ("avg_entry_price_usd", "average_entry_price_usd"),
+        ("unrealized_pnl", "unrealized_pnl"),
+        ("unrealized_funding_pnl", "unrealized_funding_pnl"),
+        ("cost", "cost"),
+        ("cost_usd", "cost_usd"),
+        ("cached_funding_index", "cached_funding_index"),
+        ("leverage", "leverage"),
+    ]:
+        assert Decimal(getattr(model, sbe_field)) == Decimal(json_pos[json_field]), sbe_field
+    # Decimal("-0") == Decimal("0"), so the loop above cannot see a negative zero.
+    assert model.size != "-0.00000000"
+    assert model.side == json_pos["side"]
+    assert model.status == json_pos["status"]
+    assert model.account == json_pos["account"]
+    assert model.market == json_pos["market"]
+    assert model.last_fill_id == json_pos["last_fill_id"]
+    assert model.updated_at == json_pos["last_updated_at"]
+    assert model.seq_no == json_pos["seq_no"]
+
+
 # ── AccountEvent (id=23) ──────────────────────────────────────────────────
 
 _ACC_STRUCT = struct.Struct("<qqqqqqqqq32sqB")

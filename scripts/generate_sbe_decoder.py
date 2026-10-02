@@ -443,6 +443,17 @@ def generate_codec(schema: dict) -> str:  # noqa: C901
         "    return None if x == INT64_MIN else _f12(x)",
         "",
         "",
+        "def _position_size(size: int, side: int) -> str:",
+        '    """Re-sign PositionEvent.size, which the server sends as an absolute value.',
+        "",
+        "    The JSON positions channel and REST send it signed, negative for a short,",
+        "    and the direction travels in side (SELL=SHORT). A zero size stays",
+        '    unsigned, as JSON prints it "0" whatever the side, and with no side',
+        "    (NON_REPRESENTABLE) there is no direction to apply.",
+        '    """',
+        "    return _f8(-size if side == 2 and size > 0 else size)",
+        "",
+        "",
         '_GROUP_HDR = struct.Struct("<HH")',
         "",
         "",
@@ -716,6 +727,10 @@ def _read_str(buf: bytes, pos: int) -> tuple[str, int]:
                 # Special case: PositionEvent.side uses LONG_SHORT
                 if msg_id == 22 and fname == "side":
                     expr = f"_ENUM_SIDE_LONG_SHORT.get({raw_var})"
+                # PositionEvent.size is absolute on the wire; re-sign it from side
+                elif msg_id == 22 and fname == "size":
+                    side_var = _raw_var(next(sf for sf in fields if sf["name"] == "side"))
+                    expr = f"_position_size({raw_var}, {side_var})"
                 else:
                     expr = _field_helper(f["type"], raw_var, enums, f["optional"])
                 # A version-gated field is None when the frame predates it, and
