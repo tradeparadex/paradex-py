@@ -64,6 +64,17 @@ def _f12n(x: int) -> str | None:
     return None if x == INT64_MIN else _f12(x)
 
 
+def _position_size(size: int, side: int) -> str:
+    """Re-sign PositionEvent.size, which the server sends as an absolute value.
+
+    The JSON positions channel and REST send it signed, negative for a short,
+    and the direction travels in side (SELL=SHORT). A zero size stays
+    unsigned, as JSON prints it "0" whatever the side, and with no side
+    (NON_REPRESENTABLE) there is no direction to apply.
+    """
+    return _f8(-size if side == 2 and size > 0 else size)
+
+
 _GROUP_HDR = struct.Struct("<HH")
 
 
@@ -816,7 +827,7 @@ def _decode_22(payload: bytes, block_len: int, version: int) -> tuple[str, Posit
         timestamp=_ts(ts_raw),
         seq_no=seq_raw,
         side=_ENUM_SIDE_LONG_SHORT.get(side_raw),
-        size=_f8(size_raw),
+        size=_position_size(size_raw, side_raw),
         avg_entry_price=_f8(avg_entry_price_raw),
         unrealized_pnl=_f8(unrealized_pnl_raw),
         realized_pnl=_f8(realized_pnl_raw),

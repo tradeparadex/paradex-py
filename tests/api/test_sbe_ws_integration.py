@@ -190,6 +190,30 @@ async def test_binary_frame_dispatched_to_callback():
 
 
 @pytest.mark.asyncio
+async def test_short_position_reaches_callback_with_negative_size():
+    """A short PositionEvent reaches a positions callback signed, as JSON sends it."""
+    from tests.api.test_sbe_codec import _POSITION_GOLDEN
+
+    received = []
+
+    async def on_position(ws_channel, message):
+        received.append((ws_channel, message))
+
+    ws_client = ParadexWebsocketClient(env=TESTNET, sbe_enabled=True, auto_start_reader=False)
+    ws_client.callbacks["positions"] = on_position
+
+    json_pos, frame_hex = _POSITION_GOLDEN["short"]
+    await ws_client._process_binary_message(bytes.fromhex(frame_hex))
+
+    assert len(received) == 1
+    ws_channel, message = received[0]
+    assert ws_channel == ParadexWebsocketChannel.POSITIONS
+    data = message["params"]["data"]
+    assert data["side"] == json_pos["side"] == "SHORT"
+    assert data["size"] == "-0.50000000"
+
+
+@pytest.mark.asyncio
 async def test_binary_frame_model_dump_type():
     """model_dump() returns plain dict (backward-compat shape for callbacks)."""
     received_data = {}
