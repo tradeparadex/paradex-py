@@ -71,6 +71,15 @@ def test_header_version_matches_schema_attribute(schema_text: str):
     assert header_version == attr_version
 
 
+def test_total_volume_description_quotes_the_decoded_cap(schema_text: str):
+    """The server clamps totalVolume to int64 max and the description tells readers
+    the resulting figure; keep it the one the decoder actually produces."""
+    from paradex_py.api.sbe.codec import _f8
+
+    description = re.search(r'name="totalVolume"[^>]*?description="([^"]*)"', schema_text, re.DOTALL).group(1)
+    assert _f8(2**63 - 1) in description
+
+
 @pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="ruff not installed")
 def test_codec_is_generated_from_the_schema(tmp_path: Path):
     """codec.py must be exactly what the committed XML and generator produce.

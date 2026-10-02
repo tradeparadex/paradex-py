@@ -578,7 +578,8 @@
          lastPrice       = last_traded_price
          volumeUsd24h    = volume_24h (in USD)
          bid/ask         = best bid/ask
-         totalVolume     = total_volume (lifetime USD)
+         totalVolume     = total_volume (lifetime USD; saturates at int64
+                           max, so 92233720368.54775807 is a lower bound)
          priceChangeRate24h = price_change_rate_24h
          Options-only fields (null for perpetual futures):
            markIv/bidIv/askIv/lastIv, delta/gamma/vega,
@@ -606,7 +607,7 @@
     <field id="16" name="ask"                type="Price8NULL"
            description="Best ask price; null if no asks (ask)"/>
     <field id="17" name="totalVolume"        type="Value8"
-           description="Lifetime total traded volume in USD (total_volume)"/>
+           description="Lifetime total traded volume in USD (total_volume). Saturates at 92233720368.54775807 (int64 max at exponent -8): that value is a lower bound, and the JSON channel carries the exact figure."/>
     <field id="18" name="priceChangeRate24h" type="Rate8"
            description="24h price change rate (price_change_rate_24h)"/>
     <!-- Options-specific fields; null/zero for perpetual futures -->

@@ -64,6 +64,13 @@ def test_f8_negative():
     assert _f8(-4200050000000) == "-42000.50000000"
 
 
+def test_f8_int64_extremes():
+    # Exact at the limits, no float rounding. The server clamps
+    # MarketSummaryEvent.totalVolume to the max, so a decoder sees it.
+    assert _f8(2**63 - 1) == "92233720368.54775807"
+    assert _f8(-(2**63 - 1)) == "-92233720368.54775807"
+
+
 def test_f8n_null():
     assert _f8n(INT64_MIN) is None
 
@@ -402,6 +409,16 @@ def test_ms_event():
     assert model.bid == "42000.00000000"
     assert model.ask == "42001.00000000"
     assert model.price_change_rate24h == "-0.00500000"
+
+
+def test_ms_event_saturated_total_volume():
+    # totalVolume is non-nullable, so the server's cap arrives as int64 max and
+    # must decode to that exact figure, not to None as the null sentinel would.
+    frame = bytearray(_make_ms_frame())
+    struct.pack_into("<q", frame, HEADER.size + 10 * 8, 2**63 - 1)
+    _, model = decode_frame(bytes(frame))
+    assert model.total_volume == "92233720368.54775807"
+    assert model.mark_price == "42000.00000000"
 
 
 def test_ms_event_null_options_fields():
