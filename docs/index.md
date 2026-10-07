@@ -88,6 +88,61 @@ await paradex.ws_client.subscribe(ParadexWebsocketChannel.MARKETS_SUMMARY, callb
 | **WebSocket** | ✅ Supported | ✅ Supported |
 | **Order Management** | ✅ Supported | ✅ Supported |
 
+## Session Keys (Experimental)
+
+!!! warning
+    **Experimental.** Session keys are rolling out on the server and `POST /v2/sessions` is not live yet;
+    names and payloads may change.
+
+An account owner signs one `SessionGrant` (EIP-712, or SNIP-12 for Stark owners) that lets a scoped,
+expiring Stark session key trade the anchor account and any listed sub-accounts. A session can never
+withdraw. `SessionAccounts` then keeps a JWT (at most 15 minutes, never past the session's expiry),
+a REST client and a websocket per account, routes calls by account, and drops every account at once
+when the session expires or is revoked.
+
+```python
+from paradex_py import SessionAccounts
+from paradex_py.message.session import Limits, SessionGrant
+from paradex_py.session_accounts import LocalOwnerSigner, new_session_key, register_session
+
+session_private_key, session_public_key = new_session_key()
+grant = SessionGrant.new(
+    paradex_chain="PRIVATE_SN_PARACLEAR_TESTNET",
+    environment="testnet",
+    account="0x<main-account>",
+    subaccounts=["0x<sub-account>"],
+    session_key=session_public_key,
+    label="my bot",
+    scopes=["trade"],
+    limits=Limits("25000", "100000", "500000", "5000", "10", ["BTC-USD-PERP"]),
+    ttl_seconds=7 * 24 * 3600,
+)
+# Any OwnerSigner works here, e.g. an MPC service that signs the EIP-712 typed data itself.
+register_session("testnet", grant, LocalOwnerSigner("0x<owner-eth-key>"))
+
+session = SessionAccounts(env="testnet", grant=grant, session_private_key=session_private_key)
+session.submit_order("0x<sub-account>", order)
+await session.connect_ws()
+```
+
+::: paradex_py.session_accounts.SessionAccounts
+    handler: python
+    options:
+      show_source: false
+      show_root_heading: true
+
+::: paradex_py.api.protocols.OwnerSigner
+    handler: python
+    options:
+      show_source: false
+      show_root_heading: true
+
+::: paradex_py.message.session.SessionGrant
+    handler: python
+    options:
+      show_source: false
+      show_root_heading: true
+
 ## API Documentation Links
 
 Full details for REST API & WebSocket JSON-RPC API can be found at the following links:

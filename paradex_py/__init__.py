@@ -23,6 +23,9 @@ Choose the right client class for your use-case:
 
 [1] Order signing requires a registered Starknet subkey.
     Call ``evm.create_trading_subkey()`` to generate one and get a ready-to-trade client.
+
+``SessionAccounts`` (experimental) trades every account an owner-signed session grant lists,
+from one session key: a JWT, REST client and websocket per account.
 """
 
 from .auth_level import AuthLevel
@@ -32,6 +35,7 @@ from .paradex_api_key import ParadexApiKey
 from .paradex_evm import ParadexEvm
 from .paradex_l2 import ParadexL2
 from .paradex_subkey import ParadexSubkey
+from .session_accounts import SessionAccounts
 
 __all__ = [
     "NIGHTLY",
@@ -44,4 +48,5 @@ __all__ = [
     "ParadexEvm",
     "ParadexL2",
     "ParadexSubkey",
+    "SessionAccounts",
 ]
