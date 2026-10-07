@@ -177,6 +177,31 @@ class Signer(Protocol):
         ...
 
 
+class OwnerSigner(Protocol):
+    """Protocol for the account owner's signature over session typed data.
+
+    Every owner signature that ``SessionAccounts`` needs goes through this hook, so a wallet,
+    hardware device or MPC service can sign the EIP-712 typed data itself; the SDK never needs
+    the owner's key. ``LocalOwnerSigner`` is the in-process implementation.
+    """
+
+    @property
+    def signature_chain_id(self) -> int:
+        """The EVM chain id the signer signs on; it becomes the EIP-712 domain ``chainId``."""
+        ...
+
+    def sign_typed_data(self, typed_data: dict[str, Any]) -> str:
+        """Sign EIP-712 typed data (``eth_signTypedData_v4`` semantics).
+
+        Args:
+            typed_data: Full typed data: ``types``, ``primaryType``, ``domain`` and ``message``
+
+        Returns:
+            The 65-byte ``0x`` r||s||v signature
+        """
+        ...
+
+
 # Default implementations
 class DefaultRetryStrategy:
     """Rate-limit-aware retry strategy with full-jitter exponential backoff.
