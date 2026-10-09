@@ -263,6 +263,20 @@ def test_a_jwt_refresh_between_signing_and_sending_keeps_the_pending_headers():
     assert sent[1][1] == {"X-Signer-Header": "seen"}
 
 
+def test_a_signer_failing_during_a_jwt_refresh_keeps_the_pending_headers():
+    external, _, signer = _accounts()
+    client = _client(external)
+    sent = _record_posts(client)
+    request = external.sign_block_trade_request(_block_request())
+
+    with patch.object(signer, "sign_hash", side_effect=ConnectionError("signer down")), pytest.raises(ConnectionError):
+        client.fetch_orders()
+    client.create_block_trade(request)
+
+    assert [path.split("/")[0] for path, _ in sent] == ["auth", "block-trades"]
+    assert sent[1][1] == {"X-Signer-Header": "seen"}
+
+
 def test_block_trade_requests_with_one_signature_send_the_signer_headers():
     external, _, _ = _accounts()
     client = _client(external)
