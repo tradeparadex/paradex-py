@@ -130,3 +130,44 @@ Full details for REST API & WebSocket JSON-RPC API can be found at the following
     options:
       show_source: false
       show_root_heading: true
+
+## Signing with a Key Held Elsewhere
+
+`ExternalSignerAccount` signs through an `ExternalSigner`, so the L2 private key never enters
+this process. `HeaderSigner` is the signer for a signing proxy that sits between the client and
+Paradex. For each signed request it sends the message hash, base64-encoded, in a header you name,
+and puts a stand-in where the signature goes. The proxy signs the hash and swaps in the real signature.
+
+```python
+from paradex_py.account import ExternalSignerAccount, HeaderSigner
+from paradex_py.api.api_client import ParadexApiClient
+from paradex_py.environment import TESTNET
+
+client = ParadexApiClient(env=TESTNET, api_base_url="https://your-signing-proxy/v1")
+account = ExternalSignerAccount(
+    config=client.fetch_system_config(),
+    l2_address="0x...",
+    l2_public_key="0x...",
+    signer=HeaderSigner(header="X-Sign-Hash", signature="PROXY_SIGNATURE"),
+)
+client.init_account(account)
+client.submit_order(order)
+```
+
+- It signs REST requests only. A WebSocket order has no headers, so the WebSocket client refuses it.
+- Each request carries one signature. A batch of several orders, or an execute that accepts several
+  offers, is refused before anything is sent.
+- The account must already be onboarded, and on-chain operations are not supported.
+- Share one account across threads only if they never sign and send at the same time.
+
+::: paradex_py.account.external_signer.ExternalSignerAccount
+    handler: python
+    options:
+      show_source: false
+      show_root_heading: true
+
+::: paradex_py.account.external_signer.HeaderSigner
+    handler: python
+    options:
+      show_source: false
+      show_root_heading: true
