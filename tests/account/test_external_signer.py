@@ -248,6 +248,21 @@ def test_a_block_trade_with_an_expired_jwt_reauthenticates_and_carries_its_heade
     assert sent[1][1] == {"X-Signer-Header": "seen"}
 
 
+def test_a_jwt_refresh_between_signing_and_sending_keeps_the_pending_headers():
+    external, _, _ = _accounts()
+    client = _client(external)
+    sent = _record_posts(client)
+    request = external.sign_block_trade_request(_block_request())
+
+    with patch.object(client, "get", return_value={"results": []}):
+        client.fetch_orders()
+    client.create_block_trade(request)
+
+    assert [path.split("/")[0] for path, _ in sent] == ["auth", "block-trades"]
+    assert sent[0][1]["X-Signer-Header"] == "seen"
+    assert sent[1][1] == {"X-Signer-Header": "seen"}
+
+
 def test_block_trade_requests_with_one_signature_send_the_signer_headers():
     external, _, _ = _accounts()
     client = _client(external)

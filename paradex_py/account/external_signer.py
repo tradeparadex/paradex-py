@@ -130,8 +130,13 @@ class ExternalSignerAccount(ParadexAccount):
         return headers
 
     def auth_headers(self) -> dict:
-        headers = super().auth_headers()
-        return {**self.take_request_headers(), **headers}
+        # Auth signs and sends in one step, so it leaves another request's pending headers alone.
+        pending, self._request_headers = self._request_headers, {}
+        try:
+            headers = super().auth_headers()
+            return {**self.take_request_headers(), **headers}
+        finally:
+            self._request_headers = pending
 
     def onboarding_headers(self) -> dict:
         """No onboarding: the account must already exist."""
