@@ -68,6 +68,10 @@ class ApiClientProtocol(Protocol):
         """Make authorized DELETE request."""
         ...
 
+    def _signature_headers(self) -> dict[str, Any]:
+        """Take the account's headers for its last signature, as request keyword arguments."""
+        ...
+
 
 class BlockTradesMixin:
     """Mixin class for Block Trades API endpoints.
@@ -79,6 +83,7 @@ class BlockTradesMixin:
     _get_authorized: Any
     _post_authorized: Any
     _delete_authorized: Any
+    _signature_headers: Any
 
     def _parse_block_trade_list_response(self, response: dict) -> PaginatedAPIResults:
         """Parse block trade list response to typed model."""
@@ -199,7 +204,7 @@ class BlockTradesMixin:
             raise ValueError("BlockTradeRequest is required")
 
         payload = block_trade.model_dump()
-        response = self._post_authorized(path="block-trades", payload=payload)
+        response = self._post_authorized(path="block-trades", payload=payload, **self._signature_headers())
         return self._parse_block_trade_response(response)
 
     def get_block_trade(self, block_trade_id: str) -> BlockTradeDetailFullResponse:
@@ -250,7 +255,9 @@ class BlockTradesMixin:
             Executed block trade with status and fill details
         """
         payload = execution_request.model_dump()
-        response = self._post_authorized(path=f"block-trades/{block_trade_id}/execute", payload=payload)
+        response = self._post_authorized(
+            path=f"block-trades/{block_trade_id}/execute", payload=payload, **self._signature_headers()
+        )
         return self._parse_block_trade_response(response)
 
     def get_block_trade_offers(self, block_trade_id: str) -> APIResults:
@@ -284,7 +291,9 @@ class BlockTradesMixin:
             Created offer with unique ID and parent reference
         """
         payload = offer.model_dump()
-        response = self._post_authorized(path=f"block-trades/{block_trade_id}/offers", payload=payload)
+        response = self._post_authorized(
+            path=f"block-trades/{block_trade_id}/offers", payload=payload, **self._signature_headers()
+        )
         return self._parse_block_trade_response(response)
 
     def get_block_trade_offer(self, block_trade_id: str, offer_id: str) -> BlockTradeDetailFullResponse:
@@ -334,6 +343,8 @@ class BlockTradesMixin:
         """
         payload = execution_request.model_dump()
         response = self._post_authorized(
-            path=f"block-trades/{block_trade_id}/offers/{offer_id}/execute", payload=payload
+            path=f"block-trades/{block_trade_id}/offers/{offer_id}/execute",
+            payload=payload,
+            **self._signature_headers(),
         )
         return self._parse_block_trade_response(response)

@@ -344,6 +344,7 @@ class TestSigningEnhancements:
 
         mock_account = MagicMock()
         mock_account.sign_order.return_value = "account-signature"
+        mock_account.take_request_headers.return_value = {}
         client.account = mock_account
 
         mock_order = MagicMock()

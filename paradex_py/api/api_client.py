@@ -381,6 +381,14 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
             else:
                 self.logger.warning(f"{self.classname}: JWT expired but auto_auth disabled")
 
+    def _signature_headers(self) -> dict[str, Any]:
+        """Take the account's headers for its last signature, as keyword arguments for the request.
+
+        Callers take them before the request runs, so an auth refresh inside it signs with nothing pending.
+        """
+        headers = self.account.take_request_headers() if self.account is not None else {}
+        return {"headers": headers} if headers else {}
+
     def _get(self, path: str, params: dict | None = None) -> dict:
         return self.get(api_url=self.api_url, path=path, params=params)
 
@@ -963,7 +971,8 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
             if self.account is None:
                 raise ValueError("Account not initialized and no signer provided")
             order.signature = self.account.sign_order(order)
-            order_payload = order.dump_to_dict()
+            signature_headers = self._signature_headers()
+            return self._post_authorized(path="orders", payload=order.dump_to_dict(), **signature_headers)
 
         return self._post_authorized(path="orders", payload=order_payload)
 
@@ -993,8 +1002,9 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
             order_payloads = []
             for order in orders:
                 order.signature = self.account.sign_order(order)
-                order_payload = order.dump_to_dict()
-                order_payloads.append(order_payload)
+                order_payloads.append(order.dump_to_dict())
+            signature_headers = self._signature_headers()
+            return self._post_authorized(path="orders/batch", payload=order_payloads, **signature_headers)
 
         return self._post_authorized(path="orders/batch", payload=order_payloads)
 
@@ -1021,7 +1031,8 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
             if self.account is None:
                 raise ValueError("Account not initialized and no signer provided")
             order.signature = self.account.sign_order(order)
-            order_payload = order.dump_to_dict()
+            signature_headers = self._signature_headers()
+            return self._put_authorized(path=f"orders/{order_id}", payload=order.dump_to_dict(), **signature_headers)
 
         return self._put_authorized(path=f"orders/{order_id}", payload=order_payload)
 
@@ -1232,6 +1243,7 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         Returns:
             Algo order response dict.
         """
+        signature_headers: dict[str, Any] = {}
         # Sign the order
         if signer is not None:
             order_data = order.dump_to_dict()
@@ -1247,6 +1259,7 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
             if self.account is None:
                 raise ValueError("Account not initialized and no signer provided")
             order.signature = self.account.sign_order(order)
+            signature_headers = self._signature_headers()
             signature = order.signature
             signature_timestamp = order.signature_timestamp
 
@@ -1265,7 +1278,7 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         if order.recv_window is not None:
             payload["recv_window"] = order.recv_window
 
-        return self._post_authorized(path="algo/orders", payload=payload)
+        return self._post_authorized(path="algo/orders", payload=payload, **signature_headers)
 
     def fetch_algo_orders(self, params: dict | None = None) -> dict:
         """Fetch algo orders for the account.

@@ -19,6 +19,7 @@ class TestBlockTradesApi:
         self.api_client = ParadexApiClient(env=TESTNET)
         # Mock the account and auth methods
         self.api_client.account = Mock()
+        self.api_client.account.take_request_headers.return_value = {}
         self.api_client._validate_auth = Mock()
 
     def test_list_block_trades_no_filters(self):
@@ -387,6 +388,7 @@ class TestBlockTradeResponseParsing:
     def setup_method(self):
         self.api_client = ParadexApiClient(env=TESTNET)
         self.api_client.account = Mock()
+        self.api_client.account.take_request_headers.return_value = {}
         self.api_client._validate_auth = Mock()
 
     @staticmethod
