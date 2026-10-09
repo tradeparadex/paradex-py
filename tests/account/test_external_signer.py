@@ -11,8 +11,19 @@ from paradex_py.account import ExternalSignature, ExternalSignerAccount, HeaderS
 from paradex_py.account.subkey_account import SubkeyAccount
 from paradex_py.account.utils import flatten_signature, message_signature
 from paradex_py.api.api_client import ParadexApiClient
-from paradex_py.api.generated.requests import BlockExecuteRequest, BlockTradeInfo, BlockTradeRequest
-from paradex_py.api.generated.responses import BlockTradeConstraints, BlockTradeDetailFullResponse
+from paradex_py.api.generated.requests import (
+    BlockExecuteRequest,
+    BlockOfferInfo,
+    BlockOfferRequest,
+    BlockTradeInfo,
+    BlockTradeRequest,
+)
+from paradex_py.api.generated.responses import (
+    BlockTradeConstraints,
+    BlockTradeDetailFullResponse,
+    BlockTradeSignature,
+    SignatureType,
+)
 from paradex_py.api.ws_client import ParadexWebsocketClient
 from paradex_py.common.order import Order, OrderSide, OrderType
 from paradex_py.environment import TESTNET
@@ -114,6 +125,23 @@ def _block_request() -> BlockTradeRequest:
     )
 
 
+def _offer_request() -> BlockOfferRequest:
+    placeholder = BlockTradeSignature(
+        nonce="0",
+        signature_data="unsigned",
+        signature_expiration=0,
+        signature_timestamp=0,
+        signature_type=SignatureType.starknet,
+        signer_account=L2_ADDRESS,
+    )
+    return BlockOfferRequest(
+        nonce="1",
+        offering_account=L2_ADDRESS,
+        signature=placeholder,
+        trades={"ETH-USD-PERP": BlockOfferInfo(offerer_order=_maker_dto(account=L2_ADDRESS), price="1500", size="0.1")},
+    )
+
+
 def _block_response(block_id: str) -> BlockTradeDetailFullResponse:
     return BlockTradeDetailFullResponse.model_validate(
         {"block_id": block_id, "trades": {"ETH-USD-PERP": _trade().model_dump()}}
@@ -130,6 +158,14 @@ def test_submit_and_modify_send_the_signer_headers_with_the_order():
     with patch.object(client, "_put_authorized", return_value={}) as put:
         client.modify_order("existing-order", _order("existing-order"))
     assert put.call_args.kwargs["headers"] == {"X-Signer-Header": "seen"}
+
+
+def test_a_batch_of_one_order_sends_the_signer_headers():
+    client = _client(_accounts()[0])
+
+    with patch.object(client, "_post_authorized", return_value={}) as post:
+        client.submit_orders_batch([_order()])
+    assert post.call_args.kwargs["headers"] == {"X-Signer-Header": "seen"}
 
 
 def test_a_batch_of_several_orders_is_refused_and_the_next_order_goes_through():
@@ -224,6 +260,13 @@ def test_block_trade_requests_with_one_signature_send_the_signer_headers():
         client.execute_block_trade("b1", BlockExecuteRequest(execution_nonce="1", signatures=signatures))
         assert post.call_args.kwargs["headers"] == {"X-Signer-Header": "seen"}
 
+        client.create_block_trade_offer("b1", external.sign_block_offer_request(_offer_request(), "b1"))
+        assert post.call_args.kwargs["headers"] == {"X-Signer-Header": "seen"}
+
+        signatures = external.build_executor_signatures_for_offers([_block_response("o1")])
+        client.execute_block_trade_offer("b1", "o1", BlockExecuteRequest(execution_nonce="2", signatures=signatures))
+        assert post.call_args.kwargs["headers"] == {"X-Signer-Header": "seen"}
+
 
 def test_executing_several_offers_is_refused_before_anything_is_sent():
     external, _, _ = _accounts()
@@ -262,3 +305,21 @@ def test_header_signer_requires_a_header_and_a_stand_in(header, signature):
 def test_on_chain_operations_are_refused():
     with pytest.raises(ValueError, match="On-chain operations not supported"):
         _accounts()[0].transfer_on_l2("0x1", Decimal("1"))
+
+
+def test_an_account_needs_an_address_and_a_public_key():
+    config = MockApiClient().fetch_system_config()
+    with pytest.raises(ValueError, match="L2 address and public key are required"):
+        ExternalSignerAccount(config=config, l2_address="", l2_public_key=L2_PUBLIC_KEY, signer=KeyInAnotherProcess())
+    with pytest.raises(ValueError, match="L2 address and public key are required"):
+        ExternalSignerAccount(config=config, l2_address=L2_ADDRESS, l2_public_key="", signer=KeyInAnotherProcess())
+
+
+def test_onboarding_signs_nothing():
+    external, _, signer = _accounts()
+    client = _client(external)
+
+    with patch.object(client, "post") as post:
+        client.onboarding()
+    assert post.call_args.kwargs["headers"] == {}
+    assert signer.hashes == []
