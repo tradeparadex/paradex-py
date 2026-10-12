@@ -138,6 +138,9 @@ this process. `HeaderSigner` is the signer for a signing proxy that sits between
 Paradex. For each signed request it sends the message hash, base64-encoded, in a header you name,
 and puts a stand-in where the signature goes. The proxy signs the hash and swaps in the real signature.
 
+The proxy must rebuild the typed-data hash from the request body and refuse a request whose header
+does not match. A proxy that signs the header as given signs any hash.
+
 ```python
 from paradex_py.account import ExternalSignerAccount, HeaderSigner
 from paradex_py.api.api_client import ParadexApiClient
@@ -154,10 +157,13 @@ client.init_account(account)
 client.submit_order(order)
 ```
 
+The account must already be onboarded, and on-chain operations are not supported.
+
+A signer that returns headers, such as `HeaderSigner`, has three more limits:
+
 - It signs REST requests only. A WebSocket order has no headers, so the WebSocket client refuses it.
 - Each request carries one signature. A batch of several orders, or an execute that accepts several
   offers, is refused before anything is sent.
-- The account must already be onboarded, and on-chain operations are not supported.
 - Share one account across threads only if they never sign and send at the same time.
 
 ::: paradex_py.account.external_signer.ExternalSignerAccount

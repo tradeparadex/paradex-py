@@ -49,6 +49,9 @@ class HeaderSigner:
     `signature` wherever the "[r,s]" string goes. The proxy signs the hash and
     replaces `signature` with the real one before forwarding the request.
 
+    The proxy must rebuild the typed-data hash from the request body and refuse a
+    request whose header does not match. A proxy that signs the header as given signs any hash.
+
     Args:
         header (str): name of the header that carries the message hash
         signature (str): stand-in the proxy replaces with the real signature
@@ -80,10 +83,11 @@ class ExternalSignerAccount(ParadexAccount):
     """An L2 account that signs through an `ExternalSigner` and holds no private key.
 
     Like a subkey account it is for API use only: no onboarding and no on-chain operations.
-    It signs REST requests only, because a WebSocket order has no headers to carry the
-    signer's. Each request carries one signature, so a request needing several is refused.
-    Not safe to share across threads concurrently: signing and sending a request must not
-    interleave with another.
+
+    A signer that returns headers, such as `HeaderSigner`, has three more limits. It signs
+    REST requests only, because a WebSocket order has no headers to carry them. Each request
+    carries one signature, so a request needing several is refused. Threads must not share
+    the account, because signing and sending a request must not interleave with another.
 
     Args:
         config (SystemConfig): SystemConfig
