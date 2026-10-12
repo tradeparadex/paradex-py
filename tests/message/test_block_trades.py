@@ -28,6 +28,7 @@ from paradex_py.message.block_trades import (
     build_block_trade_message,
     build_block_trade_offer_message,
 )
+from tests.mocks.block_trades import maker_dto
 
 
 def _eth_perp_orders():
@@ -506,16 +507,6 @@ def test_block_trade_from_response_constraint_only():
     assert trade.taker_order is None
 
 
-def _maker_dto(account: str = "0xMAKER") -> BlockTradeOrderDTO:
-    return BlockTradeOrderDTO(
-        account=account,
-        side=DTOOrderSide.order_side_sell,
-        type=DTOOrderType.order_type_limit,
-        price="1500",
-        size="0.1",
-    )
-
-
 def test_block_trade_from_request_reconstructs_signing_payload():
     """Carries request.nonce/block_expiration into the signing BlockTrade and turns each
     BlockTradeInfo into a Trade.fill leaf with the maker DTO converted, taker empty when
@@ -527,7 +518,7 @@ def test_block_trade_from_request_reconstructs_signing_payload():
         signatures={},
         trades={
             "ETH-USD-PERP": BlockTradeInfo(
-                maker_order=_maker_dto(),
+                maker_order=maker_dto(),
                 price="1500",
                 size="0.1",
                 taker_order=None,
