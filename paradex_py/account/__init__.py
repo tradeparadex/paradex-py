@@ -1,5 +1,5 @@
 from .account import ParadexAccount
-from .external_signer import ExternalSignature, ExternalSigner, ExternalSignerAccount, HeaderSigner
+from .external_signer_account import ExternalSignature, ExternalSigner, ExternalSignerAccount, HeaderSigner
 from .subkey_account import SubkeyAccount
 
 __all__ = [

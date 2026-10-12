@@ -27,9 +27,9 @@ from paradex_py.api.generated.responses import (
 from paradex_py.api.ws_client import ParadexWebsocketClient
 from paradex_py.common.order import Order, OrderSide, OrderType
 from paradex_py.environment import TESTNET
-from tests.api.test_account import TEST_L2_PRIVATE_KEY as L2_PRIVATE_KEY
-from tests.message.test_block_trades import _maker_dto
+from tests.mocks import TEST_L2_PRIVATE_KEY as L2_PRIVATE_KEY
 from tests.mocks.api_client import MockApiClient
+from tests.mocks.block_trades import maker_dto
 
 L2_ADDRESS = "0x129c135ed63df9353885e292be4426b8ed6122b13c6c0e1bb787288a1f5adfa"
 FRESH_JWT_CLAIMS = base64.urlsafe_b64encode(b'{"exp":4102444800}').decode().rstrip("=")
@@ -39,13 +39,14 @@ L2_PUBLIC_KEY = hex(KeyPair.from_private_key(int_from_hex(L2_PRIVATE_KEY)).publi
 class KeyInAnotherProcess:
     """Stands in for a signer holding the key elsewhere: signs only the hash it is handed."""
 
-    def __init__(self):
+    def __init__(self, headers: dict[str, str] | None = None):
         self.hashes: list[int] = []
+        self.headers = {"X-Signer-Header": "seen"} if headers is None else headers
 
     def sign_hash(self, message_hash: int) -> ExternalSignature:
         self.hashes.append(message_hash)
         r, s = message_signature(message_hash, int_from_hex(L2_PRIVATE_KEY))
-        return ExternalSignature(signature=flatten_signature([r, s]), headers={"X-Signer-Header": "seen"})
+        return ExternalSignature(signature=flatten_signature([r, s]), headers=self.headers)
 
 
 def _order(order_id: str | None = None) -> Order:
@@ -107,7 +108,7 @@ def _client(account) -> ParadexApiClient:
 
 def _trade() -> BlockTradeInfo:
     return BlockTradeInfo(
-        maker_order=_maker_dto(account=L2_ADDRESS),
+        maker_order=maker_dto(account=L2_ADDRESS),
         price="1500",
         size="0.1",
         taker_order=None,
@@ -138,7 +139,7 @@ def _offer_request() -> BlockOfferRequest:
         nonce="1",
         offering_account=L2_ADDRESS,
         signature=placeholder,
-        trades={"ETH-USD-PERP": BlockOfferInfo(offerer_order=_maker_dto(account=L2_ADDRESS), price="1500", size="0.1")},
+        trades={"ETH-USD-PERP": BlockOfferInfo(offerer_order=maker_dto(account=L2_ADDRESS), price="1500", size="0.1")},
     )
 
 
@@ -313,6 +314,33 @@ def test_a_websocket_order_is_refused():
     with pytest.raises(ValueError, match="REST only"):
         asyncio.run(ws_client.submit_order(_order()))
     ws_client.ws.send.assert_not_called()
+
+
+def _headerless_account() -> ExternalSignerAccount:
+    return ExternalSignerAccount(
+        config=MockApiClient().fetch_system_config(),
+        l2_address=L2_ADDRESS,
+        l2_public_key=L2_PUBLIC_KEY,
+        signer=KeyInAnotherProcess(headers={}),
+    )
+
+
+def test_a_signer_without_headers_sends_a_batch_of_several_orders():
+    client = _client(_headerless_account())
+
+    with patch.object(client, "_post_authorized", return_value={}) as post:
+        client.submit_orders_batch([_order(), _order()])
+    assert len(post.call_args.kwargs["payload"]) == 2
+    assert "headers" not in post.call_args.kwargs
+
+
+def test_a_signer_without_headers_sends_a_websocket_order():
+    ws_client = ParadexWebsocketClient(env=TESTNET, auto_start_reader=False)
+    ws_client.account = _headerless_account()
+
+    with patch.object(ws_client, "_send_request", AsyncMock(return_value={})) as send:
+        asyncio.run(ws_client.submit_order(_order()))
+    send.assert_awaited_once()
 
 
 def test_a_local_key_account_sends_no_extra_headers():

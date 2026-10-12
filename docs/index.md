@@ -166,13 +166,13 @@ A signer that returns headers, such as `HeaderSigner`, has three more limits:
   offers, is refused before anything is sent.
 - Share one account across threads only if they never sign and send at the same time.
 
-::: paradex_py.account.external_signer.ExternalSignerAccount
+::: paradex_py.account.external_signer_account.ExternalSignerAccount
     handler: python
     options:
       show_source: false
       show_root_heading: true
 
-::: paradex_py.account.external_signer.HeaderSigner
+::: paradex_py.account.external_signer_account.HeaderSigner
     handler: python
     options:
       show_source: false
