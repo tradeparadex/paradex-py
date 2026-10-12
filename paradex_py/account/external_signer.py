@@ -49,8 +49,8 @@ class HeaderSigner:
     `signature` wherever the "[r,s]" string goes. The proxy signs the hash and
     replaces `signature` with the real one before forwarding the request.
 
-    The proxy must rebuild the typed-data hash from the request body and refuse a
-    request whose header does not match. A proxy that signs the header as given signs any hash.
+    The header carries only the hash. A proxy that needs to know what it is signing has
+    to rebuild the hash from the request body.
 
     Args:
         header (str): name of the header that carries the message hash

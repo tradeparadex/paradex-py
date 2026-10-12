@@ -138,8 +138,8 @@ this process. `HeaderSigner` is the signer for a signing proxy that sits between
 Paradex. For each signed request it sends the message hash, base64-encoded, in a header you name,
 and puts a stand-in where the signature goes. The proxy signs the hash and swaps in the real signature.
 
-The proxy must rebuild the typed-data hash from the request body and refuse a request whose header
-does not match. A proxy that signs the header as given signs any hash.
+The header carries only the hash. A proxy that needs to know what it is signing has to rebuild the
+hash from the request body.
 
 ```python
 from paradex_py.account import ExternalSignerAccount, HeaderSigner
