@@ -9,6 +9,7 @@ from httpx import AsyncClient
 from starknet_py.common import int_from_bytes, int_from_hex
 from starknet_py.net.full_node_client import FullNodeClient
 from starknet_py.net.http_client import HttpMethod
+from starknet_py.net.models.typed_data import TypedDataDict
 
 from paradex_py.account.starknet import Account as StarknetAccount
 from paradex_py.account.utils import derive_l2_address_starknet, flatten_signature, resolve_l2_keypair
@@ -152,12 +153,19 @@ class ParadexAccount:
     def set_jwt_token(self, jwt_token: str) -> None:
         self.jwt_token = jwt_token
 
+    def _sign_typed_data(self, typed_data: TypedDataDict) -> str:
+        """Sign typed data and return the flattened "[r,s]" signature string."""
+        return flatten_signature(self.starknet.sign_message(typed_data))
+
+    def take_request_headers(self) -> dict[str, str]:
+        """Headers the last signature needs on the request that carries it. A local key needs none."""
+        return {}
+
     def onboarding_signature(self) -> str:
         if self.config is None:
             raise_value_error("Paradex: System config not loaded")
         message = build_onboarding_message(self.l2_chain_id)
-        sig = self.starknet.sign_message(message)
-        return flatten_signature(sig)
+        return self._sign_typed_data(message)
 
     def onboarding_headers(self) -> dict:
         return {
@@ -168,8 +176,7 @@ class ParadexAccount:
 
     def auth_signature(self, timestamp: int, expiry: int) -> str:
         message = build_auth_message(self.l2_chain_id, timestamp, expiry)
-        sig = self.starknet.sign_message(message)
-        return flatten_signature(sig)
+        return self._sign_typed_data(message)
 
     def auth_headers(self) -> dict:
         timestamp = int(time.time())
@@ -202,10 +209,8 @@ class ParadexAccount:
 
     def sign_order(self, order: Order) -> str:
         if order.id:
-            sig = self.starknet.sign_message(build_modify_order_message(self.l2_chain_id, order))
-        else:
-            sig = self.starknet.sign_message(build_order_message(self.l2_chain_id, order))
-        return flatten_signature(sig)
+            return self._sign_typed_data(build_modify_order_message(self.l2_chain_id, order))
+        return self._sign_typed_data(build_order_message(self.l2_chain_id, order))
 
     def sign_block_trade(self, block_trade_data: BlockTrade) -> str:
         """Sign a BlockTrade and return the flattened "[r,s]" signature string.
@@ -214,8 +219,7 @@ class ParadexAccount:
         returns a complete `BlockTradeSignature` with metadata fields populated.
         """
         typed_data = build_block_trade_message(self.l2_chain_id, block_trade_data)
-        sig = self.starknet.sign_message(typed_data)
-        return flatten_signature(sig)
+        return self._sign_typed_data(typed_data)
 
     def sign_block_trade_offer(self, offer: BlockTradeOffer) -> str:
         """Sign a BlockTradeOffer and return the flattened "[r,s]" signature string.
@@ -224,8 +228,7 @@ class ParadexAccount:
         which returns a complete `BlockTradeSignature` with metadata fields populated.
         """
         typed_data = build_block_trade_offer_message(self.l2_chain_id, offer)
-        sig = self.starknet.sign_message(typed_data)
-        return flatten_signature(sig)
+        return self._sign_typed_data(typed_data)
 
     def _build_block_trade_signature_dto(self, signature_data: str, nonce: str, expiration: int) -> BlockTradeSignature:
         """Construct the BlockTradeSignature with all expected metadata"""

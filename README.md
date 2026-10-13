@@ -39,6 +39,24 @@ print(hex(paradex.account.l2_public_key)) # 0x...
 print(hex(paradex.account.l2_private_key)) # 0x...
 ```
 
+### L2 Key Held Elsewhere (External Signer)
+
+```python
+from paradex_py.account import ExternalSignerAccount, HeaderSigner
+from paradex_py.api.api_client import ParadexApiClient
+from paradex_py.environment import TESTNET
+
+# A signing proxy holds the L2 key and signs each request on its way to Paradex
+client = ParadexApiClient(env=TESTNET, api_base_url="https://your-signing-proxy/v1")
+account = ExternalSignerAccount(
+    config=client.fetch_system_config(),
+    l2_address="0x...",
+    l2_public_key="0x...",
+    signer=HeaderSigner(header="X-Sign-Hash", signature="PROXY_SIGNATURE"),
+)
+client.init_account(account)
+```
+
 ### WebSocket Usage
 
 The SDK provides two WebSocket client options:
@@ -91,6 +109,7 @@ with ws_client:
 
 - API (L1+L2): [examples/call_rest_api.py](examples/call_rest_api.py)
 - API (L2-only): [examples/subkey_rest_api.py](examples/subkey_rest_api.py)
+- API (external signer): [examples/external_signer_rest_api.py](examples/external_signer_rest_api.py)
 - WS Async (L1+L2): [examples/connect_ws_api.py](examples/connect_ws_api.py)
 - WS Threaded: [examples/connect_ws_threaded.py](examples/connect_ws_threaded.py)
 - WS (L2-only): [examples/subkey_ws_api.py](examples/subkey_ws_api.py)

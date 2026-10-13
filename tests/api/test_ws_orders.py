@@ -200,6 +200,7 @@ async def test_submit_order_with_account():
 
     mock_account = MagicMock()
     mock_account.sign_order.return_value = '["r","s"]'
+    mock_account.take_request_headers.return_value = {}
     ws_client.account = mock_account
 
     order = _make_order()
@@ -346,6 +347,7 @@ async def test_modify_order_includes_order_id_in_params():
 
     mock_account = MagicMock()
     mock_account.sign_order.return_value = '["r","s"]'
+    mock_account.take_request_headers.return_value = {}
     ws_client.account = mock_account
 
     order = _make_order()
@@ -400,6 +402,7 @@ async def test_submit_orders_batch_signs_each_order():
 
     mock_account = MagicMock()
     mock_account.sign_order.return_value = '["r","s"]'
+    mock_account.take_request_headers.return_value = {}
     ws_client.account = mock_account
 
     orders = [_make_order(), _make_order()]

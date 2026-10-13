@@ -1014,6 +1014,8 @@ class ParadexWebsocketClient:
             return signer.sign_order(order.dump_to_dict())
         if self.account is not None:
             order.signature = self.account.sign_order(order)
+            if self.account.take_request_headers():
+                raise ValueError("This account signs over REST only: a WebSocket order cannot carry its headers")
             return order.dump_to_dict()
         raise ValueError("Account not initialized and no signer provided")
 
