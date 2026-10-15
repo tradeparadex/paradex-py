@@ -1096,7 +1096,7 @@ def test_fill_v2_block_grew_to_116():
 def test_fill_v2_appended_fields():
     channel, model = decode_frame(_make_fill_frame_v2())
     assert channel == "fills.BTC-USD-PERP"
-    assert model.flags == ["INTERACTIVE", "RPI"]
+    assert model.flags == ["interactive", "rpi"]
     assert model.orderbook_seq_no == 987654
     assert model.fee_currency == "DIME"
     # The var-data before feeCurrency must still land on the right offsets.
@@ -1110,14 +1110,29 @@ def test_fill_v2_fee_currency_usdc():
 
 
 def test_fill_flags_unknown_bit():
-    """UNKNOWN is set server-side for a fill flag this schema has no bit for."""
+    """Bit 7 is set server-side for a fill flag this schema has no bit for."""
     _, model = decode_frame(_make_fill_frame_v2(flags=1 << 7))
-    assert model.flags == ["UNKNOWN"]
+    assert model.flags == ["unknown"]
 
 
 def test_fill_flags_fastfill():
     _, model = decode_frame(_make_fill_frame_v2(flags=1 << 2))
-    assert model.flags == ["FASTFILL"]
+    assert model.flags == ["fastfill"]
+
+
+def test_fill_flags_match_rest_spelling():
+    """SBE fill flags read exactly as REST's FillFlag values, bit for bit.
+
+    The REST enum is generated from the public OpenAPI spec, independently of
+    the SBE schema, so this catches the codec drifting back to the schema's
+    upper-case choice names.
+    """
+    from paradex_py.api.generated.responses import FillFlag
+
+    rest = {f.value for f in FillFlag}
+    _, model = decode_frame(_make_fill_frame_v2(flags=0b111))
+    assert model.flags == ["interactive", "rpi", "fastfill"]
+    assert set(model.flags) == rest
 
 
 def test_fill_flags_empty_is_not_absent():

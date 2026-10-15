@@ -106,6 +106,15 @@ def test_settlement_twap_estimate_is_appended_at_1_3(schema_text: str):
     assert max(int(f.get("sinceVersion", "0")) for f in fields[:-1]) < 3
 
 
+def test_codec_spells_fill_flags_as_rest_does():
+    """The schema's choice names are upper case; the generator must lower
+    FillFlags to REST's spelling while leaving OrderFlags as REST spells them."""
+    from paradex_py.api.sbe.codec import _FILLFLAGS_FLAG_NAMES, _ORDERFLAGS_FLAG_NAMES
+
+    assert _FILLFLAGS_FLAG_NAMES == {0: "interactive", 1: "rpi", 2: "fastfill", 7: "unknown"}
+    assert "REDUCE_ONLY" in _ORDERFLAGS_FLAG_NAMES.values()
+
+
 @pytest.mark.parametrize(
     "pattern",
     [

@@ -102,7 +102,7 @@ def _decode_orderflags(flags: int) -> list[str]:
 
 # ── FillFlags bitset ──────────────────────────────────────────────────────
 
-_FILLFLAGS_FLAG_NAMES = {0: "INTERACTIVE", 1: "RPI", 2: "FASTFILL", 7: "UNKNOWN"}
+_FILLFLAGS_FLAG_NAMES = {0: "interactive", 1: "rpi", 2: "fastfill", 7: "unknown"}
 
 
 def _decode_fillflags(flags: int) -> list[str]:

@@ -18,6 +18,9 @@ Market summaries: from 1:3 a ``MarketSummaryEvent`` carries
 underlying over the pre-expiry settlement window, ``None`` outside that window,
 for markets without an expiry, and on a frame that predates it.
 
+Fill flags are lower case (``interactive``, ``rpi``, ``fastfill``), as REST and
+the JSON feed spell them; ``unknown`` marks a flag this schema cannot name.
+
 BookEvent produces ``bids``/``asks`` arrays of ``[price_str, size_str]`` pairs.
 The JSON ``order_book`` channel produces ``inserts``/``updates``/``deletes`` dicts.
 """
