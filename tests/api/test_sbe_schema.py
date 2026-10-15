@@ -11,6 +11,7 @@ import importlib.util
 import re
 import subprocess
 import sys
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import pytest
@@ -78,6 +79,44 @@ def test_total_volume_description_quotes_the_decoded_cap(schema_text: str):
 
     description = re.search(r'name="totalVolume"[^>]*?description="([^"]*)"', schema_text, re.DOTALL).group(1)
     assert _f8(2**63 - 1) in description
+
+
+def test_header_has_a_history_entry_for_its_version(schema_text: str):
+    """Bumping version="N" without describing 1:N in the header is a stale header."""
+    attr_version = re.search(r'<sbe:messageSchema[^>]*\sversion="(\d+)"', schema_text, re.DOTALL).group(1)
+    assert re.search(rf"^\s*1:{attr_version} —", schema_text, re.MULTILINE)
+    assert f"sbeSchemaVersion={attr_version}" in schema_text
+
+
+def test_settlement_twap_estimate_is_appended_at_1_3(schema_text: str):
+    """The 1:3 field must be the last fixed field of MarketSummaryEvent and
+    version-gated, or 1:0-1:2 clients would see their block grow."""
+    ns = {"sbe": "http://fixprotocol.io/2016/sbe"}
+    root = ET.fromstring(schema_text)  # noqa: S314 - the repo's own schema, not untrusted input
+    msg = next(m for m in root.findall("sbe:message", ns) if m.get("name") == "MarketSummaryEvent")
+    fields = msg.findall("field")
+    last = fields[-1]
+    assert (last.get("id"), last.get("name"), last.get("type"), last.get("sinceVersion")) == (
+        "38",
+        "settlementTwapEstimate",
+        "Price8NULL",
+        "3",
+    )
+    assert "settlement_twap_estimate" in last.get("description")
+    assert max(int(f.get("sinceVersion", "0")) for f in fields[:-1]) < 3
+
+
+@pytest.mark.parametrize(
+    "pattern",
+    [
+        r"\.proto\b",  # source files of the server's types
+        r"\bFEATURE_FLAG",  # server configuration
+        r"\w+_total\{",  # metric selectors
+    ],
+)
+def test_schema_prose_keeps_server_internals_out(schema_text: str, pattern: str):
+    """The copy is public; upstream prose refers to server code, config and metrics."""
+    assert not re.search(pattern, schema_text)
 
 
 @pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="ruff not installed")

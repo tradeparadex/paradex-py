@@ -108,9 +108,10 @@ def test_negotiated_version_matches_decoder_version():
     from paradex_py.api.sbe import NEGOTIATED_SCHEMA_VERSION
     from paradex_py.api.sbe.codec import _SCHEMA_VERSION
 
+    # Held back: the decoder reads 1:3, negotiation stays at 1:2 until every
+    # environment is confirmed to serve 1:3.
     assert NEGOTIATED_SCHEMA_VERSION == 2
-    assert _SCHEMA_VERSION == 2
-    assert NEGOTIATED_SCHEMA_VERSION == _SCHEMA_VERSION
+    assert _SCHEMA_VERSION == 3
 
 
 @pytest.mark.asyncio

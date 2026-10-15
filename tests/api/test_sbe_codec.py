@@ -409,6 +409,68 @@ def test_ms_event():
     assert model.bid == "42000.00000000"
     assert model.ask == "42001.00000000"
     assert model.price_change_rate24h == "-0.00500000"
+    # A 240-byte (1:1/1:2) block predates settlementTwapEstimate.
+    assert _MS_STRUCT.size == 240
+    assert model.settlement_twap_estimate is None
+    assert model.market == "BTC-USD-PERP"
+
+
+# ── MarketSummaryEvent at 1:3: settlementTwapEstimate appended at offset 240 ──
+
+_MS_V3_STRUCT = struct.Struct("<" + "q" * 31)  # schema 1:3 MarketSummaryEvent block
+
+
+def _make_ms_v3_frame(twap: int) -> bytes:
+    # The 1:2 fields, then settlementTwapEstimate (Price8NULL) last.
+    fields = [*_MS_STRUCT.unpack_from(_make_ms_frame(), HEADER.size), twap]
+    return _hdr(_MS_V3_STRUCT.size, 4, version=3) + _MS_V3_STRUCT.pack(*fields) + _var(MARKET)
+
+
+def test_ms_v3_block_is_248_bytes():
+    from paradex_py.api.sbe.codec import (
+        _MARKETSUMMARYEVENT_STRUCT,
+        _MARKETSUMMARYEVENT_STRUCT_V1,
+        _MARKETSUMMARYEVENT_STRUCT_V3,
+    )
+
+    assert _MS_V3_STRUCT.size == 248
+    sizes = (_MARKETSUMMARYEVENT_STRUCT, _MARKETSUMMARYEVENT_STRUCT_V1, _MARKETSUMMARYEVENT_STRUCT_V3)
+    assert sum(s.size for s in sizes) == 248
+
+
+def test_ms_v3_settlement_twap_estimate():
+    frame = _make_ms_v3_frame(7_642_356_000_000)
+    # Cross-check the wire independently of the codec: the mantissa sits at
+    # block offset 240 and var-data starts at 248.
+    assert struct.unpack_from("<q", frame, HEADER.size + 240)[0] == 7_642_356_000_000
+    assert frame[HEADER.size + 248] == len(MARKET)
+
+    channel, model = decode_frame(frame)
+    assert channel == "markets_summary.BTC-USD-PERP"
+    assert model.settlement_twap_estimate == "76423.56000000"
+    # Earlier fields and the var-data after the longer block are unaffected.
+    assert model.mark_price == "42000.00000000"
+    assert model.funding_rate_precise is None
+    assert model.market == "BTC-USD-PERP"
+    assert model.model_dump()["settlement_twap_estimate"] == "76423.56000000"
+
+
+def test_ms_v3_settlement_twap_estimate_null():
+    """Null outside the settlement window and for perpetuals."""
+    _, model = decode_frame(_make_ms_v3_frame(INT64_MIN))
+    assert model.settlement_twap_estimate is None
+    assert model.market == "BTC-USD-PERP"
+
+
+def test_ms_v2_header_with_240_byte_block_still_decodes():
+    """The decoder reads blockLength from the header, so a server negotiated
+    at 1:2 (240 bytes) still decodes with the 1:3 decoder."""
+    frame = bytearray(_make_ms_frame())
+    struct.pack_into("<H", frame, 6, 2)  # header version byte → 2
+    _, model = decode_frame(bytes(frame))
+    assert model.settlement_twap_estimate is None
+    assert model.mark_price == "42000.00000000"
+    assert model.market == "BTC-USD-PERP"
 
 
 def test_ms_event_saturated_total_volume():
@@ -1197,6 +1259,7 @@ def test_ms_v0_frame_leaves_v1_fields_absent():
     assert model.forward_rate is None
     assert model.risk_free_rate is None
     assert model.funding_rate_precise is None
+    assert model.settlement_twap_estimate is None
     # A trimmed block must not shift the var-data that follows it.
     assert model.market == "BTC-USD-PERP"
     assert model.mark_price == "42000.00000000"
