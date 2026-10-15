@@ -188,8 +188,8 @@ class ParadexWebsocketClient:
         >>> # High-frequency simulator mode (no sleeps)
         >>> ws_client = ParadexWebsocketClient(env=Environment.TESTNET,
         ...                                   reader_sleep_on_error=0, reader_sleep_on_no_connection=0)
-        >>> # With typed message validation
-        >>> ws_client = ParadexWebsocketClient(env=Environment.TESTNET, validate_messages=True)
+        >>> # With typed message validation (JSON frames only, so SBE must be off)
+        >>> ws_client = ParadexWebsocketClient(env=Environment.TESTNET, sbe_enabled=False, validate_messages=True)
         >>> # With API client for automatic token refresh on reconnect
         >>> from paradex_py import Paradex
         >>> paradex = Paradex(env=Environment.TESTNET, l1_address="0x...", l1_private_key="0x...")

@@ -52,6 +52,7 @@ class Paradex(_ClientBase):
         ws_reader_sleep_on_error (float, optional): WebSocket reader sleep duration after errors. Defaults to 1.0.
         ws_reader_sleep_on_no_connection (float, optional): WebSocket reader sleep when no connection. Defaults to 1.0.
         validate_ws_messages (bool, optional): Enable JSON-RPC message validation. Defaults to False.
+            Applies to JSON frames only, so it has no effect unless ws_sbe_enabled is False.
         ping_interval (float, optional): WebSocket ping interval in seconds. Defaults to None.
         disable_reconnect (bool, optional): Disable automatic WebSocket reconnection. Defaults to False.
         enable_ws_compression (bool, optional): Enable WebSocket per-message compression (RFC 7692). Defaults to True.
