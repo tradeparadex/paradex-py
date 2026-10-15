@@ -22,9 +22,9 @@ class ParadexApiKey(_ClientBase):
         logger (logging.Logger, optional): Logger. Defaults to None.
         ws_timeout (int, optional): WebSocket read timeout in seconds. Defaults to None (uses default).
         ws_enabled (bool, optional): Whether to create a WebSocket client. Defaults to True.
+            Set to False for REST-only use cases to avoid starting background connection machinery.
         ws_sbe_enabled (bool, optional): Use SBE binary encoding on the WebSocket. Defaults to True,
             which the Paradex endpoints require; pass False only for an endpoint that still serves JSON.
-            Set to False for REST-only use cases to avoid starting background connection machinery.
         on_token_expired (Callable[[], str | None], optional): Called when the injected token
             expires. Expiry is detected from the JWT ``exp`` claim when present; falls back to
             a 4-minute window for opaque tokens. Should return a fresh token, or None if

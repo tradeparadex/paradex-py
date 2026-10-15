@@ -36,6 +36,11 @@ class ThreadedParadexWebsocketClient:
         with client:
             client.subscribe(ParadexWebsocketChannel.ACCOUNT)
             msg = client.get_updates(timeout=1.0)
+
+    Args:
+        env (Environment): Environment
+        sbe_enabled (bool, optional): Negotiate SBE binary encoding, which the Paradex endpoints
+            require. Defaults to True; pass False only for an endpoint that still serves JSON.
     """
 
     def __init__(self, env: Environment, sbe_enabled: bool = True):

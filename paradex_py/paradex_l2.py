@@ -33,9 +33,9 @@ class ParadexL2(_ClientBase):
         logger (logging.Logger, optional): Logger. Defaults to None.
         ws_timeout (int, optional): WebSocket read timeout in seconds. Defaults to None (uses default).
         ws_enabled (bool, optional): Whether to create a WebSocket client. Defaults to True.
+            Set to False for REST-only use cases to avoid starting background connection machinery.
         ws_sbe_enabled (bool, optional): Use SBE binary encoding on the WebSocket. Defaults to True,
             which the Paradex endpoints require; pass False only for an endpoint that still serves JSON.
-            Set to False for REST-only use cases to avoid starting background connection machinery.
         config (SystemConfig, optional): Pre-fetched system configuration. If provided,
             it is used as-is and the ``GET /system/config`` request is skipped. Callers
             that build many clients can fetch it once and reuse it. Defaults to None

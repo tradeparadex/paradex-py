@@ -59,9 +59,8 @@ class Paradex(_ClientBase):
         ws_sbe_enabled (bool, optional): Use SBE binary encoding on both ws_client and ws_direct_client.
             Defaults to True: the Paradex WebSocket endpoints require SBE and answer a plain JSON connect
             with HTTP 400. Pass False only for an endpoint that still serves JSON. Callbacks receive
-            SBE-decoded models dumped to dicts, and some field
-            names differ (trade_id_str/seq_no/order_type for JSON id/seq/type; order_book gives bids/asks rather
-            than inserts/updates/deletes). On trades, use trade_id_str: the int64 trade_id is deprecated and holds
+            SBE-decoded models dumped to dicts, and some field names differ (trade_id_str/seq_no/order_type
+            for JSON id/seq/type; order_book gives bids/asks rather than inserts/updates/deletes). On trades, use trade_id_str: the int64 trade_id is deprecated and holds
             only the low 64 bits of the real id. validate_ws_messages does not apply to SBE frames.
         auto_auth (bool, optional): Whether to automatically handle onboarding/auth. Defaults to True.
         auth_provider (AuthProvider, optional): Custom authentication provider. Defaults to None.
