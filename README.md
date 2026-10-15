@@ -59,7 +59,10 @@ client.init_account(account)
 
 ### WebSocket Usage
 
-The SDK provides two WebSocket client options:
+The SDK provides two WebSocket client options. Both connect with SBE binary encoding, which the
+Paradex WebSocket endpoints require (a plain JSON connect is rejected with HTTP 400). Frames are
+decoded before your callback runs, so it still receives dicts; pass `ws_sbe_enabled=False` (or
+`sbe_enabled=False` on a client) only for an endpoint that still serves JSON.
 
 #### Option 1: Async Client (Default)
 

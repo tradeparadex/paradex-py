@@ -55,8 +55,10 @@ class Paradex(_ClientBase):
         ping_interval (float, optional): WebSocket ping interval in seconds. Defaults to None.
         disable_reconnect (bool, optional): Disable automatic WebSocket reconnection. Defaults to False.
         enable_ws_compression (bool, optional): Enable WebSocket per-message compression (RFC 7692). Defaults to True.
-        ws_sbe_enabled (bool, optional): Enable SBE binary encoding on both ws_client and ws_direct_client.
-            Defaults to False. Callbacks then receive SBE-decoded models rather than JSON dicts, and some field
+        ws_sbe_enabled (bool, optional): Use SBE binary encoding on both ws_client and ws_direct_client.
+            Defaults to True: the Paradex WebSocket endpoints require SBE and answer a plain JSON connect
+            with HTTP 400. Pass False only for an endpoint that still serves JSON. Callbacks receive
+            SBE-decoded models dumped to dicts, and some field
             names differ (trade_id_str/seq_no/order_type for JSON id/seq/type; order_book gives bids/asks rather
             than inserts/updates/deletes). On trades, use trade_id_str: the int64 trade_id is deprecated and holds
             only the low 64 bits of the real id. validate_ws_messages does not apply to SBE frames.
@@ -110,7 +112,7 @@ class Paradex(_ClientBase):
         ping_interval: float | None = None,
         disable_reconnect: bool = False,
         enable_ws_compression: bool = True,
-        ws_sbe_enabled: bool = False,
+        ws_sbe_enabled: bool = True,
         # Auth configuration
         auto_auth: bool = True,
         auth_provider: "AuthProvider | None" = None,

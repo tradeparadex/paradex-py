@@ -1,12 +1,13 @@
 """SBE WebSocket example: markets summary + order book snapshot.
 
-Connects with SBE binary encoding enabled (?sbeSchemaId=1&sbeSchemaVersion=2),
+Connects with SBE binary encoding (the default; ?sbeSchemaId=1&sbeSchemaVersion=3),
 subscribes to:
   - markets_summary.<MARKET>  (24h rolling stats)
   - order_book.<MARKET>.snapshot@15@100ms  (top-15 levels, 100ms refresh)
 
 Frames arrive as binary and are decoded into Pydantic models before the
-callback receives them — the callback sees the same dict shape as JSON mode.
+callback receives them, so the callback still gets a dict (a few field names
+differ from JSON mode; see paradex_py.api.sbe).
 
 Usage:
     python examples/sbe_ws_market_data.py [--env testnet|nightly|prod] [--market BTC-USD-PERP]
@@ -81,7 +82,7 @@ async def main(env: Environment, market: str) -> None:
     paradex = Paradex(
         env=env,
         logger=logger,
-        ws_sbe_enabled=True,  # enables SBE on ws_client and ws_direct_client
+        ws_sbe_enabled=True,  # the default, shown for clarity: SBE on ws_client and ws_direct_client
         auto_start_ws_reader=True,
     )
 

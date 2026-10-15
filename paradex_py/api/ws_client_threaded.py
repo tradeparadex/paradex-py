@@ -38,8 +38,9 @@ class ThreadedParadexWebsocketClient:
             msg = client.get_updates(timeout=1.0)
     """
 
-    def __init__(self, env: Environment):
+    def __init__(self, env: Environment, sbe_enabled: bool = True):
         self.env = env
+        self.sbe_enabled = sbe_enabled
         self.message_queue: queue.Queue = queue.Queue(maxsize=1000)
 
         self._ws_client: ParadexWebsocketClient | None = None
@@ -108,6 +109,7 @@ class ThreadedParadexWebsocketClient:
             self._ws_client = ParadexWebsocketClient(
                 env=self.env,
                 auto_start_reader=True,
+                sbe_enabled=self.sbe_enabled,
             )
 
             self._connected_event.set()

@@ -1,5 +1,6 @@
 """Integration tests: SBE binary frames through ParadexWebsocketClient."""
 
+import logging
 import struct
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -47,8 +48,14 @@ def _make_mock_ws(state: State = State.OPEN) -> MagicMock:
 # ── SBE flag default ─────────────────────────────────────────────────────
 
 
-def test_sbe_disabled_by_default():
+def test_sbe_enabled_by_default():
+    # The Paradex endpoints answer a plain JSON connect with HTTP 400.
     ws_client = ParadexWebsocketClient(env=TESTNET)
+    assert ws_client.sbe_enabled is True
+
+
+def test_sbe_opt_out_flag():
+    ws_client = ParadexWebsocketClient(env=TESTNET, sbe_enabled=False)
     assert ws_client.sbe_enabled is False
 
 
@@ -68,9 +75,46 @@ def test_sbe_via_paradex_constructor_reaches_default_client():
     assert paradex.ws_client.sbe_enabled is True
 
 
-def test_sbe_off_via_paradex_constructor():
+def test_sbe_on_by_default_via_paradex_constructor():
     paradex = Paradex(env=TESTNET)
+    assert paradex.ws_client.sbe_enabled is True
+    assert paradex.ws_direct_client.sbe_enabled is True
+
+
+def test_sbe_off_via_paradex_constructor():
+    paradex = Paradex(env=TESTNET, ws_sbe_enabled=False)
     assert paradex.ws_client.sbe_enabled is False
+    assert paradex.ws_direct_client.sbe_enabled is False
+
+
+def test_default_client_does_not_log_validate_messages_note(caplog):
+    """The SBE/validate_messages note is for callers who asked for validation,
+    not for everyone now that SBE is the default."""
+    with caplog.at_level(logging.DEBUG):
+        ParadexWebsocketClient(env=TESTNET, auto_start_reader=False)
+    assert "validate_messages" not in caplog.text
+
+
+def test_validate_messages_with_default_sbe_logs_note(caplog):
+    with caplog.at_level(logging.INFO):
+        ParadexWebsocketClient(env=TESTNET, validate_messages=True, auto_start_reader=False)
+    assert "validate_messages does not apply to SBE frames" in caplog.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kwargs, expected", [({}, True), ({"sbe_enabled": False}, False)])
+async def test_threaded_client_forwards_sbe_flag(kwargs: dict, expected: bool):
+    """The threaded wrapper builds its own async client; the flag has to reach it."""
+    from paradex_py.api.ws_client_threaded import ThreadedParadexWebsocketClient
+
+    client = ThreadedParadexWebsocketClient(env=TESTNET, **kwargs)
+    assert client.sbe_enabled is expected
+    client._stop_event.set()  # leave the loop as soon as it has connected
+    with patch("paradex_py.api.ws_client_threaded.ParadexWebsocketClient") as mock_cls:
+        mock_cls.return_value.connect = AsyncMock()
+        mock_cls.return_value.close = AsyncMock()
+        await client._async_loop()
+    assert mock_cls.call_args.kwargs["sbe_enabled"] is expected
 
 
 # ── URL construction ────────────────────────────────────────────────────
@@ -89,6 +133,20 @@ async def test_sbe_url_params_appended(mock_connect: AsyncMock):
     url_called = mock_connect.call_args.args[0]
     assert "sbeSchemaId=1" in url_called
     assert "sbeSchemaVersion=3" in url_called
+
+
+@pytest.mark.asyncio
+@patch("websockets.connect", new_callable=AsyncMock)
+async def test_default_client_connects_with_sbe_url(mock_connect: AsyncMock):
+    """With no flags at all, connect asks for SBE (a bare URL is a 400)."""
+    mock_connect.return_value = _make_mock_ws()
+
+    ws_client = ParadexWebsocketClient(env=TESTNET, auto_start_reader=False)
+    await ws_client.connect()
+
+    assert mock_connect.call_args.args[0] == (
+        "wss://ws-public.api.testnet.paradex.trade/v1?sbeSchemaId=1&sbeSchemaVersion=3"
+    )
 
 
 def test_negotiated_version_matches_decoder_version():

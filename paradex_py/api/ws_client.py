@@ -162,7 +162,7 @@ class ParadexWebsocketClient:
         reader_sleep_on_no_connection (float, optional): Sleep duration when no connection. Set to 0 for no sleep. Defaults to 1.0.
         validate_messages (bool, optional): Enable pydantic message validation. Requires pydantic. Defaults to False.
             Applies to JSON frames only — SBE frames are already decoded into pydantic models, so this is inert
-            when sbe_enabled is set.
+            while sbe_enabled is True (the default).
         ping_interval (float, optional): WebSocket ping interval in seconds. None uses websockets default. Defaults to None.
         disable_reconnect (bool, optional): Disable automatic reconnection for tight simulation control. Defaults to False.
         enable_compression (bool, optional): Enable WebSocket per-message compression (RFC 7692). Defaults to True.
@@ -171,6 +171,9 @@ class ParadexWebsocketClient:
             (``ws.api.{env}.paradex.trade``) instead of the default public one
             (``ws-public.api.{env}.paradex.trade``).
             Ignored when ``ws_url_override`` is provided. Defaults to False.
+        sbe_enabled (bool, optional): Negotiate SBE binary encoding on connect. Defaults to True: the
+            Paradex WebSocket endpoints require it and answer a plain JSON connect with HTTP 400.
+            Pass False only for an endpoint (e.g. a ``ws_url_override``) that still serves JSON.
 
     Examples:
         >>> from paradex_py import Paradex
@@ -210,7 +213,7 @@ class ParadexWebsocketClient:
         disable_reconnect: bool = False,
         enable_compression: bool = True,
         api_client: Any | None = None,
-        sbe_enabled: bool = False,
+        sbe_enabled: bool = True,
         direct: bool = False,
     ):
         self.env = env
@@ -256,7 +259,7 @@ class ParadexWebsocketClient:
         # API client reference for token refresh on reconnect
         self._api_client = api_client
 
-        # SBE binary encoding opt-in
+        # SBE binary encoding (default on; False is the opt-out for JSON-only endpoints)
         self.sbe_enabled = sbe_enabled
         if sbe_enabled and validate_messages:
             # _process_binary_message returns generated models directly and never
