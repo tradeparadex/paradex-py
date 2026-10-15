@@ -45,10 +45,10 @@ from .codec import (
 # served one. The order is: ship the decoder, let installs turn over, then
 # raise this once the server cap goes up.
 #
-# nightly, testnet and prod all serve 1:2, so this now matches the decoder.
-# When the schema next moves ahead of what is served, this is the line that
-# holds back, not codec._SCHEMA_VERSION.
-NEGOTIATED_SCHEMA_VERSION = 2
+# nightly, testnet and prod all serve 1:3 (and refuse 1:4), so this matches
+# the decoder. When the schema next moves ahead of what is served, this is the
+# line that holds back, not codec._SCHEMA_VERSION.
+NEGOTIATED_SCHEMA_VERSION = 3
 
 __all__ = [
     "NEGOTIATED_SCHEMA_VERSION",

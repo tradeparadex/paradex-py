@@ -79,7 +79,7 @@ def test_sbe_off_via_paradex_constructor():
 @pytest.mark.asyncio
 @patch("websockets.connect", new_callable=AsyncMock)
 async def test_sbe_url_params_appended(mock_connect: AsyncMock):
-    """SBE enabled → ?sbeSchemaId=1&sbeSchemaVersion=2 appended to URL."""
+    """SBE enabled → ?sbeSchemaId=1&sbeSchemaVersion=3 appended to URL."""
     mock_ws = _make_mock_ws()
     mock_connect.return_value = mock_ws
 
@@ -88,7 +88,7 @@ async def test_sbe_url_params_appended(mock_connect: AsyncMock):
 
     url_called = mock_connect.call_args.args[0]
     assert "sbeSchemaId=1" in url_called
-    assert "sbeSchemaVersion=2" in url_called
+    assert "sbeSchemaVersion=3" in url_called
 
 
 def test_negotiated_version_matches_decoder_version():
@@ -96,7 +96,8 @@ def test_negotiated_version_matches_decoder_version():
 
     v0.7.1 shipped the 1:2 decoder while still negotiating 1:1, because every
     environment capped negotiation at 1 and a request above the cap is a 400 at
-    connect. nightly, testnet and prod now serve 1:2, so the split is closed.
+    connect. nightly, testnet and prod serve 1:3 (and refuse 1:4), so the split
+    is closed.
 
     Both directions stay forbidden. Negotiating above the decoder would decode
     frames with a layout it does not know. Negotiating below it is allowed
@@ -108,10 +109,9 @@ def test_negotiated_version_matches_decoder_version():
     from paradex_py.api.sbe import NEGOTIATED_SCHEMA_VERSION
     from paradex_py.api.sbe.codec import _SCHEMA_VERSION
 
-    # Held back: the decoder reads 1:3, negotiation stays at 1:2 until every
-    # environment is confirmed to serve 1:3.
-    assert NEGOTIATED_SCHEMA_VERSION == 2
+    assert NEGOTIATED_SCHEMA_VERSION == 3
     assert _SCHEMA_VERSION == 3
+    assert NEGOTIATED_SCHEMA_VERSION == _SCHEMA_VERSION
 
 
 @pytest.mark.asyncio
