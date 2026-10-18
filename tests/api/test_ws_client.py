@@ -1,3 +1,4 @@
+import asyncio
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -85,7 +86,7 @@ def test_mmp_channel_resolves_from_message_name():
 
 
 def test_auto_start_reader_without_running_loop():
-    # asyncio.get_event_loop() raises here on Python 3.14; the reader waits for connect()
+    # Constructed outside a loop: the reader starts in connect()
     client = ParadexWebsocketClient(env=TESTNET)
     assert client._reader_task is None
 
@@ -95,3 +96,5 @@ async def test_auto_start_reader_with_running_loop():
     client = ParadexWebsocketClient(env=TESTNET)
     assert client._reader_task is not None
     client._reader_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await client._reader_task
