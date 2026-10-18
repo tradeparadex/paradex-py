@@ -82,3 +82,16 @@ def test_mmp_channel_resolves_from_message_name():
 
     assert ParadexWebsocketChannel.MMP.value == "mmp"
     assert _get_ws_channel_from_name("mmp") == ParadexWebsocketChannel.MMP
+
+
+def test_auto_start_reader_without_running_loop():
+    # asyncio.get_event_loop() raises here on Python 3.14; the reader waits for connect()
+    client = ParadexWebsocketClient(env=TESTNET)
+    assert client._reader_task is None
+
+
+@pytest.mark.asyncio
+async def test_auto_start_reader_with_running_loop():
+    client = ParadexWebsocketClient(env=TESTNET)
+    assert client._reader_task is not None
+    client._reader_task.cancel()
