@@ -16,6 +16,10 @@ from websockets import State
 from paradex_py.api.ws_client import ParadexWebsocketClient
 from paradex_py.environment import TESTNET
 
+# Dummy signature (not verified by the client). It must still be valid base64url:
+# PyJWT 2.14+ rejects a signature segment that does not decode.
+DUMMY_SIGNATURE = base64.urlsafe_b64encode(b"dummy_signature").decode().rstrip("=")
+
 
 def create_jwt_token(exp_timestamp: float) -> str:
     """Create a mock JWT token with specified expiration timestamp.
@@ -34,10 +38,7 @@ def create_jwt_token(exp_timestamp: float) -> str:
     payload = {"exp": int(exp_timestamp), "sub": "test_user"}
     payload_encoded = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode().rstrip("=")
 
-    # Create dummy signature (not validated in our code)
-    signature = "dummy_signature"
-
-    return f"{header_encoded}.{payload_encoded}.{signature}"
+    return f"{header_encoded}.{payload_encoded}.{DUMMY_SIGNATURE}"
 
 
 class MockWebSocketConnection:
@@ -466,7 +467,7 @@ class TestWebSocketAuthRefresh:
         header_encoded = base64.urlsafe_b64encode(json.dumps(header).encode()).decode().rstrip("=")
         payload = {"sub": "test_user"}  # No exp claim
         payload_encoded = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode().rstrip("=")
-        token_no_exp = f"{header_encoded}.{payload_encoded}.dummy_signature"
+        token_no_exp = f"{header_encoded}.{payload_encoded}.{DUMMY_SIGNATURE}"
 
         mock_api_client = MagicMock()
         mock_api_client.auth = MagicMock()
