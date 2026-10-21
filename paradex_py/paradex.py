@@ -276,6 +276,10 @@ class Paradex(_ClientBase):
             self.account.l1_private_key = int_from_hex(l1_private_key) if l1_private_key is not None else None
             self.account.l1_private_key_from_ledger = l1_private_key_from_ledger
         self.api_client.init_account(self.account)
+        if self.api_client.auto_auth:
+            # Onboarding has run by now if the account needed it, so the L1 key has nothing left to sign.
+            self.account.l1_private_key = None
+            self.account.l1_private_key_from_ledger = False
         if self.ws_client is not None:
             self.ws_client.init_account(self.account)
 

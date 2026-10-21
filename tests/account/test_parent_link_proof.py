@@ -212,6 +212,20 @@ def test_init_account_keeps_the_l1_key_for_a_new_account(exists):
     assert set(paradex.account.onboarding_headers()) >= PARENT_HEADERS
 
 
+def test_init_account_drops_the_l1_key_once_auto_auth_has_onboarded():
+    paradex = _paradex(exists=False)
+    paradex.api_client.auto_auth = True
+    sent: list[dict] = []
+    paradex.api_client.init_account = lambda account: sent.append(account.onboarding_headers())
+
+    paradex.init_account(l1_address=TEST_L1_ADDRESS, l1_private_key=TEST_L1_PRIVATE_KEY)
+
+    assert paradex.account is not None
+    assert set(sent[0]) >= PARENT_HEADERS
+    assert paradex.account.l1_private_key is None
+    assert paradex.account.l1_private_key_from_ledger is False
+
+
 def test_init_account_drops_the_l1_key_for_an_existing_account():
     paradex = _paradex(exists=True)
 

@@ -61,11 +61,17 @@ def _sign_stark_key_message(stark_key_message, l1_private_key: int) -> str:
     return sig_hex if sig_hex.startswith("0x") else "0x" + sig_hex
 
 
-def _sign_stark_key_message_ledger(message: SignableMessage, eth_account_address: str) -> str:
+def _find_ledger_account(eth_account_address: str):
+    """Open the Ledger and find the derivation path of `eth_account_address` on it."""
     dongle = init_dongle()
     account = find_account(eth_account_address, dongle, count=10)
     if account is None:
         return raise_value_error(f"Account {eth_account_address} not found on Ledger")
+    return dongle, account
+
+
+def _sign_stark_key_message_ledger(message: SignableMessage, eth_account_address: str) -> str:
+    dongle, account = _find_ledger_account(eth_account_address)
     # header/body is eth_account naming, presumably to be generic
     domain_hash = message.header
     message_hash = message.body
@@ -87,10 +93,7 @@ def sign_eip191_message(message: str, l1_private_key: int | bytes) -> str:
 
 def sign_eip191_message_ledger(message: str, eth_account_address: str) -> str:
     """Sign a plaintext message with EIP-191 personal_sign on a Ledger; returns 0x-prefixed hex."""
-    dongle = init_dongle()
-    account = find_account(eth_account_address, dongle, count=10)
-    if account is None:
-        return raise_value_error(f"Account {eth_account_address} not found on Ledger")
+    dongle, account = _find_ledger_account(eth_account_address)
     return sign_message(message, sender_path=account.path, dongle=dongle).signature
 
 
