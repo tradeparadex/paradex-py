@@ -94,11 +94,10 @@ class ParadexAccount:
         if l2_address is not None:
             self.l2_address = int_from_hex(l2_address)
         else:
-            # Backwards-compat fallback: callers that construct ParadexAccount directly
-            # (without going through the Paradex orchestrator) still get their address
-            # derived for them. The Paradex orchestrator always resolves the address
-            # outside via the same helper, so this branch is only hit for direct
-            # construction and is intended for eventual removal.
+            # Backwards-compat fallback for direct construction: derives the legacy
+            # proxy-class address, which is wrong for accounts created with the current
+            # class. The Paradex orchestrator always passes l2_address (from
+            # GET /onboarding by default), so this branch is intended for eventual removal.
             self.l2_address = derive_l2_address_starknet(config, self.l2_public_key)
         self.is_onboarded = is_onboarded
 

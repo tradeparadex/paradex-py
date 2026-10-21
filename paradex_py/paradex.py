@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING
 
 from paradex_py._client_base import _ClientBase
 from paradex_py.account.account import ParadexAccount
-from paradex_py.account.utils import derive_l2_address_starknet, resolve_l2_keypair
+from paradex_py.account.utils import derive_l2_address_starknet, fetch_l2_address, resolve_l2_keypair
 from paradex_py.api.api_client import ParadexApiClient
 from paradex_py.api.protocols import DefaultRetryStrategy
 from paradex_py.api.ws_client import ParadexWebsocketClient
@@ -67,9 +67,14 @@ class Paradex(_ClientBase):
         signer (Signer, optional): Custom order signer for submit/modify/batch operations. Defaults to None.
         rpc_version (str, optional): RPC version (e.g., "v0_9"). If provided, constructs URL as {base_url}/rpc/{rpc_version}. Defaults to None.
         config (SystemConfig, optional): System configuration. If provided, uses this config instead of fetching from API. Defaults to None.
-        server_derive_address (bool, optional): When True, fetch the L2 address from ``GET /onboarding`` instead of
-            computing it locally from class hashes. Also caches the ``exists`` flag so ``POST /onboarding`` is skipped
-            when the account is already onboarded. Defaults to False (local ``compute_address`` path unchanged).
+        server_derive_address (bool, optional): Fetch the L2 address from ``GET /onboarding`` (one public request
+            when the account is initialized) rather than computing it locally. The server's address is right for
+            accounts created with either the legacy proxy class or the current class; local derivation computes
+            the legacy proxy-class address, which is wrong for accounts created with the current class (such as
+            new accounts onboarded in the Paradex app). Also caches the ``exists`` flag so ``POST /onboarding``
+            is skipped when the account is already onboarded. If the request fails, account initialization
+            raises ``ValueError`` rather than falling back. Pass False to derive the address locally.
+            Defaults to True.
 
     Examples:
         >>> from paradex_py import Paradex
@@ -121,7 +126,7 @@ class Paradex(_ClientBase):
         rpc_version: str | None = None,
         config: "SystemConfig | None" = None,
         # Onboarding configuration
-        server_derive_address: bool = False,
+        server_derive_address: bool = True,
     ):
         _validate_env(env, "Paradex")
         self.env = env
@@ -242,16 +247,12 @@ class Paradex(_ClientBase):
         # single downstream ParadexAccount(...) call with a pre-resolved address.
         # getattr fallback protects callers that bypass __init__ via Paradex.__new__(...).
         is_onboarded: bool | None = None
-        if getattr(self, "server_derive_address", False):
-            info = self.api_client.fetch_onboarding(
-                {
-                    "account_signer_type": "starknet",
-                    "public_key": hex(key_pair.public_key),
-                }
+        if getattr(self, "server_derive_address", True):
+            l2_address_hex, is_onboarded = fetch_l2_address(
+                self.api_client,
+                {"account_signer_type": "starknet", "public_key": hex(key_pair.public_key)},
+                "Paradex",
             )
-            l2_address_hex: str = info["address"]
-            exists = info.get("exists")
-            is_onboarded = bool(exists) if exists is not None else None
         else:
             l2_address_hex = hex(derive_l2_address_starknet(self.config, key_pair.public_key))
 
@@ -304,7 +305,8 @@ class Paradex(_ClientBase):
     def is_onboarded(self) -> bool | None:
         """Cached onboarding state from ``GET /onboarding``.
 
-        Returns ``True`` / ``False`` when ``server_derive_address=True`` populated the cache at
-        account initialization, ``None`` otherwise (local derivation path — the SDK learns
-        onboarding status lazily via the ``NOT_ONBOARDED`` auth-retry flow)."""
+        Returns ``True`` / ``False`` when ``GET /onboarding`` populated the cache at account
+        initialization (the default), ``None`` when the server omitted it or with
+        ``server_derive_address=False`` (the SDK then learns onboarding status lazily via
+        the ``NOT_ONBOARDED`` auth-retry flow)."""
         return self.account.is_onboarded if self.account is not None else None
