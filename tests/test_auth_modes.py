@@ -957,6 +957,25 @@ class TestParadexEvm:
             )
         MockEvmAccount.assert_not_called()
 
+    @patch("paradex_py.paradex_evm.derive_vault_operator_l2_address_eip191")
+    @patch("paradex_py.paradex_evm.EvmAccount")
+    @patch("paradex_py.paradex_evm.ParadexWebsocketClient")
+    @patch("paradex_py.paradex_evm.ParadexApiClient")
+    def test_vault_operator_index_default_fetch_failure_raises(
+        self, MockApiClient, MockWsClient, MockEvmAccount, mock_derive_op
+    ):
+        """By default the operator address comes from the server too; a failed request
+        raises the wrapped error rather than falling back to local derivation."""
+        mock_api = MockApiClient.return_value
+        mock_api.fetch_system_config.return_value = MOCK_SYSTEM_CONFIG
+        mock_api.fetch_onboarding.side_effect = ValueError("HTTP 503: unavailable")
+
+        with pytest.raises(ValueError, match="could not fetch the account address"):
+            ParadexEvm(env=TESTNET, evm_address=EVM_ADDR, evm_private_key=EVM_KEY, vault_operator_index=0)
+
+        mock_derive_op.assert_not_called()
+        MockEvmAccount.assert_not_called()
+
     @patch("paradex_py.paradex_evm.ParadexApiClient")
     def test_vault_operator_address_and_index_mutually_exclusive(self, MockApiClient):
         MockApiClient.return_value.fetch_system_config.return_value = MOCK_SYSTEM_CONFIG

@@ -6,6 +6,7 @@ import pytest
 
 from paradex_py import Paradex
 from paradex_py.account.utils import derive_l2_address_starknet, fetch_l2_address
+from paradex_py.api.api_client import ParadexApiClient
 from paradex_py.environment import TESTNET
 from tests.mocks.api_client import MOCK_ONBOARDING_STARKNET, MockApiClient
 
@@ -61,6 +62,13 @@ class TestFetchL2Address:
         api.fetch_onboarding.return_value = response
 
         with pytest.raises(ValueError, match="returned no account address"):
+            fetch_l2_address(api, {}, "Paradex")
+
+    def test_non_hex_address_raises(self):
+        api = MagicMock()
+        api.fetch_onboarding.return_value = {"address": "not-an-address", "exists": True}
+
+        with pytest.raises(ValueError, match="returned an invalid account address"):
             fetch_l2_address(api, {}, "Paradex")
 
 
@@ -122,3 +130,23 @@ class TestParadexAddressDerivation:
 
         assert paradex.account is None
         api.init_account.assert_not_called()
+
+    @pytest.mark.parametrize(("exists", "posts_onboarding"), [(True, False), (False, True)])
+    def test_exists_flag_decides_whether_to_onboard(self, exists, posts_onboarding):
+        """With auto_auth, the cached exists flag skips POST /onboarding for an existing
+        account and sends it before auth for a new one, through the real API client."""
+        api = ParadexApiClient(env=TESTNET)
+        paradex = _bare_paradex(api)
+        calls: list[str] = []
+
+        with (
+            patch("paradex_py.account.account.FullNodeClient"),
+            patch.object(api, "fetch_onboarding", return_value={"address": SERVER_ADDRESS, "exists": exists}),
+            patch.object(api, "onboarding", side_effect=lambda: calls.append("onboarding")),
+            patch.object(api, "auth", side_effect=lambda params=None: calls.append("auth")),
+        ):
+            paradex.init_account(l1_address=TEST_L1_ADDRESS, l1_private_key=TEST_L1_PRIVATE_KEY)
+
+        assert paradex.account is not None
+        assert paradex.account.l2_address == int(SERVER_ADDRESS, 16)
+        assert calls == (["onboarding", "auth"] if posts_onboarding else ["auth"])

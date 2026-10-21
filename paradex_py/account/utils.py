@@ -113,12 +113,17 @@ def fetch_l2_address(api_client: "ParadexApiClient", params: dict, owner: str) -
     except Exception as e:
         message = (
             f"{owner}: could not fetch the account address from GET /onboarding: {e}. "
-            "Pass server_derive_address=False to derive it locally instead."
+            "Retry; pass server_derive_address=False only if local derivation is right for "
+            "this account (for a Starknet key, only accounts created with the legacy proxy class)."
         )
         raise ValueError(message) from e
     address = info.get("address") if isinstance(info, dict) else None
     if not isinstance(address, str) or not address:
         raise_value_error(f"{owner}: GET /onboarding returned no account address: {info!r}")
+    try:
+        int(address, 16)
+    except ValueError:
+        raise_value_error(f"{owner}: GET /onboarding returned an invalid account address: {address!r}")
     exists = info.get("exists")
     return address, (bool(exists) if exists is not None else None)
 

@@ -61,12 +61,15 @@ class Paradex(_ClientBase):
             than inserts/updates/deletes). On trades, use trade_id_str: the int64 trade_id is deprecated and holds
             only the low 64 bits of the real id. validate_ws_messages does not apply to SBE frames.
         auto_auth (bool, optional): Whether to automatically handle onboarding/auth. Defaults to True.
+            Initializing an account still calls ``GET /onboarding`` when this is False, unless
+            ``server_derive_address=False``.
         auth_provider (AuthProvider, optional): Custom authentication provider. Defaults to None.
         auth_params (dict, optional): Extra query parameters sent with every ``/auth`` request
             (initial and refresh). For example, ``{"token_usage": "interactive"}`` for 0-fee JWT. Defaults to None.
         signer (Signer, optional): Custom order signer for submit/modify/batch operations. Defaults to None.
         rpc_version (str, optional): RPC version (e.g., "v0_9"). If provided, constructs URL as {base_url}/rpc/{rpc_version}. Defaults to None.
         config (SystemConfig, optional): System configuration. If provided, uses this config instead of fetching from API. Defaults to None.
+            Initializing an account still calls ``GET /onboarding`` unless ``server_derive_address=False``.
         server_derive_address (bool, optional): Fetch the L2 address from ``GET /onboarding`` (one public request
             when the account is initialized) rather than computing it locally. The server's address is right for
             accounts created with either the legacy proxy class or the current class; local derivation computes
