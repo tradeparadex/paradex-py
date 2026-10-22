@@ -95,8 +95,9 @@ class ParadexWebsocketChannel(Enum):
         ORDERS (str): Private websocket channel to receive order updates
         ORDER_BOOK (str): Public websocket channel for the orderbook. The default feed_type "snapshot" sends
             snapshots every refresh_rate (50ms or 100ms, default 100ms), optionally grouped by price_tick
-            (production only). feed_type "deltas" sends incremental updates and takes no refresh_rate or
-            price_tick. One SBE session carries at most one orderbook feed per market
+            (production only; 0.1 and "0_1" both mean a 0.1 tick). feed_type "deltas" sends incremental
+            updates and takes no refresh_rate or price_tick. One SBE session carries at most one orderbook
+            feed per market
         POSITIONS (str): Private websocket channel to receive updates when position is changed
         TRADES (str): Public websocket channel to receive updates on trades in particular market
         TRADEBUSTS (str): Private websocket channel to receive fills that are busted by a blockchain
@@ -869,6 +870,9 @@ class ParadexWebsocketClient:
                 if "price_tick" not in format_params or not format_params["price_tick"]:
                     base_format = "order_book.{market}.{feed_type}@15@{refresh_rate}"
                 else:
+                    # A dot separates the parts of a channel name, so the server
+                    # spells a fractional tick with an underscore (0.1 -> 0_1).
+                    format_params["price_tick"] = str(format_params["price_tick"]).replace(".", "_")
                     base_format = "order_book.{market}.{feed_type}@15@{refresh_rate}@{price_tick}"
             channel_name = base_format.format(**format_params)
         else:
