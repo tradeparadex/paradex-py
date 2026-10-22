@@ -106,8 +106,17 @@ async def test_order_book_subscribe_defaults_to_snapshot():
 
 @pytest.mark.asyncio
 async def test_order_book_subscribe_snapshot_with_price_tick():
-    name = await _subscribed_order_book_name({"market": "BTC-USD-PERP", "refresh_rate": "50ms", "price_tick": "0.1"})
-    assert name == "order_book.BTC-USD-PERP.snapshot@15@50ms@0.1"
+    name = await _subscribed_order_book_name({"market": "BTC-USD-PERP", "refresh_rate": "50ms", "price_tick": "10"})
+    assert name == "order_book.BTC-USD-PERP.snapshot@15@50ms@10"
+
+
+@pytest.mark.parametrize("price_tick", ["0.1", 0.1, "0_1"])
+@pytest.mark.asyncio
+async def test_order_book_subscribe_fractional_price_tick_uses_underscore(price_tick):
+    """A dot would split the channel name, so the server rejects @0.1 and
+    expects @0_1."""
+    name = await _subscribed_order_book_name({"market": "BTC-USD-PERP", "price_tick": price_tick})
+    assert name == "order_book.BTC-USD-PERP.snapshot@15@100ms@0_1"
 
 
 @pytest.mark.asyncio
