@@ -93,7 +93,10 @@ class ParadexWebsocketChannel(Enum):
         MARKETS_SUMMARY (str): Public websocket channel for updates of available markets
         MMP (str): Private websocket channel for Market Maker Protection state changes on the account
         ORDERS (str): Private websocket channel to receive order updates
-        ORDER_BOOK (str): Public websocket channel for orderbook snapshot updates at most every 50ms or 100ms, optionally grouped by price tick (production only)
+        ORDER_BOOK (str): Public websocket channel for the orderbook. The default feed_type "snapshot" sends
+            snapshots every refresh_rate (50ms or 100ms, default 100ms), optionally grouped by price_tick
+            (production only). feed_type "deltas" sends incremental updates and takes no refresh_rate or
+            price_tick. One SBE session carries at most one orderbook feed per market
         POSITIONS (str): Private websocket channel to receive updates when position is changed
         TRADES (str): Public websocket channel to receive updates on trades in particular market
         TRADEBUSTS (str): Private websocket channel to receive fills that are busted by a blockchain
@@ -855,14 +858,18 @@ class ParadexWebsocketClient:
             format_params = params.copy()
             if "feed_type" not in format_params:
                 format_params["feed_type"] = "snapshot"
-            if "refresh_rate" not in format_params:
-                format_params["refresh_rate"] = "100ms"
-            # price_tick is optional - if not provided or empty, omit it
-            if "price_tick" not in format_params or not format_params["price_tick"]:
-                format_params.pop("price_tick", None)
-                base_format = "order_book.{market}.{feed_type}@15@{refresh_rate}"
+            # The deltas feed takes no parameters and the server rejects any
+            # suffix, so refresh_rate and price_tick only apply to snapshots.
+            if format_params["feed_type"] == "deltas":
+                base_format = "order_book.{market}.deltas"
             else:
-                base_format = "order_book.{market}.{feed_type}@15@{refresh_rate}@{price_tick}"
+                if "refresh_rate" not in format_params:
+                    format_params["refresh_rate"] = "100ms"
+                # price_tick is optional - if not provided or empty, omit it
+                if "price_tick" not in format_params or not format_params["price_tick"]:
+                    base_format = "order_book.{market}.{feed_type}@15@{refresh_rate}"
+                else:
+                    base_format = "order_book.{market}.{feed_type}@15@{refresh_rate}@{price_tick}"
             channel_name = base_format.format(**format_params)
         else:
             channel_name = channel.value.format(**params)
