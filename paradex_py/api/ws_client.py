@@ -556,7 +556,13 @@ class ParadexWebsocketClient:
             if error_info:
                 error_code = error_info.get("code", "unknown")
                 error_message = error_info.get("message", "unknown error")
-                self.logger.error(f"{self.classname}: Subscription failed - code:{error_code} message:{error_message}")
+                # "data" carries the reason, e.g. that a second order_book feed for a
+                # market cannot share an SBE session with the first.
+                error_data = error_info.get("data")
+                self.logger.error(
+                    f"{self.classname}: Subscription failed - code:{error_code} message:{error_message}"
+                    + (f" data:{error_data}" if error_data else "")
+                )
 
                 # Check for auth-related errors (invalid bearer token)
                 if error_code == 40111 or "bearer token" in str(error_message).lower():
@@ -734,14 +740,18 @@ class ParadexWebsocketClient:
         ``order_book.BTC-USD-PERP.snapshot@15@100ms``.  A prefix scan bridges the
         two.
 
-        Note: if the user subscribes two depth levels for the same market
-        simultaneously the prefix scan may match the wrong entry.
+        The match must end at a ``.``: market names nest (``ETH-USD`` is a prefix
+        of ``ETH-USD-22OCT26-2000-C``), so a bare prefix would hand one market's
+        frames to another's callback. The first match is unambiguous because the
+        server refuses a second ``order_book`` feed for a market on an SBE
+        session: their frames encode identically and could not be told apart.
         """
         if channel_name in self.callbacks:
             return channel_name
         # Prefix scan: "order_book.BTC-USD-PERP" → "order_book.BTC-USD-PERP.snapshot@15@100ms"
+        scoped = channel_name + "."
         for key in self.callbacks:
-            if key.startswith(channel_name):
+            if key.startswith(scoped):
                 return key
         # markets_summary fallback: SBE frames carry per-market channels like
         # "markets_summary.BTC-USD-PERP"; map to the ALL or base registration.

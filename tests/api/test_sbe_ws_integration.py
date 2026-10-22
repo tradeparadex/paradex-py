@@ -473,3 +473,37 @@ async def test_frc_subscribe_honours_an_explicit_refresh_rate():
     )
 
     assert "funding_rate_comparison.ALL@500ms" in client.callbacks
+
+
+# ── Routing must not cross market names ─────────────────────────────────
+
+
+def test_resolve_prefix_stops_at_market_boundary():
+    """Market names nest (spot ETH-USD is a prefix of its options), so an
+    order_book frame for ETH-USD must not reach an option's callback."""
+    ws_client = ParadexWebsocketClient(env=TESTNET, auto_start_reader=False)
+    ws_client.callbacks["order_book.ETH-USD-22OCT26-2000-C.snapshot@15@100ms"] = lambda *_: None
+    assert ws_client._resolve_sbe_channel("order_book.ETH-USD") is None
+
+    # With both subscribed, each frame reaches its own market, whatever the order.
+    ws_client.callbacks["order_book.ETH-USD.snapshot@15@100ms"] = lambda *_: None
+    assert ws_client._resolve_sbe_channel("order_book.ETH-USD") == "order_book.ETH-USD.snapshot@15@100ms"
+    assert (
+        ws_client._resolve_sbe_channel("order_book.ETH-USD-22OCT26-2000-C")
+        == "order_book.ETH-USD-22OCT26-2000-C.snapshot@15@100ms"
+    )
+
+
+# ── A rejected subscription says why ───────────────────────────────────
+
+
+def test_subscription_error_logs_server_reason(caplog):
+    """The server rejects a second order_book feed for a market on an SBE
+    session; the reason is in error.data, which used to be dropped."""
+    ws_client = ParadexWebsocketClient(env=TESTNET, auto_start_reader=False)
+    reason = "channel 'order_book.BTC-USD-PERP.deltas' cannot share an SBE session"
+    with caplog.at_level(logging.ERROR):
+        ws_client._check_subscribed_channel(
+            {"id": 7, "error": {"code": -32600, "message": "invalid subscribe request", "data": reason}}
+        )
+    assert reason in caplog.text
