@@ -161,8 +161,9 @@ class ParadexWebsocketClient:
         reader_sleep_on_error (float, optional): Sleep duration after connection errors. Set to 0 for no sleep. Defaults to 1.0.
         reader_sleep_on_no_connection (float, optional): Sleep duration when no connection. Set to 0 for no sleep. Defaults to 1.0.
         validate_messages (bool, optional): Enable pydantic message validation. Requires pydantic. Defaults to False.
-            Applies to JSON frames only — SBE frames are already decoded into pydantic models, so this is inert
-            while sbe_enabled is True (the default).
+            Applies to JSON text frames only; SBE frames are already decoded into pydantic models. An SBE
+            connection still carries JSON frames for channels the server does not encode in SBE, such as
+            ``balance_events`` and ``transfers``, and for private channels on accounts not yet served SBE.
         ping_interval (float, optional): WebSocket ping interval in seconds. None uses websockets default. Defaults to None.
         disable_reconnect (bool, optional): Disable automatic reconnection for tight simulation control. Defaults to False.
         enable_compression (bool, optional): Enable WebSocket per-message compression (RFC 7692). Defaults to True.
@@ -174,6 +175,11 @@ class ParadexWebsocketClient:
         sbe_enabled (bool, optional): Negotiate SBE binary encoding on connect. Defaults to True: the
             Paradex WebSocket endpoints require it and answer a plain JSON connect with HTTP 400.
             Pass False only for an endpoint (e.g. a ``ws_url_override``) that still serves JSON.
+            Public market data always arrives as SBE. Private channels (``orders``, ``fills``,
+            ``positions``, ``account``) arrive as SBE or JSON depending on the account, on the same
+            connection, and the two use different field names (e.g. ``order_id`` vs ``id``). Every
+            message passed to a callback carries ``message["encoding"]``, ``"sbe"`` or ``"json"``,
+            so a callback can tell which shape it got.
 
     Examples:
         >>> from paradex_py import Paradex
@@ -188,8 +194,8 @@ class ParadexWebsocketClient:
         >>> # High-frequency simulator mode (no sleeps)
         >>> ws_client = ParadexWebsocketClient(env=Environment.TESTNET,
         ...                                   reader_sleep_on_error=0, reader_sleep_on_no_connection=0)
-        >>> # With typed message validation (JSON frames only, so SBE must be off)
-        >>> ws_client = ParadexWebsocketClient(env=Environment.TESTNET, sbe_enabled=False, validate_messages=True)
+        >>> # With typed message validation (JSON text frames only)
+        >>> ws_client = ParadexWebsocketClient(env=Environment.TESTNET, validate_messages=True)
         >>> # With API client for automatic token refresh on reconnect
         >>> from paradex_py import Paradex
         >>> paradex = Paradex(env=Environment.TESTNET, l1_address="0x...", l1_private_key="0x...")
@@ -672,6 +678,7 @@ class ParadexWebsocketClient:
                             f"{self.classname}: WebSocket payload validation failed for channel {channel_name}"
                         )
 
+            message = {**message, "encoding": "json"}  # a copy: validation may hand back a shared dict
             if message_channel in self.callbacks:
                 self.logger.debug(
                     f"{self.classname}: channel:{message_channel}"
@@ -725,7 +732,7 @@ class ParadexWebsocketClient:
             return
         resolved = self._resolve_sbe_channel(channel_name) or channel_name
         ws_channel = _get_ws_channel_from_name(resolved)
-        message = {"params": {"channel": resolved, "data": model.model_dump()}}
+        message = {"params": {"channel": resolved, "data": model.model_dump()}, "encoding": "sbe"}
         if resolved in self.callbacks:
             self.logger.debug(f"{self.classname}: SBE channel:{resolved}")
             await self.callbacks[resolved](ws_channel, message)

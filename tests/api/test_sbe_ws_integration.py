@@ -494,6 +494,60 @@ def test_resolve_prefix_stops_at_market_boundary():
     )
 
 
+# ── message["encoding"] tells a callback which field names it got ───────
+
+
+@pytest.mark.asyncio
+async def test_sbe_message_is_marked_sbe():
+    received = []
+
+    async def on_trade(ws_channel, message):
+        received.append(message)
+
+    ws_client = ParadexWebsocketClient(env=TESTNET, auto_start_reader=False)
+    ws_client.callbacks["trades.BTC-USD-PERP"] = on_trade
+    await ws_client._process_binary_message(_make_trade_frame())
+    assert received[0]["encoding"] == "sbe"
+
+
+@pytest.mark.asyncio
+async def test_json_frame_on_sbe_connection_is_marked_json():
+    """Private channels can still arrive as JSON on an SBE connection."""
+    received = []
+
+    async def on_order(ws_channel, message):
+        received.append(message)
+
+    ws_client = ParadexWebsocketClient(env=TESTNET, auto_start_reader=False)
+    assert ws_client.sbe_enabled is True
+    ws_client.callbacks["orders.ALL"] = on_order
+    frame = '{"jsonrpc":"2.0","method":"subscription","params":{"channel":"orders.ALL","data":{"id":"o-1"}}}'
+    await ws_client._process_message(frame)
+    assert received[0]["encoding"] == "json"
+    assert received[0]["params"]["data"]["id"] == "o-1"
+
+
+@pytest.mark.asyncio
+async def test_validated_json_message_keeps_encoding():
+    """Validation rebuilds the message dict; the marker must survive it."""
+    received = []
+
+    async def on_bbo(ws_channel, message):
+        received.append(message)
+
+    ws_client = ParadexWebsocketClient(env=TESTNET, validate_messages=True, auto_start_reader=False)
+    ws_client.callbacks["bbo.BTC-USD-PERP"] = on_bbo
+    frame = '{"jsonrpc":"2.0","method":"subscription","params":{"channel":"bbo.BTC-USD-PERP","data":{}}}'
+    with patch("paradex_py.api.ws_client.validate_ws_message") as validate:
+        validate.return_value.model_dump.return_value = {
+            "jsonrpc": "2.0",
+            "params": {"channel": "bbo.BTC-USD-PERP", "data": {}},
+        }
+        await ws_client._process_message(frame)
+    validate.assert_called_once()  # JSON frames are validated on an SBE connection
+    assert received[0]["encoding"] == "json"
+
+
 # ── A rejected subscription says why ───────────────────────────────────
 
 
