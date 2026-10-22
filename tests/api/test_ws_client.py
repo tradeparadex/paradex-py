@@ -5,7 +5,7 @@ from websockets import State
 
 from paradex_py import Paradex
 from paradex_py.account.account import ParadexAccount
-from paradex_py.api.ws_client import ParadexWebsocketClient
+from paradex_py.api.ws_client import ParadexWebsocketChannel, ParadexWebsocketClient
 from paradex_py.environment import TESTNET
 
 MOCK_L1_PRIVATE_KEY = "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
@@ -82,3 +82,39 @@ def test_mmp_channel_resolves_from_message_name():
 
     assert ParadexWebsocketChannel.MMP.value == "mmp"
     assert _get_ws_channel_from_name("mmp") == ParadexWebsocketChannel.MMP
+
+
+async def _subscribed_order_book_name(params: dict) -> str:
+    client = ParadexWebsocketClient(env=TESTNET)
+    client._subscribe_to_channel_by_name = AsyncMock()
+
+    async def _cb(_channel, _message):
+        pass
+
+    await client.subscribe(ParadexWebsocketChannel.ORDER_BOOK, callback=_cb, params=params)
+    client._subscribe_to_channel_by_name.assert_awaited_once()
+    name = client._subscribe_to_channel_by_name.await_args.args[0]
+    assert name in client.callbacks
+    return name
+
+
+@pytest.mark.asyncio
+async def test_order_book_subscribe_defaults_to_snapshot():
+    name = await _subscribed_order_book_name({"market": "BTC-USD-PERP"})
+    assert name == "order_book.BTC-USD-PERP.snapshot@15@100ms"
+
+
+@pytest.mark.asyncio
+async def test_order_book_subscribe_snapshot_with_price_tick():
+    name = await _subscribed_order_book_name({"market": "BTC-USD-PERP", "refresh_rate": "50ms", "price_tick": "0.1"})
+    assert name == "order_book.BTC-USD-PERP.snapshot@15@50ms@0.1"
+
+
+@pytest.mark.asyncio
+async def test_order_book_subscribe_deltas_takes_no_parameters():
+    """The server rejects any suffix on the deltas channel, so snapshot-only
+    params must be dropped rather than appended."""
+    name = await _subscribed_order_book_name(
+        {"market": "BTC-USD-PERP", "feed_type": "deltas", "refresh_rate": "50ms", "price_tick": "0.1"}
+    )
+    assert name == "order_book.BTC-USD-PERP.deltas"
