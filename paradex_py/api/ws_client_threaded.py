@@ -19,7 +19,11 @@ from paradex_py.environment import Environment
 
 @dataclass
 class WSMessage:
-    """Message from WebSocket."""
+    """Message from WebSocket.
+
+    ``channel`` is the channel name (e.g. ``markets_summary.BTC-USD-PERP``) and
+    ``data`` the full message dict, including ``params`` and ``encoding``.
+    """
 
     channel: str
     data: dict
@@ -34,7 +38,7 @@ class ThreadedParadexWebsocketClient:
     Usage:
         client = ThreadedParadexWebsocketClient(env=Environment.TESTNET)
         with client:
-            client.subscribe(ParadexWebsocketChannel.ACCOUNT)
+            client.subscribe(ParadexWebsocketChannel.BBO, params={"market": "BTC-USD-PERP"})
             msg = client.get_updates(timeout=1.0)
 
     Args:
@@ -46,7 +50,12 @@ class ThreadedParadexWebsocketClient:
     def __init__(self, env: Environment, sbe_enabled: bool = True):
         self.env = env
         self.sbe_enabled = sbe_enabled
+        # Incoming messages, read by get_updates. Subscribe requests go through
+        # their own queue so neither side can consume the other's items.
         self.message_queue: queue.Queue = queue.Queue(maxsize=1000)
+        self._commands: queue.Queue = queue.Queue()
+        self._connect_ok = False
+        self._dropping = False
 
         self._ws_client: ParadexWebsocketClient | None = None
         self._ws_thread: threading.Thread | None = None
@@ -65,6 +74,7 @@ class ThreadedParadexWebsocketClient:
         """Connect to WebSocket in background thread."""
         self._stop_event.clear()
         self._connected_event.clear()
+        self._connect_ok = False
 
         self._ws_thread = threading.Thread(
             target=self._run_event_loop,
@@ -72,28 +82,28 @@ class ThreadedParadexWebsocketClient:
         )
         self._ws_thread.start()
 
-        return self._connected_event.wait(timeout=timeout)
+        return self._connected_event.wait(timeout=timeout) and self._connect_ok
 
-    def subscribe(self, channel: ParadexWebsocketChannel) -> None:
-        """Subscribe to a WebSocket channel."""
-        self.message_queue.put(("_subscribe", channel))
+    def subscribe(self, channel: ParadexWebsocketChannel, params: dict | None = None) -> None:
+        """Subscribe to a WebSocket channel, with the same params as the async client."""
+        self._commands.put((channel, params))
 
     def get_updates(self, timeout: float | None = None) -> WSMessage | None:
         """Get next message (blocking)."""
         try:
-            msg_type, data = self.message_queue.get(timeout=timeout)
+            channel, data = self.message_queue.get(timeout=timeout)
         except queue.Empty:
             return None
-        else:
-            if msg_type.startswith("_"):
-                return self.get_updates(timeout=timeout)
-            return WSMessage(channel=msg_type, data=data)
+        return WSMessage(channel=channel, data=data)
 
     def close(self) -> None:
         """Close connection and cleanup."""
         self._stop_event.set()
         if self._ws_thread:
-            self._ws_thread.join(timeout=5.0)
+            # Long enough for the closing handshake, which the websockets library
+            # bounds at 10s; the thread is not a daemon, so returning earlier would
+            # only move the wait to interpreter exit.
+            self._ws_thread.join(timeout=15.0)
 
     def _run_event_loop(self) -> None:
         """Run asyncio event loop in background thread."""
@@ -107,9 +117,17 @@ class ThreadedParadexWebsocketClient:
     async def _async_loop(self) -> None:
         """Main async loop using the reconnect-aware client."""
         try:
-
-            def _on_message(channel: str, message: dict) -> None:
-                self.message_queue.put((channel, message))
+            # The async client awaits its callbacks, so this must be a coroutine.
+            async def _on_message(ws_channel: ParadexWebsocketChannel | None, message: dict) -> None:
+                channel = message.get("params", {}).get("channel", "")
+                try:
+                    # Never block the event loop on a slow reader.
+                    self.message_queue.put_nowait((channel, message))
+                    self._dropping = False
+                except queue.Full:
+                    if not self._dropping:  # once per backlog, not once per frame
+                        self.logger.warning("ThreadedParadexWebsocketClient: queue full, dropping messages")
+                    self._dropping = True
 
             self._ws_client = ParadexWebsocketClient(
                 env=self.env,
@@ -117,18 +135,23 @@ class ThreadedParadexWebsocketClient:
                 sbe_enabled=self.sbe_enabled,
             )
 
+            self._connect_ok = await self._ws_client.connect()
             self._connected_event.set()
-            await self._ws_client.connect()
 
             while not self._stop_event.is_set():
                 try:
                     # Check for subscribe commands
                     try:
-                        cmd, channel = self.message_queue.get_nowait()
-                        if cmd == "_subscribe":
-                            await self._ws_client.subscribe(channel, callback=_on_message)
+                        channel, params = self._commands.get_nowait()
                     except queue.Empty:
                         pass
+                    else:
+                        try:
+                            await self._ws_client.subscribe(channel, callback=_on_message, params=params)
+                        except Exception:
+                            # e.g. a channel that needs a market called without params:
+                            # report it and keep serving the other subscriptions.
+                            self.logger.exception(f"ThreadedParadexWebsocketClient: subscribe failed: {channel}")
 
                     await asyncio.sleep(0.05)
 

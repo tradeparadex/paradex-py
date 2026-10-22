@@ -628,7 +628,10 @@ class ParadexWebsocketClient:
 
     async def _read_messages(self) -> None:
         try:
-            while True:
+            # Stop on _is_closing as well as on cancel: on Python 3.11, wait_for()
+            # drops a cancel that lands as recv() completes, which a busy feed makes
+            # likely, and close() would then wait on this task forever.
+            while not self._is_closing:
                 if self._is_connection_open() and self.ws is not None:
                     try:
                         await self._receive_and_process_message()
