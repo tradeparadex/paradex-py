@@ -20,6 +20,8 @@ class ParadexSubkey(ParadexL2):
         logger (logging.Logger, optional): Logger. Defaults to None.
         ws_timeout (int, optional): WebSocket read timeout in seconds. Defaults to None.
         ws_enabled (bool, optional): Whether to create a WebSocket client. Defaults to True.
+        ws_sbe_enabled (bool, optional): Use SBE binary encoding on the WebSocket. Defaults to True,
+            which the Paradex endpoints require; pass False only for an endpoint that still serves JSON.
 
     Examples:
         >>> from paradex_py import ParadexSubkey
