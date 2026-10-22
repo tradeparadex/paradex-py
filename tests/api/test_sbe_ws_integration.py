@@ -567,13 +567,48 @@ def test_subscription_error_logs_server_reason(caplog):
 # ── close() cannot hang on a busy feed ─────────────────────────────────
 
 
+def _busy_then_quiet_recv(frames: int):
+    """A recv() that returns at once for `frames` calls, as when frames are
+    buffered, then blocks. Finite so a reader that never yields still ends
+    and a broken build fails instead of hanging the run."""
+    calls = 0
+
+    async def recv():
+        nonlocal calls
+        calls += 1
+        if calls > frames:
+            await asyncio.Event().wait()
+        return _make_trade_frame()
+
+    return recv, lambda: calls
+
+
+@pytest.mark.asyncio
+async def test_reader_yields_between_buffered_frames():
+    """From Python 3.12 wait_for() awaits recv() inline, so a recv() with frames
+    buffered never suspends; the reader must yield or it starves the loop."""
+    ws_client = ParadexWebsocketClient(env=TESTNET, auto_start_reader=False)
+    ws_client.ws = _make_mock_ws()
+    frames = 500
+    ws_client.ws.recv, calls = _busy_then_quiet_recv(frames)
+    reader = asyncio.create_task(ws_client._read_messages())
+    try:
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+        assert calls() < frames, "the reader drained the whole buffer before the loop ran anything else"
+    finally:
+        ws_client._is_closing = True
+        reader.cancel()
+        await asyncio.wait({reader}, timeout=5)
+
+
 @pytest.mark.asyncio
 async def test_reader_stops_once_closing_even_without_cancel():
     """On Python 3.11 wait_for() can drop a cancel that lands as recv() completes,
     so the reader must also stop on _is_closing or close() waits on it forever."""
     ws_client = ParadexWebsocketClient(env=TESTNET, auto_start_reader=False)
     ws_client.ws = _make_mock_ws()
-    ws_client.ws.recv.return_value = _make_trade_frame()  # a feed that never goes quiet
+    ws_client.ws.recv, _ = _busy_then_quiet_recv(20_000)  # a feed that does not go quiet
     reader = asyncio.create_task(ws_client._read_messages())
     await asyncio.sleep(0.01)
     assert not reader.done()

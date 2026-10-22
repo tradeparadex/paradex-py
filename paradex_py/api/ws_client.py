@@ -637,6 +637,10 @@ class ParadexWebsocketClient:
                         await self._receive_and_process_message()
                     except Exception as e:
                         await self._handle_message_receive_error(e)
+                    # From Python 3.12, wait_for() awaits recv() inline, and recv()
+                    # returns without suspending while frames are buffered, so a busy
+                    # feed would never let the event loop run anything else.
+                    await asyncio.sleep(0)
                 elif self.reader_sleep_on_no_connection > 0:
                     await asyncio.sleep(self.reader_sleep_on_no_connection)
         except asyncio.CancelledError:
