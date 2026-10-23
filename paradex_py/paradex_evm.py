@@ -41,7 +41,8 @@ class ParadexEvm(_ClientBase):
         ws_timeout (int, optional): WebSocket read timeout in seconds. Defaults to None.
         ws_enabled (bool, optional): Whether to create a WebSocket client. Defaults to True.
             Set to False for REST-only use cases.
-        ws_sbe_enabled (bool, optional): Enable SBE encoding on WebSocket. Defaults to False.
+        ws_sbe_enabled (bool, optional): Use SBE binary encoding on the WebSocket. Defaults to True,
+            which the Paradex endpoints require; pass False only for an endpoint that still serves JSON.
         server_derive_address (bool, optional): Fetch the L2 address from
             ``GET /onboarding`` (signer type ``eip191``, one public request at construction)
             rather than deriving it locally from ``paraclear_evm_account_hash``. The server's
@@ -100,7 +101,7 @@ class ParadexEvm(_ClientBase):
         logger: logging.Logger | None = None,
         ws_timeout: int | None = None,
         ws_enabled: bool = True,
-        ws_sbe_enabled: bool = False,
+        ws_sbe_enabled: bool = True,
         server_derive_address: bool = True,
         vault_operator_address: str | None = None,
         vault_operator_index: int | None = None,

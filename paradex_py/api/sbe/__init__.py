@@ -13,6 +13,14 @@ Trade ids: from 1:2 a ``TradeEvent`` carries ``trade_id_str``, the full
 deprecated: it holds only the low 64 bits of that id and can be negative, so
 never key on it. ``trade_id_str`` is ``None`` only on a frame that predates it.
 
+Market summaries: from 1:3 a ``MarketSummaryEvent`` carries
+``settlement_twap_estimate``, as REST does: the running average of the
+underlying over the pre-expiry settlement window, ``None`` outside that window,
+for markets without an expiry, and on a frame that predates it.
+
+Fill flags are lower case (``interactive``, ``rpi``, ``fastfill``), as REST and
+the JSON feed spell them; ``unknown`` marks a flag this schema cannot name.
+
 BookEvent produces ``bids``/``asks`` arrays of ``[price_str, size_str]`` pairs.
 The JSON ``order_book`` channel produces ``inserts``/``updates``/``deletes`` dicts.
 """
@@ -37,10 +45,10 @@ from .codec import (
 # served one. The order is: ship the decoder, let installs turn over, then
 # raise this once the server cap goes up.
 #
-# nightly, testnet and prod all serve 1:2, so this now matches the decoder.
-# When the schema next moves ahead of what is served, this is the line that
-# holds back, not codec._SCHEMA_VERSION.
-NEGOTIATED_SCHEMA_VERSION = 2
+# nightly, testnet and prod all serve 1:3 (and refuse 1:4), so this matches
+# the decoder. When the schema next moves ahead of what is served, this is the
+# line that holds back, not codec._SCHEMA_VERSION.
+NEGOTIATED_SCHEMA_VERSION = 3
 
 __all__ = [
     "NEGOTIATED_SCHEMA_VERSION",

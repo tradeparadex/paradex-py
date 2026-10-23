@@ -57,6 +57,10 @@ markets = await paradex.api_client.get_markets()
 ```
 
 **WebSocket Usage:**
+
+The WebSocket clients connect with SBE binary encoding by default, which the Paradex endpoints
+require; frames are decoded to dicts before your callback runs.
+
 ```python
 async def on_message(ws_channel, message):
     print(ws_channel, message)

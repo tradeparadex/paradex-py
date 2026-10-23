@@ -6,6 +6,10 @@ subscribes to:
   - trades.<MARKET>                           (live trade feed)
   - order_book.<MARKET>.snapshot@15@100ms     (top-15 levels, 100ms refresh)
 
+Frames arrive SBE-encoded (the default) and are decoded to dicts, so the
+callbacks read the SBE field names: bid_price/ask_price on bbo, bids/asks
+[price, size] lists on order_book, and a millisecond timestamp.
+
 Pass --latency to compare delivery latency between the public and direct WS
 endpoints side-by-side (subscribes BBO on both, prints stats every 10s).
 
@@ -56,8 +60,8 @@ async def on_bbo(ws_channel: ParadexWebsocketChannel, message: dict) -> None:
     data = message["params"]["data"]
     logger.info(
         f"[bbo] {data.get('market')} "
-        f"bid={data.get('bid')} ({data.get('bid_size')}) "
-        f"ask={data.get('ask')} ({data.get('ask_size')})"
+        f"bid={data.get('bid_price')} ({data.get('bid_size')}) "
+        f"ask={data.get('ask_price')} ({data.get('ask_size')})"
     )
 
 
@@ -74,15 +78,14 @@ async def on_trades(ws_channel: ParadexWebsocketChannel, message: dict) -> None:
 
 async def on_order_book(ws_channel: ParadexWebsocketChannel, message: dict) -> None:
     data = message["params"]["data"]
-    inserts = data.get("inserts", [])
-    bids = [e for e in inserts if e.get("side") == "BUY"]
-    asks = [e for e in inserts if e.get("side") == "SELL"]
+    bids = data.get("bids", [])
+    asks = data.get("asks", [])
     best_bid = bids[0] if bids else None
     best_ask = asks[0] if asks else None
     logger.info(
         f"[order_book] {data.get('market')} "
-        f"type={data.get('update_type')} "
-        f"inserts={len(bids)}b/{len(asks)}a "
+        f"pkg={data.get('pkg_type')} "
+        f"levels={len(bids)}b/{len(asks)}a "
         f"best_bid={best_bid} "
         f"best_ask={best_ask}"
     )
@@ -109,7 +112,7 @@ async def run_latency_comparison(env: Environment, market: str) -> None:
     def make_bbo_cb(endpoint: str):
         async def cb(ws_channel: ParadexWebsocketChannel, message: dict) -> None:
             recv_ms = time.time() * 1000
-            server_ms = message["params"]["data"].get("last_updated_at")
+            server_ms = message["params"]["data"].get("timestamp")
             if server_ms:
                 samples[endpoint].append(recv_ms - server_ms)
 
