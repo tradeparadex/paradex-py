@@ -1,3 +1,5 @@
+import logging
+from decimal import Decimal
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -110,13 +112,24 @@ async def test_order_book_subscribe_snapshot_with_price_tick():
     assert name == "order_book.BTC-USD-PERP.snapshot@15@50ms@10"
 
 
-@pytest.mark.parametrize("price_tick", ["0.1", 0.1, "0_1"])
+@pytest.mark.parametrize(
+    ("price_tick", "suffix"),
+    [
+        ("0.1", "0_1"),
+        (0.1, "0_1"),
+        ("0_1", "0_1"),
+        (Decimal("0.10"), "0_1"),
+        (10.0, "10"),
+        (10, "10"),
+        ("1", "1"),
+    ],
+)
 @pytest.mark.asyncio
-async def test_order_book_subscribe_fractional_price_tick_uses_underscore(price_tick):
+async def test_order_book_subscribe_spells_price_tick_as_the_server_expects(price_tick, suffix):
     """A dot would split the channel name, so the server rejects @0.1 and
-    expects @0_1."""
+    expects @0_1; it also rejects trailing zeros such as @10_0 or @0_10."""
     name = await _subscribed_order_book_name({"market": "BTC-USD-PERP", "price_tick": price_tick})
-    assert name == "order_book.BTC-USD-PERP.snapshot@15@100ms@0_1"
+    assert name == f"order_book.BTC-USD-PERP.snapshot@15@100ms@{suffix}"
 
 
 @pytest.mark.asyncio
@@ -127,3 +140,17 @@ async def test_order_book_subscribe_deltas_takes_no_parameters():
         {"market": "BTC-USD-PERP", "feed_type": "deltas", "refresh_rate": "50ms", "price_tick": "0.1"}
     )
     assert name == "order_book.BTC-USD-PERP.deltas"
+
+
+@pytest.mark.asyncio
+async def test_order_book_subscribe_deltas_warns_about_ignored_parameters(caplog):
+    with caplog.at_level(logging.WARNING):
+        await _subscribed_order_book_name({"market": "BTC-USD-PERP", "feed_type": "deltas", "price_tick": "0.1"})
+    assert "ignoring price_tick" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_order_book_subscribe_deltas_without_extra_parameters_does_not_warn(caplog):
+    with caplog.at_level(logging.WARNING):
+        await _subscribed_order_book_name({"market": "BTC-USD-PERP", "feed_type": "deltas"})
+    assert "ignoring" not in caplog.text
