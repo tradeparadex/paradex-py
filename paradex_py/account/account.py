@@ -12,11 +12,18 @@ from starknet_py.net.http_client import HttpMethod
 from starknet_py.net.models.typed_data import TypedDataDict
 
 from paradex_py.account.starknet import Account as StarknetAccount
-from paradex_py.account.utils import derive_l2_address_starknet, flatten_signature, resolve_l2_keypair
+from paradex_py.account.utils import (
+    derive_l2_address_starknet,
+    flatten_signature,
+    resolve_l2_keypair,
+    sign_eip191_message,
+    sign_eip191_message_ledger,
+)
 from paradex_py.api.generated.requests import BlockOfferRequest, BlockTradeRequest
 from paradex_py.api.generated.responses import BlockTradeDetailFullResponse, BlockTradeSignature, SignatureType
 from paradex_py.api.models import SystemConfig
 from paradex_py.common.order import Order
+from paradex_py.environment import Environment
 from paradex_py.message.auth import build_auth_message, build_fullnode_message
 from paradex_py.message.block_trades import (
     BlockTrade,
@@ -29,6 +36,7 @@ from paradex_py.message.block_trades import (
 )
 from paradex_py.message.onboarding import build_onboarding_message
 from paradex_py.message.order import build_modify_order_message, build_order_message
+from paradex_py.message.siwe import build_parent_link_message, encode_siwe_message, siwe_domain
 from paradex_py.utils import raise_value_error, time_now_milli_secs
 
 FULLNODE_SIGNATURE_VERSION = "1.0.0"
@@ -52,6 +60,8 @@ class ParadexAccount:
         l1_private_key (Optional[str], optional): Ethereum private key. Defaults to None.
         l2_private_key (Optional[str], optional): Paradex private key. Defaults to None.
         rpc_version (Optional[str], optional): RPC version (e.g., "v0_9"). If provided, constructs URL as {base_url}/rpc/{rpc_version}. Defaults to None.
+        env (Optional[Environment], optional): Environment, which selects the SIWE domain of the parent link
+            proof sent when onboarding a new account. Without it no proof is sent. Defaults to None.
 
     Examples:
         >>> from paradex_py import Paradex
@@ -72,15 +82,17 @@ class ParadexAccount:
         rpc_version: str | None = None,
         l2_address: str | None = None,
         is_onboarded: bool | None = None,
+        env: Environment | None = None,
     ):
         self.config = config
+        self.env = env
 
         if l1_address is None:
             raise_value_error("Paradex: Provide Ethereum address")
         self.l1_address = l1_address
 
-        if l1_private_key is not None:
-            self.l1_private_key = int_from_hex(l1_private_key)
+        self.l1_private_key: int | None = int_from_hex(l1_private_key) if l1_private_key is not None else None
+        self.l1_private_key_from_ledger = bool(l1_private_key_from_ledger)
 
         key_pair = resolve_l2_keypair(
             config=config,
@@ -168,10 +180,42 @@ class ParadexAccount:
         return self._sign_typed_data(message)
 
     def onboarding_headers(self) -> dict:
-        return {
+        headers = {
             "PARADEX-ETHEREUM-ACCOUNT": self.l1_address,
             "PARADEX-STARKNET-ACCOUNT": hex(self.l2_address),
             "PARADEX-STARKNET-SIGNATURE": self.onboarding_signature(),
+        }
+        headers.update(self._parent_link_headers())
+        return headers
+
+    def _parent_link_headers(self) -> dict[str, str]:
+        """Headers proving the L1 wallet is the parent of this account, for a new account.
+
+        The L1 key (or Ledger) signs a SIWE message linking the wallet to the account,
+        which lets Paradex create the account without first checking the wallet's
+        balances. Each call signs once, so with a Ledger each call asks for approval.
+
+        Returns no headers, and signs nothing, when the account is known to exist, when
+        only an L2 key is available, or when no environment was given.
+        """
+        if self.is_onboarded is True or self.env is None:
+            return {}
+        if self.l1_private_key is None and not self.l1_private_key_from_ledger:
+            return {}
+        message = build_parent_link_message(
+            domain=siwe_domain(self.env),
+            wallet=self.l1_address,
+            account=self.l2_address,
+            starknet_chain_id=self.config.starknet_chain_id,
+            l1_chain_id=self.config.l1_chain_id,
+        )
+        if self.l1_private_key is not None:
+            signature = sign_eip191_message(message, self.l1_private_key)
+        else:
+            signature = sign_eip191_message_ledger(message, self.l1_address)
+        return {
+            "PARADEX-PARENT-SIWE-MESSAGE": encode_siwe_message(message),
+            "PARADEX-PARENT-SIGNATURE": signature,
         }
 
     def auth_signature(self, timestamp: int, expiry: int) -> str:

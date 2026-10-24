@@ -1744,6 +1744,7 @@ source = { editable = "." }
 dependencies = [
     { name = "eth-account" },
     { name = "eth-keys" },
+    { name = "eth-utils" },
     { name = "httpx" },
     { name = "ledgereth" },
     { name = "marshmallow-dataclass" },
@@ -1778,6 +1779,7 @@ dev = [
 requires-dist = [
     { name = "eth-account", specifier = ">=0.13.6" },
     { name = "eth-keys", specifier = ">=0.6.1" },
+    { name = "eth-utils", specifier = ">=2.0.0" },
     { name = "httpx", specifier = ">=0.27.0,<0.28.0" },
     { name = "ledgereth", specifier = ">=0.10.0" },
     { name = "marshmallow-dataclass", specifier = ">=8.6.1,<9.0.0" },
