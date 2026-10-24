@@ -120,6 +120,38 @@ class TestParadexAddressDerivation:
         assert paradex.account.l2_address == derive_l2_address_starknet(paradex.config, paradex.account.l2_public_key)
         assert paradex.is_onboarded is None
 
+    def test_warns_when_the_server_address_is_not_the_legacy_one(self):
+        api = MockApiClient(onboarding_response=dict(MOCK_ONBOARDING_STARKNET, address=SERVER_ADDRESS))
+        paradex = _bare_paradex(api)
+
+        with patch("paradex_py.account.account.FullNodeClient"):
+            paradex.init_account(l1_address=TEST_L1_ADDRESS, l1_private_key=TEST_L1_PRIVATE_KEY)
+
+        assert paradex.account is not None
+        legacy = hex(derive_l2_address_starknet(paradex.config, paradex.account.l2_public_key))
+        paradex.logger.warning.assert_called_once()
+        message = paradex.logger.warning.call_args.args[0]
+        assert SERVER_ADDRESS in message
+        assert legacy in message
+        assert "server_derive_address=False" in message
+
+    def test_no_warning_when_the_server_address_is_the_legacy_one(self):
+        api = MockApiClient()
+        paradex = _bare_paradex(api)
+        legacy_address: list[str] = []
+
+        def fetch_onboarding(params):
+            legacy_address.append(hex(derive_l2_address_starknet(paradex.config, int(params["public_key"], 16))))
+            return dict(MOCK_ONBOARDING_STARKNET, address=legacy_address[0])
+
+        api.fetch_onboarding = fetch_onboarding
+        with patch("paradex_py.account.account.FullNodeClient"):
+            paradex.init_account(l1_address=TEST_L1_ADDRESS, l1_private_key=TEST_L1_PRIVATE_KEY)
+
+        assert paradex.account is not None
+        assert paradex.account.l2_address == int(legacy_address[0], 16)
+        paradex.logger.warning.assert_not_called()
+
     def test_request_failure_raises_and_leaves_account_unset(self):
         api = MagicMock()
         api.fetch_onboarding.side_effect = ConnectionError("network down")

@@ -263,6 +263,15 @@ class Paradex(_ClientBase):
                 {"account_signer_type": "starknet", "public_key": hex(key_pair.public_key)},
                 "Paradex",
             )
+            legacy_address = derive_l2_address_starknet(self.config, key_pair.public_key)
+            if int(l2_address_hex, 16) != legacy_address:
+                # Expected for accounts created with the current class; logged so that a switch away
+                # from a legacy account (the address server_derive_address=False used) is visible.
+                self.logger.warning(
+                    f"Paradex: using account {l2_address_hex} from GET /onboarding, not the legacy "
+                    f"proxy-class address {hex(legacy_address)}. If this key's account is at "
+                    f"{hex(legacy_address)}, pass server_derive_address=False."
+                )
         else:
             l2_address_hex = hex(derive_l2_address_starknet(self.config, key_pair.public_key))
 
