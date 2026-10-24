@@ -604,11 +604,11 @@ class TestParadexEvm:
     @patch("paradex_py.paradex_evm.EvmAccount")
     @patch("paradex_py.paradex_evm.ParadexWebsocketClient")
     @patch("paradex_py.paradex_evm.ParadexApiClient")
-    def test_successful_init(self, MockApiClient, MockWsClient, MockEvmAccount, mock_derive):
+    def test_successful_init_local_derivation(self, MockApiClient, MockWsClient, MockEvmAccount, mock_derive):
         mock_api = MockApiClient.return_value
         mock_api.fetch_system_config.return_value = MOCK_SYSTEM_CONFIG
 
-        p = ParadexEvm(env=TESTNET, evm_address=EVM_ADDR, evm_private_key=EVM_KEY)
+        p = ParadexEvm(env=TESTNET, evm_address=EVM_ADDR, evm_private_key=EVM_KEY, server_derive_address=False)
 
         MockApiClient.assert_called_once_with(env=TESTNET, logger=None)
         mock_api.fetch_system_config.assert_called_once()
@@ -631,7 +631,9 @@ class TestParadexEvm:
     @patch("paradex_py.paradex_evm.ParadexApiClient")
     def test_ws_timeout_forwarded(self, MockApiClient, MockWsClient, MockEvmAccount, mock_derive):
         MockApiClient.return_value.fetch_system_config.return_value = MOCK_SYSTEM_CONFIG
-        ParadexEvm(env=TESTNET, evm_address=EVM_ADDR, evm_private_key=EVM_KEY, ws_timeout=42)
+        ParadexEvm(
+            env=TESTNET, evm_address=EVM_ADDR, evm_private_key=EVM_KEY, ws_timeout=42, server_derive_address=False
+        )
         MockWsClient.assert_called_once_with(
             env=TESTNET, logger=None, ws_timeout=42, api_client=MockApiClient.return_value, sbe_enabled=True
         )
@@ -642,7 +644,9 @@ class TestParadexEvm:
     @patch("paradex_py.paradex_evm.ParadexApiClient")
     def test_ws_enabled_false_skips_ws_client(self, MockApiClient, MockWsClient, MockEvmAccount, mock_derive):
         MockApiClient.return_value.fetch_system_config.return_value = MOCK_SYSTEM_CONFIG
-        p = ParadexEvm(env=TESTNET, evm_address=EVM_ADDR, evm_private_key=EVM_KEY, ws_enabled=False)
+        p = ParadexEvm(
+            env=TESTNET, evm_address=EVM_ADDR, evm_private_key=EVM_KEY, ws_enabled=False, server_derive_address=False
+        )
         MockWsClient.assert_not_called()
         assert p.ws_client is None
 
@@ -669,7 +673,7 @@ class TestParadexEvm:
     def test_capabilities(self, MockApiClient, MockWsClient, MockEvmAccount, mock_derive):
         """Full account: withdraw yes, trade no (needs subkey), auth FULL."""
         MockApiClient.return_value.fetch_system_config.return_value = MOCK_SYSTEM_CONFIG
-        p = ParadexEvm(env=TESTNET, evm_address=EVM_ADDR, evm_private_key=EVM_KEY)
+        p = ParadexEvm(env=TESTNET, evm_address=EVM_ADDR, evm_private_key=EVM_KEY, server_derive_address=False)
         assert p.auth_level == AuthLevel.FULL
         assert p.is_authenticated is True
         assert p.can_trade is False
@@ -686,7 +690,7 @@ class TestParadexEvm:
         mock_api.fetch_system_config.return_value = MOCK_SYSTEM_CONFIG
         MockEvmAccount.return_value.l2_address = 0xDEADBEEF
 
-        p = ParadexEvm(env=TESTNET, evm_address=EVM_ADDR, evm_private_key=EVM_KEY)
+        p = ParadexEvm(env=TESTNET, evm_address=EVM_ADDR, evm_private_key=EVM_KEY, server_derive_address=False)
 
         with (
             patch("paradex_py.paradex_evm.KeyPair") as MockKeyPair,
@@ -721,7 +725,7 @@ class TestParadexEvm:
         mock_api.fetch_system_config.return_value = MOCK_SYSTEM_CONFIG
         MockEvmAccount.return_value.l2_address = 0xDEADBEEF
 
-        p = ParadexEvm(env=TESTNET, evm_address=EVM_ADDR, evm_private_key=EVM_KEY)
+        p = ParadexEvm(env=TESTNET, evm_address=EVM_ADDR, evm_private_key=EVM_KEY, server_derive_address=False)
 
         with (
             patch("paradex_py.paradex_evm.KeyPair") as MockKeyPair,
@@ -782,6 +786,44 @@ class TestParadexEvm:
             is_vault_operator=False,
         )
 
+    @patch("paradex_py.paradex_evm.derive_l2_address_eip191")
+    @patch("paradex_py.paradex_evm.EvmAccount")
+    @patch("paradex_py.paradex_evm.ParadexWebsocketClient")
+    @patch("paradex_py.paradex_evm.ParadexApiClient")
+    def test_default_derives_address_on_server(self, MockApiClient, MockWsClient, MockEvmAccount, mock_derive):
+        """With no flag, the address comes from GET /onboarding, not local derivation."""
+        mock_api = MockApiClient.return_value
+        mock_api.fetch_system_config.return_value = MOCK_SYSTEM_CONFIG
+        mock_api.fetch_onboarding.return_value = {"address": "0xabc123", "exists": False}
+
+        p = ParadexEvm(env=TESTNET, evm_address=EVM_ADDR, evm_private_key=EVM_KEY)
+
+        mock_api.fetch_onboarding.assert_called_once()
+        mock_derive.assert_not_called()
+        assert MockEvmAccount.call_args.kwargs["l2_address"] == "0xabc123"
+        assert MockEvmAccount.call_args.kwargs["is_onboarded"] is False
+        assert p.server_derive_address is True
+
+    @patch("paradex_py.paradex_evm.derive_l2_address_eip191")
+    @patch("paradex_py.paradex_evm.EvmAccount")
+    @patch("paradex_py.paradex_evm.ParadexWebsocketClient")
+    @patch("paradex_py.paradex_evm.ParadexApiClient")
+    def test_server_derive_failure_raises_without_fallback(
+        self, MockApiClient, MockWsClient, MockEvmAccount, mock_derive
+    ):
+        """A failed GET /onboarding raises a ValueError naming the opt-out; the SDK must not
+        fall back to a locally derived address that may belong to a different account."""
+        mock_api = MockApiClient.return_value
+        mock_api.fetch_system_config.return_value = MOCK_SYSTEM_CONFIG
+        mock_api.fetch_onboarding.side_effect = ConnectionError("network down")
+
+        with pytest.raises(ValueError, match="server_derive_address=False") as exc_info:
+            ParadexEvm(env=TESTNET, evm_address=EVM_ADDR, evm_private_key=EVM_KEY)
+
+        assert isinstance(exc_info.value.__cause__, ConnectionError)
+        mock_derive.assert_not_called()
+        MockEvmAccount.assert_not_called()
+
     @patch("paradex_py.paradex_evm.EvmAccount")
     @patch("paradex_py.paradex_evm.ParadexWebsocketClient")
     @patch("paradex_py.paradex_evm.ParadexApiClient")
@@ -822,6 +864,7 @@ class TestParadexEvm:
             env=TESTNET,
             evm_address=EVM_ADDR,
             evm_private_key=EVM_KEY,
+            server_derive_address=False,
             vault_operator_index=2,
         )
 
@@ -928,6 +971,25 @@ class TestParadexEvm:
                 server_derive_address=True,
                 vault_operator_index=0,
             )
+        MockEvmAccount.assert_not_called()
+
+    @patch("paradex_py.paradex_evm.derive_vault_operator_l2_address_eip191")
+    @patch("paradex_py.paradex_evm.EvmAccount")
+    @patch("paradex_py.paradex_evm.ParadexWebsocketClient")
+    @patch("paradex_py.paradex_evm.ParadexApiClient")
+    def test_vault_operator_index_default_fetch_failure_raises(
+        self, MockApiClient, MockWsClient, MockEvmAccount, mock_derive_op
+    ):
+        """By default the operator address comes from the server too; a failed request
+        raises the wrapped error rather than falling back to local derivation."""
+        mock_api = MockApiClient.return_value
+        mock_api.fetch_system_config.return_value = MOCK_SYSTEM_CONFIG
+        mock_api.fetch_onboarding.side_effect = ValueError("HTTP 503: unavailable")
+
+        with pytest.raises(ValueError, match="could not fetch the account address"):
+            ParadexEvm(env=TESTNET, evm_address=EVM_ADDR, evm_private_key=EVM_KEY, vault_operator_index=0)
+
+        mock_derive_op.assert_not_called()
         MockEvmAccount.assert_not_called()
 
     @patch("paradex_py.paradex_evm.ParadexApiClient")
