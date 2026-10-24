@@ -201,33 +201,43 @@ def _paradex(exists: bool | None) -> Paradex:
     return paradex
 
 
-@pytest.mark.parametrize("exists", [False, None])
-def test_init_account_keeps_the_l1_key_for_a_new_account(exists):
+def _paradex_with_auto_auth(exists: bool | None) -> tuple[Paradex, list[dict]]:
+    """A Paradex whose auto_auth init_account records the onboarding headers it would send."""
     paradex = _paradex(exists)
+    paradex.api_client.auto_auth = True
+    sent: list[dict] = []
+    paradex.api_client.init_account = lambda account: sent.append(account.onboarding_headers())
+    return paradex, sent
+
+
+@pytest.mark.parametrize("exists", [False, None])
+def test_init_account_signs_a_proof_then_drops_the_l1_key_with_auto_auth(exists):
+    paradex, sent = _paradex_with_auto_auth(exists)
 
     paradex.init_account(l1_address=TEST_L1_ADDRESS, l1_private_key=TEST_L1_PRIVATE_KEY)
 
     assert paradex.account is not None
     assert paradex.account.env == TESTNET
-    assert set(paradex.account.onboarding_headers()) >= PARENT_HEADERS
-
-
-def test_init_account_drops_the_l1_key_once_auto_auth_has_onboarded():
-    paradex = _paradex(exists=False)
-    paradex.api_client.auto_auth = True
-    sent: list[dict] = []
-    paradex.api_client.init_account = lambda account: sent.append(account.onboarding_headers())
-
-    paradex.init_account(l1_address=TEST_L1_ADDRESS, l1_private_key=TEST_L1_PRIVATE_KEY)
-
-    assert paradex.account is not None
     assert set(sent[0]) >= PARENT_HEADERS
     assert paradex.account.l1_private_key is None
     assert paradex.account.l1_private_key_from_ledger is False
 
 
-def test_init_account_drops_the_l1_key_for_an_existing_account():
-    paradex = _paradex(exists=True)
+def test_init_account_drops_the_l1_key_when_auto_auth_onboarding_fails():
+    paradex = _paradex(exists=False)
+    paradex.api_client.auto_auth = True
+    paradex.api_client.init_account = MagicMock(side_effect=ValueError("onboarding failed"))
+
+    with pytest.raises(ValueError, match="onboarding failed"):
+        paradex.init_account(l1_address=TEST_L1_ADDRESS, l1_private_key=TEST_L1_PRIVATE_KEY)
+
+    assert paradex.account is not None
+    assert paradex.account.l1_private_key is None
+
+
+@pytest.mark.parametrize("exists", [False, None])
+def test_init_account_keeps_no_l1_key_without_auto_auth(exists):
+    paradex = _paradex(exists)
 
     paradex.init_account(l1_address=TEST_L1_ADDRESS, l1_private_key=TEST_L1_PRIVATE_KEY)
 
@@ -236,17 +246,29 @@ def test_init_account_drops_the_l1_key_for_an_existing_account():
     assert set(paradex.account.onboarding_headers()) == STARKNET_HEADERS
 
 
+def test_init_account_sends_no_proof_for_an_existing_account():
+    paradex, sent = _paradex_with_auto_auth(exists=True)
+
+    paradex.init_account(l1_address=TEST_L1_ADDRESS, l1_private_key=TEST_L1_PRIVATE_KEY)
+
+    assert paradex.account is not None
+    assert paradex.account.l1_private_key is None
+    assert set(sent[0]) == STARKNET_HEADERS
+
+
 def test_init_account_with_an_l2_key_sends_no_proof():
-    paradex = _paradex(exists=False)
+    paradex, sent = _paradex_with_auto_auth(exists=False)
 
     paradex.init_account(l1_address=TEST_L1_ADDRESS, l2_private_key=TEST_L2_PRIVATE_KEY)
 
     assert paradex.account is not None
-    assert set(paradex.account.onboarding_headers()) == STARKNET_HEADERS
+    assert set(sent[0]) == STARKNET_HEADERS
 
 
 def test_init_account_with_a_ledger_asks_it_once_for_the_l2_key():
-    paradex = _paradex(exists=False)
+    paradex, _ = _paradex_with_auto_auth(exists=False)
+    ledger_flags: list[bool] = []
+    paradex.api_client.init_account = lambda account: ledger_flags.append(account.l1_private_key_from_ledger)
     key_pair = KeyPair.from_private_key(int(TEST_L2_PRIVATE_KEY, 16))
 
     with (
@@ -257,6 +279,7 @@ def test_init_account_with_a_ledger_asks_it_once_for_the_l2_key():
 
     resolve.assert_called_once()
     ledger_derive.assert_not_called()
+    assert ledger_flags == [True]
     assert paradex.account is not None
     assert paradex.account.l1_private_key is None
-    assert paradex.account.l1_private_key_from_ledger is True
+    assert paradex.account.l1_private_key_from_ledger is False

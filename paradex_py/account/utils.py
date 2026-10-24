@@ -63,6 +63,7 @@ def _sign_stark_key_message(stark_key_message, l1_private_key: int) -> str:
 
 def _find_ledger_account(eth_account_address: str):
     """Open the Ledger and find the derivation path of `eth_account_address` on it."""
+    # ledgereth caches the open handle, so later calls in this process reuse it rather than reopen the device.
     dongle = init_dongle()
     account = find_account(eth_account_address, dongle, count=10)
     if account is None:

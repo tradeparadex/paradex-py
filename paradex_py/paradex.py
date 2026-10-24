@@ -35,10 +35,10 @@ class Paradex(_ClientBase):
     Args:
         env (Environment): Environment
         l1_address (str, optional): L1 address. Defaults to None.
-        l1_private_key (str, optional): L1 private key. When onboarding a new account it also signs a SIWE
-            message linking the L1 wallet as the account's parent. Defaults to None.
-        l1_private_key_from_ledger (bool, optional): Derive L2 key from Ledger hardware wallet. Onboarding a new
-            account then asks the Ledger to sign the parent link message too. Defaults to False.
+        l1_private_key (str, optional): L1 private key. When ``auto_auth`` onboards a new account it also signs a
+            SIWE message linking the L1 wallet as the account's parent. Defaults to None.
+        l1_private_key_from_ledger (bool, optional): Derive L2 key from Ledger hardware wallet. When ``auto_auth``
+            onboards a new account, the Ledger signs the parent link message too. Defaults to False.
         l2_private_key (str, optional): L2 private key. Onboarding with only this key sends no parent link.
             Defaults to None.
         logger (logging.Logger, optional): Logger. Defaults to None.
@@ -269,15 +269,18 @@ class Paradex(_ClientBase):
             rpc_version=rpc_version,
             env=self.env,
         )
-        if is_onboarded is not True:
+        if is_onboarded is not True and self.api_client.auto_auth:
             # A new account's onboarding carries a parent link proof signed by the L1 key.
             # Set after construction so the L2 key is not derived (or the Ledger asked) twice,
-            # and only here so the L1 key is not kept for an account known to exist.
+            # and only here so the L1 key is not kept for an account known to exist. Without
+            # auto_auth, onboarding runs after this call returns, so the L1 key is never kept
+            # and a manual onboarding() sends no proof.
             self.account.l1_private_key = int_from_hex(l1_private_key) if l1_private_key is not None else None
             self.account.l1_private_key_from_ledger = l1_private_key_from_ledger
-        self.api_client.init_account(self.account)
-        if self.api_client.auto_auth:
-            # Onboarding has run by now if the account needed it, so the L1 key has nothing left to sign.
+        try:
+            self.api_client.init_account(self.account)
+        finally:
+            # Onboarding has run (or failed) by now, so the L1 key has nothing left to sign.
             self.account.l1_private_key = None
             self.account.l1_private_key_from_ledger = False
         if self.ws_client is not None:

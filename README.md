@@ -24,7 +24,9 @@ print(hex(paradex.account.l2_private_key)) # 0x...
 
 When this onboards a new account, the L1 key (or Ledger) also signs a Sign-In with Ethereum message linking
 the wallet as the account's parent, sent in the `PARADEX-PARENT-SIWE-MESSAGE` and `PARADEX-PARENT-SIGNATURE`
-headers. An account that already exists, or one onboarded with only an L2 key, signs nothing extra.
+headers. An account that already exists, one onboarded with only an L2 key, or one onboarded by calling
+`onboarding()` yourself with `auto_auth=False` signs nothing extra; the SDK drops the L1 key once
+`init_account` returns.
 
 ### L2-Only Authentication (Subkey)
 
