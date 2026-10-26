@@ -180,7 +180,7 @@ class Signer(Protocol):
 class OwnerSigner(Protocol):
     """Protocol for the account owner's signature over session typed data.
 
-    Every owner signature that ``SessionAccounts`` needs goes through this hook, so a wallet,
+    ``register_session`` gets the owner's signature on a session grant through this hook, so a wallet,
     hardware device or MPC service can sign the EIP-712 typed data itself; the SDK never needs
     the owner's key. ``LocalOwnerSigner`` is the in-process implementation.
     """

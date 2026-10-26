@@ -28,6 +28,7 @@ from paradex_py.session_accounts import (
     SessionAccounts,
     SessionDroppedError,
     SessionRejectedError,
+    SessionRevokeError,
     new_session_key,
     register_session,
 )
@@ -76,6 +77,7 @@ class FakeServer:
         self.auth_counts: dict[str, int] = {}
         self.grant_state = "active"
         self.status_code = 200
+        self.delete_status = 204
         self.fail_connect_after: int | None = None
 
     def handler(self, request: httpx.Request) -> httpx.Response:
@@ -93,8 +95,12 @@ class FakeServer:
                     self.refuse_orders_with, json={"error": "FORBIDDEN", "message": "no", "data": None}
                 )
             return httpx.Response(201, json={"id": "order-1"})
-        if path == "/v2/sessions":
-            return httpx.Response(201, json={"grant_id": GRANT_ID, "expires_at": 1, "accounts": [MAIN]})
+        if path.startswith("/v2/sessions"):
+            return self._sessions(request)
+        return httpx.Response(204)
+
+    def _sessions(self, request: httpx.Request) -> httpx.Response:
+        path = request.url.path
         if path == f"/v2/sessions/{GRANT_ID}/status":
             assert "Authorization" not in request.headers  # the status endpoint is unauthenticated
             if self.status_code == 0:
@@ -103,9 +109,11 @@ class FakeServer:
                 return httpx.Response(self.status_code, json={"error": "X", "message": "x", "data": None})
             return httpx.Response(200, json={"state": self.grant_state})
         if path == f"/v2/sessions/{GRANT_ID}" and request.method == "DELETE":
+            if self.delete_status != 204:
+                return httpx.Response(self.delete_status, json={"error": "X", "message": "x", "data": None})
             self.grant_state = "revoked"
             return httpx.Response(204)
-        return httpx.Response(204)
+        return httpx.Response(201, json={"grant_id": GRANT_ID, "expires_at": 1, "accounts": [MAIN]})
 
     def client(self) -> httpx.Client:
         return httpx.Client(transport=httpx.MockTransport(self.handler))
@@ -771,3 +779,87 @@ def test_new_session_key_is_a_matching_pair():
     private, public = new_session_key()
     assert hex(KeyPair.from_private_key(int(private, 16)).public_key) == public
     assert new_session_key()[0] != private
+
+
+@pytest.mark.parametrize(
+    ("params", "payload"),
+    [
+        ({"on_behalf_of_account": SUB_1}, None),
+        (None, {"market": "BTC-USD-PERP", "on_behalf_of_account": SUB_1}),
+        (None, [{"market": "BTC-USD-PERP"}, {"on_behalf_of": SUB_1}]),
+    ],
+)
+def test_raw_client_refuses_on_behalf_of(params, payload):
+    server = FakeServer()
+    session = _session(server, Clock())
+    with pytest.raises(ValueError, match="on_behalf_of"):
+        session.api(MAIN)._post_authorized(path="orders", payload=payload, params=params)
+    assert not server.by_path("/v1/orders")
+
+
+def test_revoke_keeps_the_session_when_the_server_does_not_confirm():
+    server, clock = FakeServer(), Clock()
+    session = _session(server, clock)
+    server.delete_status = 500
+
+    with pytest.raises(SessionRevokeError) as excinfo:
+        session.revoke()
+
+    assert excinfo.value.status_code == 500
+    assert session.is_live
+    server.delete_status = 204
+    session.revoke()  # the call can be retried
+    assert not session.is_live
+
+
+def test_revoke_of_a_grant_the_server_no_longer_has_drops():
+    server, clock = FakeServer(), Clock()
+    session = _session(server, clock)
+    server.delete_status = 404
+    session.revoke()
+    assert session.dropped_reason == "revoked by this session"
+
+
+@pytest.mark.asyncio
+async def test_refused_websocket_login_with_an_active_grant_keeps_the_session_and_reconnects():
+    server, clock, connector = FakeServer(), Clock(), FakeConnector()
+    session = _session(server, clock, ws_enabled=True, ws_connector=connector)
+    await session.connect_ws()
+    server.revoked.add(SUB_1)  # the login is refused, but the grant is still active
+
+    await session._sockets[SUB_1]._reconnect_with_auth_refresh()
+
+    assert session.is_live
+    assert server.auth_counts[SUB_1] == 1 + 3  # the first login, then three refused attempts
+    assert len(server.by_path(f"/v2/sessions/{GRANT_ID}/status")) == 3
+    assert len(connector.sockets) == 4  # it still reconnected
+    await session.close()
+
+
+@pytest.mark.asyncio
+async def test_reconnect_with_an_expired_jwt_logs_in_again_first():
+    server, clock, connector = FakeServer(), Clock(), FakeConnector()
+    session = _session(server, clock, ws_enabled=True, ws_connector=connector)
+    await session.connect_ws()
+    ws = session._sockets[MAIN]
+    ws.account.set_jwt_token(_jwt(MAIN, time.time() - 1))
+
+    await ws._reconnect()
+
+    assert server.auth_counts[MAIN] == 2
+    assert connector.sockets[-1].sent[0]["params"]["bearer"] == _jwt_account(session, MAIN)
+    await session.close()
+
+
+@pytest.mark.asyncio
+async def test_failed_construction_stops_websocket_readers():
+    server, clock = FakeServer(), Clock()
+    server.revoked.add(SUB_1)
+    server.grant_state = "revoked"
+
+    with pytest.raises(SessionDroppedError):
+        _session(server, clock, ws_enabled=True, ws_connector=FakeConnector())
+    await asyncio.sleep(0)
+
+    readers = [t for t in asyncio.all_tasks() if "_read_messages" in repr(t.get_coro())]
+    assert all(t.cancelled() or t.done() for t in readers)

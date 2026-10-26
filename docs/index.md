@@ -135,9 +135,11 @@ grant = SessionGrant.new(
     ttl_seconds=7 * 24 * 3600,
 )
 # Any OwnerSigner works here, e.g. an MPC service that signs the EIP-712 typed data itself.
-register_session("testnet", grant, LocalOwnerSigner("0x<owner-eth-key>"))
+grant_id = register_session("testnet", grant, LocalOwnerSigner("0x<owner-eth-key>"))["grant_id"]
 
-session = SessionAccounts(env="testnet", grant=grant, session_private_key=session_private_key)
+session = SessionAccounts(
+    env="testnet", grant=grant, session_private_key=session_private_key, grant_id=grant_id
+)
 session.submit_order("0x<sub-account>", order)
 await session.connect_ws()
 ```

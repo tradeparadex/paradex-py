@@ -54,6 +54,7 @@ __all__ = [
     "SessionAccounts",
     "SessionDroppedError",
     "SessionRejectedError",
+    "SessionRevokeError",
     "SessionWebsocketError",
     "new_session_key",
     "register_session",
@@ -80,6 +81,14 @@ class SessionRejectedError(ValueError):
 
     def __init__(self, status_code: int, body: str):
         super().__init__(f"HTTP {status_code}: {body[:200]}")
+        self.status_code = status_code
+
+
+class SessionRevokeError(RuntimeError):
+    """The server did not confirm revoking the grant; the session is still live."""
+
+    def __init__(self, status_code: int, body: str):
+        super().__init__(f"revoke failed: HTTP {status_code}: {body[:200]}")
         self.status_code = status_code
 
 
@@ -191,6 +200,13 @@ class _SessionKeyAccount(SubkeyAccount):
         }
 
 
+def _refuse_on_behalf_of(params: Any, payload: Any) -> None:
+    bodies = payload if isinstance(payload, list) else [payload]
+    for fields in (params, *bodies):
+        if isinstance(fields, dict) and _FORBIDDEN_ORDER_FIELDS.intersection(fields):
+            raise_value_error("SessionAccounts: sessions never act on_behalf_of another account")
+
+
 class _SessionApiClient(ParadexApiClient):
     """REST client for one account of a session: refuses calls once the session is dropped."""
 
@@ -206,6 +222,7 @@ class _SessionApiClient(ParadexApiClient):
         return super()._handle_response(res, url, http_method)
 
     def request(self, url: str, http_method: HttpMethod, *args: Any, **kwargs: Any):
+        _refuse_on_behalf_of(kwargs.get("params"), kwargs.get("payload"))
         try:
             return super().request(url, http_method, *args, **kwargs)
         except SessionRejectedError as e:
@@ -237,9 +254,10 @@ class _SessionApiClient(ParadexApiClient):
         The endpoint needs no login, so it answers even when the session's own JWTs are refused. The
         request is sent without the ``Authorization`` header. Returns None when there is no usable answer.
         """
-        headers = {k: v for k, v in self.client.headers.items() if k.lower() != "authorization"}
-        request = httpx.Request("GET", f"{self._v2_api_url}/sessions/{self._owner.grant_id}/status", headers=headers)
-        res = self.client.send(request)  # send(), not get(): the client's default Authorization header stays off
+        # build_request() applies the client's timeout and headers; the login header is then removed.
+        request = self.client.build_request("GET", f"{self._v2_api_url}/sessions/{self._owner.grant_id}/status")
+        request.headers.pop("Authorization", None)
+        res = self.client.send(request)
         if res.status_code == 404:
             return "unknown"
         if res.status_code != 200:
@@ -270,6 +288,16 @@ class _SessionWebsocketClient(ParadexWebsocketClient):
         return connected
 
     async def _reconnect(self):
+        if not self._owner.is_live:
+            return
+        if self._is_token_expired():
+            # Log in on a thread: a session login may back off with blocking sleeps.
+            try:
+                await asyncio.to_thread(self._session_client.auth)
+            except SessionDroppedError:
+                return
+            except SessionRejectedError:
+                self.logger.warning(f"{self.classname}: session login refused; the grant is still active, retrying")
         if self._owner.is_live:
             await super()._reconnect()
 
@@ -381,9 +409,16 @@ class SessionAccounts:
                     self._sockets[address] = ws
                 client.init_account(account)  # mints the account's first JWT
         except BaseException:
-            for client in self._clients.values():
-                client.client.close()
+            self._release()
             raise
+
+    def _release(self) -> None:
+        """Undo a construction that failed part-way: stop socket readers and close HTTP clients."""
+        for ws in self._sockets.values():
+            if ws._reader_task is not None:
+                ws._reader_task.cancel()
+        for client in self._clients.values():
+            client.client.close()
 
     def _build_clients(self, http_client_factory: Callable[[], httpx.Client] | None, auth_params: dict | None) -> None:
         for address in self.accounts:
@@ -428,14 +463,17 @@ class SessionAccounts:
     def revoke(self) -> None:
         """Revoke the grant on the server (``DELETE /v2/sessions/{grant_id}``), then drop every account.
 
+        The session drops only when the server confirms: success, or 404 for a grant it no longer has.
+        Otherwise it stays live and :class:`SessionRevokeError` is raised, so the call can be retried.
         Call it before :meth:`close`: a dropped session no longer logs in, so it cannot revoke.
         """
         client = self._clients[self.accounts[0]]
         client._validate_auth()
-        try:
-            client.delete(api_url=client._v2_api_url, path=f"sessions/{self.grant_id}")
-        finally:
-            self.drop("revoked by this session")
+        url = f"{client._v2_api_url}/sessions/{self.grant_id}"
+        res = client.client.send(client.client.build_request("DELETE", url))
+        if not (res.is_success or res.status_code == 404):
+            raise SessionRevokeError(res.status_code, res.text)
+        self.drop("revoked by this session")
 
     def drop(self, reason: str) -> None:
         """Drop every account at once: clear JWTs, close sockets, refuse further calls. Idempotent."""
@@ -530,7 +568,8 @@ class SessionAccounts:
             self._expiry_task = self._loop.create_task(self._drop_at_expiry())
         connected: list[ParadexWebsocketClient] = []
         for address, ws in self._sockets.items():
-            self._clients[address]._validate_auth()  # fresh JWT before the socket authenticates
+            # A fresh JWT before the socket authenticates, off the loop (a login may back off).
+            await asyncio.to_thread(self._clients[address]._validate_auth)
             if not await ws.connect():
                 for open_ws in connected:
                     await open_ws.close()
@@ -551,6 +590,4 @@ class SessionAccounts:
         self.api(account).cancel_order(order_id)
 
     def cancel_all_orders(self, account: str, params: dict | None = None) -> None:
-        if params and _FORBIDDEN_ORDER_FIELDS.intersection(params):
-            raise_value_error("SessionAccounts: sessions never act on_behalf_of another account")
         self.api(account).cancel_all_orders(params)
