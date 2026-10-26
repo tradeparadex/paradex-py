@@ -380,17 +380,20 @@ class Limits:
     ``caps`` optionally refuses a stated limit above a value before anything is signed, keyed by message
     field name (e.g. ``{"maxOrderNotional": "250000"}``); ``"none"`` is over any cap. There are no caps
     by default (:data:`DEFAULT_LIMIT_CAPS`); the server enforces its own.
+
+    ``Limits()`` states no caps: every limit ``"none"`` and markets ``["*"]``. It is what a grant uses
+    unless told otherwise, and while the server enforces no session limits it is the only form it accepts.
     """
 
-    max_order_notional: str
-    max_open_notional: str
-    daily_notional: str
-    max_loss: str
-    max_leverage: str
+    max_order_notional: str = NO_LIMIT
+    max_open_notional: str = NO_LIMIT
+    daily_notional: str = NO_LIMIT
+    max_loss: str = NO_LIMIT
+    max_leverage: str = NO_LIMIT
     markets: Sequence[str] = (ALL_MARKETS,)
     caps: Mapping[str, str] = field(default_factory=lambda: DEFAULT_LIMIT_CAPS, compare=False, repr=False)
 
-    def to_message(self, *, numeric_max_loss: bool = False) -> dict[str, Any]:
+    def to_message(self) -> dict[str, Any]:
         message: dict[str, Any] = {
             "maxOrderNotional": _limit(self.max_order_notional, "maxOrderNotional"),
             "maxOpenNotional": _limit(self.max_open_notional, "maxOpenNotional"),
@@ -399,8 +402,6 @@ class Limits:
             "maxLeverage": _limit(self.max_leverage, "maxLeverage"),
             "markets": _markets(self.markets),
         }
-        if numeric_max_loss and message["maxLoss"] == NO_LIMIT:
-            raise_value_error("limits.maxLoss must be a number on builder grants, not 'none'")
         for name, cap in self.caps.items():
             if name not in _LIMIT_NAMES:
                 raise_value_error(f"limit cap names an unknown limit {name!r}")
@@ -530,7 +531,7 @@ class SessionGrant(_TypedMessage):
         session_key: The session's Stark public key.
         label: The front end's own label. Display uses the builder's registered name, not this.
         scopes: Granted scopes, from :data:`GRANTABLE_SCOPES`.
-        limits: Trading limits.
+        limits: Trading limits; ``Limits()`` (no caps) by default.
         builder: Builder approval; ``Builder()`` for none.
         subaccounts: Sub-account addresses the session also covers. Empty means the anchor only.
         nonce: 128-bit random ``0x`` hex, chosen by the client (see :func:`new_nonce`).
@@ -544,7 +545,7 @@ class SessionGrant(_TypedMessage):
     session_key: str
     label: str
     scopes: Sequence[str]
-    limits: Limits
+    limits: Limits = field(default_factory=Limits)
     builder: Builder = field(default_factory=Builder)
     subaccounts: Sequence[str] = ()
     nonce: str = field(default_factory=new_nonce)
@@ -584,8 +585,7 @@ class SessionGrant(_TypedMessage):
             "sessionKey": _hex(self.session_key, "sessionKey"),
             "label": self.label,
             "scopes": scopes,
-            # A builder grant must cap losses.
-            "limits": self.limits.to_message(numeric_max_loss=self.builder.is_set),
+            "limits": self.limits.to_message(),
             "builder": self.builder.to_message(),
             "subaccounts": _subaccounts(account, self.subaccounts),
             "nonce": _nonce(self.nonce),
@@ -633,14 +633,14 @@ class Ceiling:
     subaccounts: Sequence[str] = ()
     include_future_subaccounts: bool = False
 
-    def to_message(self, account: str, *, numeric_max_loss: bool = False) -> dict[str, Any]:
+    def to_message(self, account: str) -> dict[str, Any]:
         if _uint(self.max_session_ttl, "maxSessionTtl") == 0 or self.max_session_ttl > SESSION_MAX_SECONDS:
             raise_value_error(f"ceiling.maxSessionTtl must be 1..{SESSION_MAX_SECONDS} seconds")
         if _uint(self.max_concurrent_sessions, "maxConcurrentSessions") == 0:
             raise_value_error("ceiling.maxConcurrentSessions must be positive")
         return {
             "scopes": _scopes(self.scopes),
-            "limits": self.limits.to_message(numeric_max_loss=numeric_max_loss),
+            "limits": self.limits.to_message(),
             "subaccounts": _subaccounts(account, self.subaccounts),
             "includeFutureSubaccounts": bool(self.include_future_subaccounts),
             "maxSessionTtl": _uint(self.max_session_ttl, "maxSessionTtl"),
@@ -681,8 +681,7 @@ class PasskeyGrant(_TypedMessage):
             "environment": _environment(self.environment),
             "account": account,
             "passkey": self.passkey.to_message(),
-            # A builder passkey must cap losses.
-            "ceiling": self.ceiling.to_message(account, numeric_max_loss=int(builder_account, 16) != 0),
+            "ceiling": self.ceiling.to_message(account),
             "builderAccount": builder_account,
             "nonce": _nonce(self.nonce),
             "issuedAt": self.issued_at,

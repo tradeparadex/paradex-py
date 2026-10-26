@@ -248,7 +248,6 @@ def test_grant_environment():
         ({"subaccounts": ["0x99", "0x099"]}, "must not repeat"),
         ({"subaccounts": ["0x123abc"]}, "anchor account"),
         ({"limits": dataclasses.replace(LIMITS, max_loss="")}, "maxLoss must be a positive decimal"),
-        ({"limits": dataclasses.replace(LIMITS, max_loss="none")}, "maxLoss must be a number on builder grants"),
         ({"limits": dataclasses.replace(LIMITS, max_leverage="1e3")}, "maxLeverage must be a positive decimal"),
         ({"limits": dataclasses.replace(LIMITS, daily_notional="-1")}, "dailyNotional must be a positive decimal"),
         ({"limits": dataclasses.replace(LIMITS, daily_notional="0")}, "dailyNotional must be a positive decimal"),
@@ -514,13 +513,6 @@ def test_none_is_over_any_cap():
         _grant(builder=Builder(), limits=limits).to_message()
 
 
-def test_builder_passkeys_need_a_numeric_max_loss():
-    uncapped_loss = Ceiling(["trade"], dataclasses.replace(LIMITS, max_loss="none"), 86400, 5)
-    assert _passkey_grant(ceiling=uncapped_loss).to_message()  # first-party passkey
-    with pytest.raises(ValueError, match="maxLoss must be a number on builder grants"):
-        _passkey_grant(ceiling=uncapped_loss, builder_account="0xb1").to_message()
-
-
 def test_no_builder_renders_as_the_canonical_none():
     assert _grant(builder=Builder("0x00", "0", 0), limits=LIMITS).to_message()["builder"] == {
         "account": "0x0",
@@ -552,3 +544,26 @@ def test_snip12_message_carries_integers_as_decimal_strings():
     message = _grant().snip12_typed_data()["message"]
     assert message["issuedAt"] == "1700000000"
     assert message["builder"]["expiresAt"] == "0"
+
+
+def test_limits_default_to_no_caps():
+    assert Limits().to_message() == {
+        "maxOrderNotional": "none",
+        "maxOpenNotional": "none",
+        "dailyNotional": "none",
+        "maxLoss": "none",
+        "maxLeverage": "none",
+        "markets": ["*"],
+    }
+    grant = SessionGrant(
+        paradex_chain=MAINNET, environment="mainnet", account="0x1", session_key="0x2", label="", scopes=["trade"]
+    )
+    assert grant.limits == Limits()
+
+
+def test_builder_grants_and_passkeys_may_leave_max_loss_uncapped():
+    assert _grant(limits=Limits()).to_message()["limits"]["maxLoss"] == "none"
+    ceiling = Ceiling(["trade"], Limits(), 86400, 5)
+    assert (
+        _passkey_grant(ceiling=ceiling, builder_account="0xb1").to_message()["ceiling"]["limits"]["maxLoss"] == "none"
+    )
