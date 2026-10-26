@@ -139,12 +139,8 @@ def _hex(value: str | int, what: str) -> str:
     return hex(number)
 
 
-def _decimal(value: str, what: str, *, required: bool) -> str:
-    if not isinstance(value, str):
-        raise_value_error(f"{what} must be a decimal string, got {value!r}")
-    if value == "" and not required:
-        return value
-    if not _PLAIN_DECIMAL.match(value):
+def _decimal(value: str, what: str) -> str:
+    if not isinstance(value, str) or not _PLAIN_DECIMAL.match(value):
         raise_value_error(f"{what} must be a plain non-negative decimal like '25000' or '0.0005', got {value!r}")
     return value
 
@@ -266,6 +262,17 @@ def _require_ascii(value: Any, path: str = "message") -> None:
             _require_ascii(item, f"{path}[{index}]")
     elif isinstance(value, str) and not _printable_ascii(value):
         raise_value_error(f"{path} must be printable ASCII for SNIP-12 signing, got {value!r}")
+
+
+def _decimal_integers(value: Any) -> Any:
+    """SNIP-12 messages carry integers as decimal strings (the hash is the same either way)."""
+    if isinstance(value, dict):
+        return {key: _decimal_integers(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_decimal_integers(item) for item in value]
+    if isinstance(value, int) and not isinstance(value, bool):
+        return str(value)
+    return value
 
 
 def _eip712_domain(signature_chain_id: int) -> dict[str, Any]:
@@ -430,12 +437,12 @@ class Builder:
 
     @property
     def is_set(self) -> bool:
-        return int(self.account, 16) != 0
+        return int(_hex(self.account, "builder.account"), 16) != 0
 
     def to_message(self) -> dict[str, Any]:
         message = {
             "account": _hex(self.account, "builder.account"),
-            "maxFeeRate": _decimal(self.max_fee_rate, "builder.maxFeeRate", required=True),
+            "maxFeeRate": _decimal(self.max_fee_rate, "builder.maxFeeRate"),
             "expiresAt": _uint(self.expires_at, "builder.expiresAt"),
         }
         if message["account"] == NO_BUILDER and (message["maxFeeRate"] != "0" or message["expiresAt"] != 0):
@@ -488,7 +495,7 @@ class _TypedMessage:
         starknet-py encodes SNIP-12 ``string`` values as ASCII only, so free text (labels, passkey
         fields) must be ASCII here. EIP-712 has no such limit.
         """
-        message = self.to_message()
+        message = _decimal_integers(self.to_message())
         _require_ascii(message)
         return cast(
             TypedDataDict,
@@ -627,9 +634,9 @@ class Ceiling:
     include_future_subaccounts: bool = False
 
     def to_message(self, account: str, *, numeric_max_loss: bool = False) -> dict[str, Any]:
-        if self.max_session_ttl <= 0 or self.max_session_ttl > SESSION_MAX_SECONDS:
+        if _uint(self.max_session_ttl, "maxSessionTtl") == 0 or self.max_session_ttl > SESSION_MAX_SECONDS:
             raise_value_error(f"ceiling.maxSessionTtl must be 1..{SESSION_MAX_SECONDS} seconds")
-        if self.max_concurrent_sessions <= 0:
+        if _uint(self.max_concurrent_sessions, "maxConcurrentSessions") == 0:
             raise_value_error("ceiling.maxConcurrentSessions must be positive")
         return {
             "scopes": _scopes(self.scopes),
@@ -732,14 +739,19 @@ class SessionMint(_TypedMessage):
         """
         message, granted = self.to_message(), grant.to_message()
         ceiling = granted["ceiling"]
-        if message["account"] != granted["account"]:
-            raise_value_error("mint account is not the grant's account")
+        for name in ("account", "paradexChain", "environment"):
+            if message[name] != granted[name]:
+                raise_value_error(f"mint {name} is not the grant's")
+        if message["credentialId"] != granted["passkey"]["credentialId"]:
+            raise_value_error("mint credentialId is not the grant's passkey")
         if not set(message["scopes"]) <= set(ceiling["scopes"]):
             raise_value_error(f"mint scopes {message['scopes']} exceed the ceiling's {ceiling['scopes']}")
         _check_limits_within(message["limits"], ceiling["limits"])
         if not ceiling["includeFutureSubaccounts"] and not set(message["subaccounts"]) <= set(ceiling["subaccounts"]):
             raise_value_error("mint lists sub-accounts the ceiling does not")
         now = int(time.time()) if now is None else now
+        if message["expiresAt"] <= now:
+            raise_value_error("mint has already expired")
         if message["expiresAt"] > min(granted["expiresAt"], now + ceiling["maxSessionTtl"]):
             raise_value_error("mint outlives the grant or the ceiling's maxSessionTtl")
 

@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import pytest
+from starknet_py.hash.utils import verify_message_signature
 
 from paradex_py.message.session import (
     Builder,
@@ -81,10 +82,12 @@ def test_server_vector(vector):
     assert "0x" + message.eip712_hash(chain_id).hex() == eip712["digest"]
 
     snip12 = vector["snip12"]
-    typed_data = message.snip12_typed_data()
-    assert typed_data["types"] == snip12["typedData"]["types"]
-    assert typed_data["domain"] == snip12["typedData"]["domain"]
+    assert message.snip12_typed_data() == snip12["typedData"]
     assert message.snip12_hash() == int(snip12["messageHash"], 16)
+    if "signature" in snip12:
+        # Stark signatures use a random nonce, so verify the server's rather than reproduce it.
+        r, s = (int(x, 0) for x in snip12["signature"])
+        assert verify_message_signature(message.snip12_hash(), [r, s], int(KEYS["starkPublicKey"], 16))
 
     if vector["signer"] == "eip191":
         # EIP-712 signatures are deterministic (RFC 6979), so the server's signature reproduces exactly.

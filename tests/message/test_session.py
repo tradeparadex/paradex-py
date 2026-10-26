@@ -442,7 +442,11 @@ def test_mint_limits_must_match_the_ceiling(ceiling, mint, error):
 @pytest.mark.parametrize(
     ("mint", "ceiling", "error"),
     [
-        ({"account": "0x9"}, {}, "not the grant's account"),
+        ({"account": "0x9"}, {}, "mint account is not the grant's"),
+        ({"credential_id": "other"}, {}, "credentialId is not the grant's passkey"),
+        ({"paradex_chain": "PRIVATE_SN_PARACLEAR_TESTNET"}, {}, "mint paradexChain is not the grant's"),
+        ({"environment": "testnet"}, {}, "mint environment is not the grant's"),
+        ({"expires_at": 1500}, {}, "already expired"),
         ({"scopes": ["trade", "trade:rfq"]}, {}, "exceed the ceiling"),
         ({"subaccounts": ["0x77"]}, {"subaccounts": ["0x99"]}, "sub-accounts the ceiling does not"),
         ({"expires_at": 1500 + 86401}, {}, "outlives"),
@@ -530,3 +534,21 @@ def test_no_builder_renders_as_the_canonical_none():
 )
 def test_valid_markets(market):
     assert _grant(limits=_markets(market)).to_message()["limits"]["markets"] == [market]
+
+
+def test_address_fields_accept_ints():
+    message = _grant(builder=Builder(0xB1, "0.0005"), account=0x123ABC).to_message()
+    assert message["builder"]["account"] == "0xb1"
+    assert message["account"] == "0x123abc"
+
+
+@pytest.mark.parametrize(("ttl", "sessions"), [("86400", 5), (86400, "5"), (True, 5)])
+def test_ceiling_integers_are_type_checked(ttl, sessions):
+    with pytest.raises(ValueError, match=r"2\^53"):
+        _passkey_grant(ceiling=Ceiling(["trade"], LIMITS, ttl, sessions)).to_message()
+
+
+def test_snip12_message_carries_integers_as_decimal_strings():
+    message = _grant().snip12_typed_data()["message"]
+    assert message["issuedAt"] == "1700000000"
+    assert message["builder"]["expiresAt"] == "0"
