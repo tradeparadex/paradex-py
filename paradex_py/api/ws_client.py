@@ -278,12 +278,8 @@ class ParadexWebsocketClient:
 
         if auto_start_reader:
             try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    self._reader_task = loop.create_task(self._read_messages())
-                else:
-                    # Event loop exists but not running, don't start task yet
-                    self._reader_task = None
+                loop = asyncio.get_running_loop()
+                self._reader_task = loop.create_task(self._read_messages())
             except RuntimeError:
                 # No event loop running, will start reader when connect() is called
                 self._reader_task = None
