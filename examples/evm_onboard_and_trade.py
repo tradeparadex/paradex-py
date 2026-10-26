@@ -96,14 +96,9 @@ evm_paradex = ParadexEvm(
 logger.info(f"Derived Starknet address: {hex(evm_paradex.account.l2_address)}")
 logger.info(f"Auth level: {evm_paradex.auth_level}")  # FULL
 
-# Validate the account was onboarded with an EVM (eip191) key
-onboarding_info = evm_paradex.api_client.fetch_onboarding(
-    {
-        "account_signer_type": "eip191",
-        "eth_address": evm_paradex.account.evm_address,
-    }
-)
-logger.info(f"Onboarding info: {onboarding_info}")
+# The address above came from GET /onboarding, which also said whether the
+# account already existed (False means the SDK just onboarded it).
+logger.info(f"Already onboarded before this run: {evm_paradex.is_onboarded}")
 
 # ---------------------------------------------------------------------------
 # Step 3: Create a trading subkey

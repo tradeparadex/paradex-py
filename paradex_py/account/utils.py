@@ -23,6 +23,7 @@ from starknet_py.utils.typed_data import TypedData
 from paradex_py.utils import raise_value_error
 
 if TYPE_CHECKING:
+    from paradex_py.api.api_client import ParadexApiClient
     from paradex_py.api.models import SystemConfig
 
 SHA256_EC_MAX_DIGEST = 2**256
@@ -116,13 +117,45 @@ def derive_stark_key_from_ledger(eth_account_address: str, stark_key_msg: TypedD
     return l2_private_key
 
 
-def derive_l2_address_starknet(config: "SystemConfig", l2_public_key: int) -> int:
-    """Compute the Paraclear L2 account address from the L2 public key.
+def fetch_l2_address(api_client: "ParadexApiClient", params: dict, owner: str) -> tuple[str, bool | None]:
+    """Fetch an account's L2 address, and whether it exists, from ``GET /onboarding``.
 
-    Mirrors the ``/onboarding`` endpoint's server-side derivation for Starknet-keyed
-    accounts: proxy deployment with ``initialize(public_key, 0)`` calldata.
-    Shared by ``Paradex.init_account()`` (primary caller) and
-    ``ParadexAccount.__init__`` (backwards-compat fallback for direct construction).
+    The server returns the stored address of an existing account and the address a
+    new account would be created at, so it is right whichever account class the
+    account was created with. A failed request raises rather than falling back to
+    local derivation, which can silently produce a different account's address.
+
+    Returns:
+        ``(address, exists)``; ``exists`` is ``None`` when the server omits it.
+    """
+    try:
+        info = api_client.fetch_onboarding(params)
+    except Exception as e:
+        message = (
+            f"{owner}: could not fetch the account address from GET /onboarding: {e}. "
+            "Retry; pass server_derive_address=False only if local derivation is right for "
+            "this account (for a Starknet key, only accounts created with the legacy proxy class)."
+        )
+        raise ValueError(message) from e
+    address = info.get("address") if isinstance(info, dict) else None
+    if not isinstance(address, str) or not address:
+        raise_value_error(f"{owner}: GET /onboarding returned no account address: {info!r}")
+    try:
+        int(address, 16)
+    except ValueError:
+        raise_value_error(f"{owner}: GET /onboarding returned an invalid account address: {address!r}")
+    exists = info.get("exists")
+    return address, (bool(exists) if exists is not None else None)
+
+
+def derive_l2_address_starknet(config: "SystemConfig", l2_public_key: int) -> int:
+    """Compute the L2 address of a Starknet-keyed account created with the legacy proxy class.
+
+    Proxy deployment with ``initialize(public_key, 0)`` calldata. Accounts created with
+    the current (direct-deploy) class live at a different address, so this is only right
+    for legacy accounts; :func:`fetch_l2_address` is right for both. Used by
+    ``Paradex.init_account()`` when ``server_derive_address=False`` and by
+    ``ParadexAccount.__init__`` when constructed without an ``l2_address``.
     """
     calldata = [
         int_from_hex(config.paraclear_account_hash),

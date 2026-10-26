@@ -161,8 +161,9 @@ class ParadexWebsocketClient:
         reader_sleep_on_error (float, optional): Sleep duration after connection errors. Set to 0 for no sleep. Defaults to 1.0.
         reader_sleep_on_no_connection (float, optional): Sleep duration when no connection. Set to 0 for no sleep. Defaults to 1.0.
         validate_messages (bool, optional): Enable pydantic message validation. Requires pydantic. Defaults to False.
-            Applies to JSON frames only — SBE frames are already decoded into pydantic models, so this is inert
-            when sbe_enabled is set.
+            Applies to JSON text frames only; SBE frames are already decoded into pydantic models. An SBE
+            connection still carries JSON frames for channels the server does not encode in SBE, such as
+            ``balance_events`` and ``transfers``, and for private channels on accounts not yet served SBE.
         ping_interval (float, optional): WebSocket ping interval in seconds. None uses websockets default. Defaults to None.
         disable_reconnect (bool, optional): Disable automatic reconnection for tight simulation control. Defaults to False.
         enable_compression (bool, optional): Enable WebSocket per-message compression (RFC 7692). Defaults to True.
@@ -171,6 +172,14 @@ class ParadexWebsocketClient:
             (``ws.api.{env}.paradex.trade``) instead of the default public one
             (``ws-public.api.{env}.paradex.trade``).
             Ignored when ``ws_url_override`` is provided. Defaults to False.
+        sbe_enabled (bool, optional): Negotiate SBE binary encoding on connect. Defaults to True: the
+            Paradex WebSocket endpoints require it and answer a plain JSON connect with HTTP 400.
+            Pass False only for an endpoint (e.g. a ``ws_url_override``) that still serves JSON.
+            Public market data always arrives as SBE. Private channels (``orders``, ``fills``,
+            ``positions``, ``account``) arrive as SBE or JSON depending on the account, on the same
+            connection, and the two use different field names (e.g. ``order_id`` vs ``id``). Every
+            message passed to a callback carries ``message["encoding"]``, ``"sbe"`` or ``"json"``,
+            so a callback can tell which shape it got.
 
     Examples:
         >>> from paradex_py import Paradex
@@ -185,7 +194,7 @@ class ParadexWebsocketClient:
         >>> # High-frequency simulator mode (no sleeps)
         >>> ws_client = ParadexWebsocketClient(env=Environment.TESTNET,
         ...                                   reader_sleep_on_error=0, reader_sleep_on_no_connection=0)
-        >>> # With typed message validation
+        >>> # With typed message validation (JSON text frames only)
         >>> ws_client = ParadexWebsocketClient(env=Environment.TESTNET, validate_messages=True)
         >>> # With API client for automatic token refresh on reconnect
         >>> from paradex_py import Paradex
@@ -210,7 +219,7 @@ class ParadexWebsocketClient:
         disable_reconnect: bool = False,
         enable_compression: bool = True,
         api_client: Any | None = None,
-        sbe_enabled: bool = False,
+        sbe_enabled: bool = True,
         direct: bool = False,
     ):
         self.env = env
@@ -256,7 +265,7 @@ class ParadexWebsocketClient:
         # API client reference for token refresh on reconnect
         self._api_client = api_client
 
-        # SBE binary encoding opt-in
+        # SBE binary encoding (default on; False is the opt-out for JSON-only endpoints)
         self.sbe_enabled = sbe_enabled
         if sbe_enabled and validate_messages:
             # _process_binary_message returns generated models directly and never
@@ -553,7 +562,13 @@ class ParadexWebsocketClient:
             if error_info:
                 error_code = error_info.get("code", "unknown")
                 error_message = error_info.get("message", "unknown error")
-                self.logger.error(f"{self.classname}: Subscription failed - code:{error_code} message:{error_message}")
+                # "data" carries the reason, e.g. that a second order_book feed for a
+                # market cannot share an SBE session with the first.
+                error_data = error_info.get("data")
+                self.logger.error(
+                    f"{self.classname}: Subscription failed - code:{error_code} message:{error_message}"
+                    + (f" data:{error_data}" if error_data else "")
+                )
 
                 # Check for auth-related errors (invalid bearer token)
                 if error_code == 40111 or "bearer token" in str(error_message).lower():
@@ -613,12 +628,19 @@ class ParadexWebsocketClient:
 
     async def _read_messages(self) -> None:
         try:
-            while True:
+            # Stop on _is_closing as well as on cancel: on Python 3.11, wait_for()
+            # drops a cancel that lands as recv() completes, which a busy feed makes
+            # likely, and close() would then wait on this task forever.
+            while not self._is_closing:
                 if self._is_connection_open() and self.ws is not None:
                     try:
                         await self._receive_and_process_message()
                     except Exception as e:
                         await self._handle_message_receive_error(e)
+                    # From Python 3.12, wait_for() awaits recv() inline, and recv()
+                    # returns without suspending while frames are buffered, so a busy
+                    # feed would never let the event loop run anything else.
+                    await asyncio.sleep(0)
                 elif self.reader_sleep_on_no_connection > 0:
                     await asyncio.sleep(self.reader_sleep_on_no_connection)
         except asyncio.CancelledError:
@@ -663,6 +685,7 @@ class ParadexWebsocketClient:
                             f"{self.classname}: WebSocket payload validation failed for channel {channel_name}"
                         )
 
+            message = {**message, "encoding": "json"}  # a copy: validation may hand back a shared dict
             if message_channel in self.callbacks:
                 self.logger.debug(
                     f"{self.classname}: channel:{message_channel}"
@@ -716,7 +739,7 @@ class ParadexWebsocketClient:
             return
         resolved = self._resolve_sbe_channel(channel_name) or channel_name
         ws_channel = _get_ws_channel_from_name(resolved)
-        message = {"params": {"channel": resolved, "data": model.model_dump()}}
+        message = {"params": {"channel": resolved, "data": model.model_dump()}, "encoding": "sbe"}
         if resolved in self.callbacks:
             self.logger.debug(f"{self.classname}: SBE channel:{resolved}")
             await self.callbacks[resolved](ws_channel, message)
@@ -731,14 +754,18 @@ class ParadexWebsocketClient:
         ``order_book.BTC-USD-PERP.snapshot@15@100ms``.  A prefix scan bridges the
         two.
 
-        Note: if the user subscribes two depth levels for the same market
-        simultaneously the prefix scan may match the wrong entry.
+        The match must end at a ``.``: market names nest (``ETH-USD`` is a prefix
+        of ``ETH-USD-22OCT26-2000-C``), so a bare prefix would hand one market's
+        frames to another's callback. The first match is unambiguous because the
+        server refuses a second ``order_book`` feed for a market on an SBE
+        session: their frames encode identically and could not be told apart.
         """
         if channel_name in self.callbacks:
             return channel_name
         # Prefix scan: "order_book.BTC-USD-PERP" → "order_book.BTC-USD-PERP.snapshot@15@100ms"
+        scoped = channel_name + "."
         for key in self.callbacks:
-            if key.startswith(channel_name):
+            if key.startswith(scoped):
                 return key
         # markets_summary fallback: SBE frames carry per-market channels like
         # "markets_summary.BTC-USD-PERP"; map to the ALL or base registration.

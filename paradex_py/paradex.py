@@ -5,7 +5,7 @@ from starknet_py.common import int_from_hex
 
 from paradex_py._client_base import _ClientBase
 from paradex_py.account.account import ParadexAccount
-from paradex_py.account.utils import derive_l2_address_starknet, resolve_l2_keypair
+from paradex_py.account.utils import derive_l2_address_starknet, fetch_l2_address, resolve_l2_keypair
 from paradex_py.api.api_client import ParadexApiClient
 from paradex_py.api.protocols import DefaultRetryStrategy
 from paradex_py.api.ws_client import ParadexWebsocketClient
@@ -57,24 +57,39 @@ class Paradex(_ClientBase):
         ws_reader_sleep_on_error (float, optional): WebSocket reader sleep duration after errors. Defaults to 1.0.
         ws_reader_sleep_on_no_connection (float, optional): WebSocket reader sleep when no connection. Defaults to 1.0.
         validate_ws_messages (bool, optional): Enable JSON-RPC message validation. Defaults to False.
+            Applies to JSON text frames only, which an SBE connection still carries for some channels
+            (see ws_sbe_enabled).
         ping_interval (float, optional): WebSocket ping interval in seconds. Defaults to None.
         disable_reconnect (bool, optional): Disable automatic WebSocket reconnection. Defaults to False.
         enable_ws_compression (bool, optional): Enable WebSocket per-message compression (RFC 7692). Defaults to True.
-        ws_sbe_enabled (bool, optional): Enable SBE binary encoding on both ws_client and ws_direct_client.
-            Defaults to False. Callbacks then receive SBE-decoded models rather than JSON dicts, and some field
-            names differ (trade_id_str/seq_no/order_type for JSON id/seq/type; order_book gives bids/asks rather
-            than inserts/updates/deletes). On trades, use trade_id_str: the int64 trade_id is deprecated and holds
-            only the low 64 bits of the real id. validate_ws_messages does not apply to SBE frames.
+        ws_sbe_enabled (bool, optional): Use SBE binary encoding on both ws_client and ws_direct_client.
+            Defaults to True: the Paradex WebSocket endpoints require SBE and answer a plain JSON connect
+            with HTTP 400. Pass False only for an endpoint that still serves JSON. Callbacks receive
+            SBE-decoded models dumped to dicts, and some field names differ (trade_id_str/seq_no/order_type
+            for JSON id/seq/type; order_book gives bids/asks rather than inserts/updates/deletes). On trades,
+            use trade_id_str: the int64 trade_id is deprecated and holds only the low 64 bits of the real id.
+            Public market data always arrives as SBE, but private channels (orders, fills, positions,
+            account) arrive as SBE or JSON depending on the account, and channels without an SBE form
+            (e.g. balance_events, transfers) stay JSON. Each message carries ``message["encoding"]``
+            (``"sbe"`` or ``"json"``) so a callback can tell which field names it got.
         auto_auth (bool, optional): Whether to automatically handle onboarding/auth. Defaults to True.
+            Initializing an account still calls ``GET /onboarding`` when this is False, unless
+            ``server_derive_address=False``.
         auth_provider (AuthProvider, optional): Custom authentication provider. Defaults to None.
         auth_params (dict, optional): Extra query parameters sent with every ``/auth`` request
             (initial and refresh). For example, ``{"token_usage": "interactive"}`` for 0-fee JWT. Defaults to None.
         signer (Signer, optional): Custom order signer for submit/modify/batch operations. Defaults to None.
         rpc_version (str, optional): RPC version (e.g., "v0_9"). If provided, constructs URL as {base_url}/rpc/{rpc_version}. Defaults to None.
         config (SystemConfig, optional): System configuration. If provided, uses this config instead of fetching from API. Defaults to None.
-        server_derive_address (bool, optional): When True, fetch the L2 address from ``GET /onboarding`` instead of
-            computing it locally from class hashes. Also caches the ``exists`` flag so ``POST /onboarding`` is skipped
-            when the account is already onboarded. Defaults to False (local ``compute_address`` path unchanged).
+            Initializing an account still calls ``GET /onboarding`` unless ``server_derive_address=False``.
+        server_derive_address (bool, optional): Fetch the L2 address from ``GET /onboarding`` (one public request
+            when the account is initialized) rather than computing it locally. The server's address is right for
+            accounts created with either the legacy proxy class or the current class; local derivation computes
+            the legacy proxy-class address, which is wrong for accounts created with the current class (such as
+            new accounts onboarded in the Paradex app). Also caches the ``exists`` flag so ``POST /onboarding``
+            is skipped when the account is already onboarded. If the request fails, account initialization
+            raises ``ValueError`` rather than falling back. Pass False to derive the address locally.
+            Defaults to True.
 
     Examples:
         >>> from paradex_py import Paradex
@@ -115,7 +130,7 @@ class Paradex(_ClientBase):
         ping_interval: float | None = None,
         disable_reconnect: bool = False,
         enable_ws_compression: bool = True,
-        ws_sbe_enabled: bool = False,
+        ws_sbe_enabled: bool = True,
         # Auth configuration
         auto_auth: bool = True,
         auth_provider: "AuthProvider | None" = None,
@@ -126,7 +141,7 @@ class Paradex(_ClientBase):
         rpc_version: str | None = None,
         config: "SystemConfig | None" = None,
         # Onboarding configuration
-        server_derive_address: bool = False,
+        server_derive_address: bool = True,
     ):
         _validate_env(env, "Paradex")
         self.env = env
@@ -247,16 +262,21 @@ class Paradex(_ClientBase):
         # single downstream ParadexAccount(...) call with a pre-resolved address.
         # getattr fallback protects callers that bypass __init__ via Paradex.__new__(...).
         is_onboarded: bool | None = None
-        if getattr(self, "server_derive_address", False):
-            info = self.api_client.fetch_onboarding(
-                {
-                    "account_signer_type": "starknet",
-                    "public_key": hex(key_pair.public_key),
-                }
+        if getattr(self, "server_derive_address", True):
+            l2_address_hex, is_onboarded = fetch_l2_address(
+                self.api_client,
+                {"account_signer_type": "starknet", "public_key": hex(key_pair.public_key)},
+                "Paradex",
             )
-            l2_address_hex: str = info["address"]
-            exists = info.get("exists")
-            is_onboarded = bool(exists) if exists is not None else None
+            legacy_address = derive_l2_address_starknet(self.config, key_pair.public_key)
+            if int(l2_address_hex, 16) != legacy_address:
+                # Expected for accounts created with the current class; logged so that a switch away
+                # from a legacy account (the address server_derive_address=False used) is visible.
+                self.logger.warning(
+                    f"Paradex: using account {l2_address_hex} from GET /onboarding, not the legacy "
+                    f"proxy-class address {hex(legacy_address)}. If this key's account is at "
+                    f"{hex(legacy_address)}, pass server_derive_address=False."
+                )
         else:
             l2_address_hex = hex(derive_l2_address_starknet(self.config, key_pair.public_key))
 
@@ -323,7 +343,8 @@ class Paradex(_ClientBase):
     def is_onboarded(self) -> bool | None:
         """Cached onboarding state from ``GET /onboarding``.
 
-        Returns ``True`` / ``False`` when ``server_derive_address=True`` populated the cache at
-        account initialization, ``None`` otherwise (local derivation path — the SDK learns
-        onboarding status lazily via the ``NOT_ONBOARDED`` auth-retry flow)."""
+        Returns ``True`` / ``False`` when ``GET /onboarding`` populated the cache at account
+        initialization (the default), ``None`` when the server omitted it or with
+        ``server_derive_address=False`` (the SDK then learns onboarding status lazily via
+        the ``NOT_ONBOARDED`` auth-retry flow)."""
         return self.account.is_onboarded if self.account is not None else None

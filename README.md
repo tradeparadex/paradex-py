@@ -22,6 +22,11 @@ print(hex(paradex.account.l2_public_key)) # 0x...
 print(hex(paradex.account.l2_private_key)) # 0x...
 ```
 
+The L2 address comes from `GET /onboarding`, so it matches the account the Paradex app created for the same key,
+legacy or current account class. To derive it locally instead (no extra request), pass
+`server_derive_address=False`; that computes the legacy proxy-class address, which is wrong for accounts created
+with the current class. When the server's address is not the legacy one, the SDK logs a warning naming both.
+
 When this onboards a new account, the L1 key (or Ledger) also signs a Sign-In with Ethereum message linking
 the wallet as the account's parent, sent in the `PARADEX-PARENT-SIWE-MESSAGE` and `PARADEX-PARENT-SIGNATURE`
 headers. An account that already exists, one onboarded with only an L2 key, or one onboarded by calling
@@ -65,7 +70,21 @@ client.init_account(account)
 
 ### WebSocket Usage
 
-The SDK provides two WebSocket client options:
+The SDK provides two WebSocket client options. Both connect with SBE binary encoding, which the
+Paradex WebSocket endpoints require (a plain JSON connect is rejected with HTTP 400). Frames are
+decoded before your callback runs, so it still receives dicts; pass `ws_sbe_enabled=False` (or
+`sbe_enabled=False` on a client) only for an endpoint that still serves JSON.
+
+Public market data always arrives as SBE. Private channels (`orders`, `fills`, `positions`,
+`account`) may arrive as SBE or JSON depending on the account, and some field names differ
+between the two (e.g. `order_id` vs `id`). Every message carries `message["encoding"]`, either
+`"sbe"` or `"json"`, so a callback can tell which shape it received:
+
+```python
+async def on_order(ws_channel, message):
+    data = message["params"]["data"]
+    order_id = data["order_id"] if message["encoding"] == "sbe" else data["id"]
+```
 
 #### Option 1: Async Client (Default)
 
