@@ -10,6 +10,7 @@ from paradex_py.account.evm_account import EvmAccount
 from paradex_py.account.utils import (
     derive_l2_address_eip191,
     derive_vault_operator_l2_address_eip191,
+    fetch_l2_address,
 )
 from paradex_py.api.api_client import ParadexApiClient
 from paradex_py.api.ws_client import ParadexWebsocketClient
@@ -42,11 +43,13 @@ class ParadexEvm(_ClientBase):
             Set to False for REST-only use cases.
         ws_sbe_enabled (bool, optional): Use SBE binary encoding on the WebSocket. Defaults to True,
             which the Paradex endpoints require; pass False only for an endpoint that still serves JSON.
-        server_derive_address (bool, optional): When True, fetch the L2 address from
-            ``GET /onboarding`` (signer type ``eip191``) instead of deriving it locally from
-            ``paraclear_evm_account_hash``. Also caches the ``exists`` flag so
-            ``POST /v2/onboarding`` is skipped when the account is already onboarded. Defaults
-            to False (local derivation path unchanged).
+        server_derive_address (bool, optional): Fetch the L2 address from
+            ``GET /onboarding`` (signer type ``eip191``, one public request at construction)
+            rather than deriving it locally from ``paraclear_evm_account_hash``. The server's
+            address stays right if the account class changes. Also caches the ``exists`` flag
+            so ``POST /v2/onboarding`` is skipped when the account is already onboarded. If the
+            request fails, construction raises ``ValueError`` rather than falling back. Pass
+            False to derive the address locally. Defaults to True.
         vault_operator_address (str, optional): Authenticate *as* this EVM vault
             operator sub-account instead of the key's own main account. The SIWE
             message is still signed by ``evm_private_key`` (operators have no key of
@@ -58,8 +61,8 @@ class ParadexEvm(_ClientBase):
             ``vault_operator_index``.
         vault_operator_index (int, optional): Like ``vault_operator_address``, but
             resolves the operator's address from its index: server-side via
-            ``GET /onboarding?vault_operator_index=N`` when
-            ``server_derive_address=True``, locally otherwise. Index N is the N-th
+            ``GET /onboarding?vault_operator_index=N`` by default, locally with
+            ``server_derive_address=False``. Index N is the N-th
             eip191 vault operator of this EVM key's main account (0-based, allocated
             at vault creation). Mutually exclusive with ``vault_operator_address``.
 
@@ -99,7 +102,7 @@ class ParadexEvm(_ClientBase):
         ws_timeout: int | None = None,
         ws_enabled: bool = True,
         ws_sbe_enabled: bool = True,
-        server_derive_address: bool = False,
+        server_derive_address: bool = True,
         vault_operator_address: str | None = None,
         vault_operator_index: int | None = None,
     ):
@@ -148,15 +151,11 @@ class ParadexEvm(_ClientBase):
             # path and goes straight to POST /v2/auth.
             is_onboarded: bool | None = True
         elif server_derive_address:
-            info = self.api_client.fetch_onboarding(
-                {
-                    "account_signer_type": "eip191",
-                    "eth_address": checksum_address,
-                }
+            l2_address_hex, is_onboarded = fetch_l2_address(
+                self.api_client,
+                {"account_signer_type": "eip191", "eth_address": checksum_address},
+                "ParadexEvm",
             )
-            l2_address_hex = info["address"]
-            exists = info.get("exists")
-            is_onboarded = bool(exists) if exists is not None else None
         else:
             l2_address_hex = hex(derive_l2_address_eip191(self.config, checksum_address))
             is_onboarded = None
@@ -196,15 +195,16 @@ class ParadexEvm(_ClientBase):
             raise_value_error("ParadexEvm: vault operator session requires an address or index")
         if not server_derive_address:
             return hex(derive_vault_operator_l2_address_eip191(self.config, checksum_address, vault_operator_index))
-        info = self.api_client.fetch_onboarding(
+        l2_address_hex, exists = fetch_l2_address(
+            self.api_client,
             {
                 "account_signer_type": "eip191",
                 "eth_address": checksum_address,
                 "vault_operator_index": vault_operator_index,
-            }
+            },
+            "ParadexEvm",
         )
-        l2_address_hex: str = info["address"]
-        if info.get("exists") is False:
+        if exists is False:
             raise_value_error(
                 f"ParadexEvm: vault operator index {vault_operator_index} "
                 f"({l2_address_hex}) does not exist yet — operators are created "
@@ -219,7 +219,8 @@ class ParadexEvm(_ClientBase):
                 "ParadexEvm: GET /onboarding returned the owner's main account "
                 f"for vault_operator_index={vault_operator_index} — this server "
                 "does not support EVM vault operators (feature flag off or "
-                "pre-feature deployment)"
+                "pre-feature deployment); pass server_derive_address=False to "
+                "derive the operator address locally"
             )
         return l2_address_hex
 
@@ -249,8 +250,9 @@ class ParadexEvm(_ClientBase):
     def is_onboarded(self) -> bool | None:
         """Cached onboarding state from ``GET /onboarding``.
 
-        Returns ``True`` / ``False`` when ``server_derive_address=True`` populated the cache at
-        construction, ``None`` otherwise (local derivation path). Vault operator
+        Returns ``True`` / ``False`` when ``GET /onboarding`` populated the cache at
+        construction (the default), ``None`` when the server omitted it or with
+        ``server_derive_address=False`` (local derivation path). Vault operator
         sessions always report ``True`` — it means "skip auto-onboarding"
         (operators are onboarded by vault creation), not "existence verified";
         a nonexistent operator fails at auth."""

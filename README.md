@@ -22,6 +22,11 @@ print(hex(paradex.account.l2_public_key)) # 0x...
 print(hex(paradex.account.l2_private_key)) # 0x...
 ```
 
+The L2 address comes from `GET /onboarding`, so it matches the account the Paradex app created for the same key,
+legacy or current account class. To derive it locally instead (no extra request), pass
+`server_derive_address=False`; that computes the legacy proxy-class address, which is wrong for accounts created
+with the current class. When the server's address is not the legacy one, the SDK logs a warning naming both.
+
 ### L2-Only Authentication (Subkey)
 
 ```python

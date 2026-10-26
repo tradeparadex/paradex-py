@@ -2,23 +2,24 @@
 """
 Example: server-side address derivation via ``GET /onboarding``.
 
-By default the SDK derives the L2 Starknet account address client-side using
-``compute_address`` plus the Paraclear class hashes from ``GET /system/config``.
-Passing ``server_derive_address=True`` to ``Paradex(...)`` (or ``ParadexEvm(...)``)
-moves derivation to the server: the SDK calls ``GET /onboarding`` instead and
-uses the returned address. The endpoint also returns ``exists``, which the SDK
-caches to skip ``POST /onboarding`` when the account is already onboarded.
+By default ``Paradex(...)`` and ``ParadexEvm(...)`` fetch the L2 account address
+from ``GET /onboarding`` instead of computing it client-side. The server returns
+the stored address of an existing account, whichever account class it was
+created with, and the address a new account will be created at. The endpoint
+also returns ``exists``, which the SDK caches to skip ``POST /onboarding`` when
+the account is already onboarded.
 
-This is useful when:
-  - You don't want the SDK pinned to a specific class-hash scheme.
-  - You want to know up-front whether the account is onboarded
-    (``paradex.is_onboarded``) without triggering an auth round-trip first.
+Passing ``server_derive_address=False`` derives the address locally (no extra request) with
+``compute_address`` plus the class hashes from ``GET /system/config``. For a
+Starknet key that gives the legacy proxy-class address, which is wrong for
+accounts created with the current class (such as new accounts onboarded in the
+Paradex app).
 
 Usage:
     export L1_ADDRESS="0x..."
     export L1_PRIVATE_KEY="0x..."
     python examples/server_derived_address.py
-    # Compare against the local-derivation path:
+    # Compare against the local derivation path:
     python examples/server_derived_address.py --local
 
 For an EVM wallet:
@@ -59,8 +60,8 @@ def starknet_flow(server_derive_address: bool = True) -> None:
         logger=logger,
     )
 
-    # is_onboarded is populated only when the server precheck ran (server_derive_address=True);
-    # otherwise it stays None and the SDK learns onboarding state via the auth retry path.
+    # is_onboarded is populated when the server precheck ran (the default); with
+    # server_derive_address=False it stays None and the SDK learns onboarding state via the auth retry path.
     logger.info("L2 address (%s): %s", _source_label(server_derive_address), hex(paradex.account.l2_address))
     logger.info("Onboarded (cached from precheck): %s", paradex.is_onboarded)
 
@@ -90,7 +91,7 @@ def evm_flow(server_derive_address: bool = True) -> None:
 
 
 if __name__ == "__main__":
-    # `--local` runs the same flow with the flag off, for side-by-side comparison.
+    # `--local` runs the same flow with server derivation off, for side-by-side comparison.
     use_server = "--local" not in sys.argv
     if "--evm" in sys.argv:
         evm_flow(server_derive_address=use_server)
