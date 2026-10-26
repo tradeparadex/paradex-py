@@ -27,6 +27,12 @@ legacy or current account class. To derive it locally instead (no extra request)
 `server_derive_address=False`; that computes the legacy proxy-class address, which is wrong for accounts created
 with the current class. When the server's address is not the legacy one, the SDK logs a warning naming both.
 
+When this onboards a new account, the L1 key (or Ledger) also signs a Sign-In with Ethereum message linking
+the wallet as the account's parent, sent in the `PARADEX-PARENT-SIWE-MESSAGE` and `PARADEX-PARENT-SIGNATURE`
+headers. An account that already exists, one onboarded with only an L2 key, or one onboarded by calling
+`onboarding()` yourself with `auto_auth=False` signs nothing extra; the SDK drops the L1 key once
+`init_account` returns.
+
 ### L2-Only Authentication (Subkey)
 
 ```python

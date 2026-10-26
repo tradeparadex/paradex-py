@@ -1,6 +1,8 @@
 import logging
 from typing import TYPE_CHECKING
 
+from starknet_py.common import int_from_hex
+
 from paradex_py._client_base import _ClientBase
 from paradex_py.account.account import ParadexAccount
 from paradex_py.account.utils import derive_l2_address_starknet, fetch_l2_address, resolve_l2_keypair
@@ -33,9 +35,12 @@ class Paradex(_ClientBase):
     Args:
         env (Environment): Environment
         l1_address (str, optional): L1 address. Defaults to None.
-        l1_private_key (str, optional): L1 private key. Defaults to None.
-        l1_private_key_from_ledger (bool, optional): Derive L2 key from Ledger hardware wallet. Defaults to False.
-        l2_private_key (str, optional): L2 private key. Defaults to None.
+        l1_private_key (str, optional): L1 private key. When ``auto_auth`` onboards a new account it also signs a
+            SIWE message linking the L1 wallet as the account's parent. Defaults to None.
+        l1_private_key_from_ledger (bool, optional): Derive L2 key from Ledger hardware wallet. When ``auto_auth``
+            onboards a new account, the Ledger signs the parent link message too. Defaults to False.
+        l2_private_key (str, optional): L2 private key. Onboarding with only this key sends no parent link.
+            Defaults to None.
         logger (logging.Logger, optional): Logger. Defaults to None.
         ws_timeout (int, optional): WebSocket read timeout in seconds. Defaults to None (uses default).
         http_client (HttpClient, optional): Custom HTTP client for injection. Defaults to None.
@@ -282,8 +287,22 @@ class Paradex(_ClientBase):
             l2_address=l2_address_hex,
             is_onboarded=is_onboarded,
             rpc_version=rpc_version,
+            env=self.env,
         )
-        self.api_client.init_account(self.account)
+        if is_onboarded is not True and self.api_client.auto_auth:
+            # A new account's onboarding carries a parent link proof signed by the L1 key.
+            # Set after construction so the L2 key is not derived (or the Ledger asked) twice,
+            # and only here so the L1 key is not kept for an account known to exist. Without
+            # auto_auth, onboarding runs after this call returns, so the L1 key is never kept
+            # and a manual onboarding() sends no proof.
+            self.account.l1_private_key = int_from_hex(l1_private_key) if l1_private_key is not None else None
+            self.account.l1_private_key_from_ledger = l1_private_key_from_ledger
+        try:
+            self.api_client.init_account(self.account)
+        finally:
+            # Onboarding has run (or failed) by now, so the L1 key has nothing left to sign.
+            self.account.l1_private_key = None
+            self.account.l1_private_key_from_ledger = False
         if self.ws_client is not None:
             self.ws_client.init_account(self.account)
 

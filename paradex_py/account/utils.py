@@ -4,10 +4,10 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING, cast
 
 from eth_account import Account
-from eth_account.messages import SignableMessage, encode_typed_data
+from eth_account.messages import SignableMessage, encode_defunct, encode_typed_data
 from ledgereth.accounts import find_account
 from ledgereth.comms import init_dongle
-from ledgereth.messages import sign_typed_data_draft
+from ledgereth.messages import sign_message, sign_typed_data_draft
 from starknet_crypto_py import get_public_key as rs_get_public_key
 from starknet_crypto_py import pedersen_hash as rs_pedersen_hash
 from starknet_crypto_py import sign as rs_sign
@@ -62,11 +62,18 @@ def _sign_stark_key_message(stark_key_message, l1_private_key: int) -> str:
     return sig_hex if sig_hex.startswith("0x") else "0x" + sig_hex
 
 
-def _sign_stark_key_message_ledger(message: SignableMessage, eth_account_address: str) -> str:
+def _find_ledger_account(eth_account_address: str):
+    """Open the Ledger and find the derivation path of `eth_account_address` on it."""
+    # ledgereth caches the open handle, so later calls in this process reuse it rather than reopen the device.
     dongle = init_dongle()
     account = find_account(eth_account_address, dongle, count=10)
     if account is None:
         return raise_value_error(f"Account {eth_account_address} not found on Ledger")
+    return dongle, account
+
+
+def _sign_stark_key_message_ledger(message: SignableMessage, eth_account_address: str) -> str:
+    dongle, account = _find_ledger_account(eth_account_address)
     # header/body is eth_account naming, presumably to be generic
     domain_hash = message.header
     message_hash = message.body
@@ -77,6 +84,19 @@ def _sign_stark_key_message_ledger(message: SignableMessage, eth_account_address
         dongle=dongle,
     )
     return signed.signature
+
+
+def sign_eip191_message(message: str, l1_private_key: int | bytes) -> str:
+    """Sign a plaintext message with EIP-191 personal_sign; returns 0x-prefixed hex."""
+    signed = Account.sign_message(encode_defunct(text=message), l1_private_key)
+    sig_hex = signed.signature.hex()
+    return sig_hex if sig_hex.startswith("0x") else "0x" + sig_hex
+
+
+def sign_eip191_message_ledger(message: str, eth_account_address: str) -> str:
+    """Sign a plaintext message with EIP-191 personal_sign on a Ledger; returns 0x-prefixed hex."""
+    dongle, account = _find_ledger_account(eth_account_address)
+    return sign_message(message, sender_path=account.path, dongle=dongle).signature
 
 
 def _get_private_key_from_eth_signature(eth_signature_hex: str) -> int:

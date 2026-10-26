@@ -251,6 +251,8 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         headers = self.account.onboarding_headers()
         payload = {"public_key": hex(self.account.l2_public_key)}
         self.post(api_url=self.api_url, path="onboarding", headers=headers, payload=payload)
+        # The account exists now, so calling onboarding again sends no parent link proof.
+        self.account.is_onboarded = True
 
     def auth(self, params: dict | None = None):
         if self.account is None:
