@@ -106,9 +106,10 @@ when the session expires or is revoked.
 
 Every grant states each limit: a positive decimal, or `"none"` for no cap from this session.
 `markets` lists symbols or patterns, or is `["*"]` for every permitted market. Empty values are
-refused before signing. A grant that approves a builder must give `maxLoss` as a number, and can't
-include `trade:block` or `account:settings`. `Limits.caps` can refuse limits above your own ceilings
-before signing; there are none by default, and the server enforces its own.
+refused before signing. `Limits()`, the default, states no caps: every limit `"none"` and markets
+`["*"]`. While the server enforces no session limits, that is the only form it accepts. A grant that
+approves a builder can't include `trade:block` or `account:settings`. `Limits.caps` can refuse limits
+above your own ceilings before signing; there are none by default, and the server enforces its own.
 
 When you show a grant to the owner before they sign, describe its risk in plain words.
 `Limits.loss_wording()` gives "Cannot withdraw; can lose up to <maxLoss> USD by trading", or, when
@@ -119,7 +120,7 @@ A 403 is a refused action, never a revocation signal, so it does not drop the se
 
 ```python
 from paradex_py import SessionAccounts
-from paradex_py.message.session import Limits, SessionGrant
+from paradex_py.message.session import SessionGrant
 from paradex_py.session_accounts import LocalOwnerSigner, new_session_key, register_session
 
 session_private_key, session_public_key = new_session_key()
@@ -131,7 +132,6 @@ grant = SessionGrant.new(
     session_key=session_public_key,
     label="my bot",
     scopes=["trade"],
-    limits=Limits("25000", "100000", "500000", "5000", "10", ["BTC-USD-PERP"]),
     ttl_seconds=7 * 24 * 3600,
 )
 # Any OwnerSigner works here, e.g. an MPC service that signs the EIP-712 typed data itself.
