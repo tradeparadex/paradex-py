@@ -107,8 +107,9 @@ when the session expires or is revoked.
 Every grant states each limit: a positive decimal, or `"none"` for no cap from this session.
 `markets` lists symbols or patterns, or is `["*"]` for every permitted market. Empty values are
 refused before signing. `Limits()`, the default, states no caps: every limit `"none"` and markets
-`["*"]`. While the server enforces no session limits, that is the only form it accepts. A grant that
-approves a builder can't include `trade:block` or `account:settings`. `Limits.caps` can refuse limits
+`["*"]`. While the server enforces no session limits, that is the only form it accepts, and it also
+refuses grants that approve a builder. A grant that approves a builder can't include `trade:block` or
+`account:settings`. `Limits.caps` can refuse limits
 above your own ceilings before signing; there are none by default, and the server enforces its own.
 
 When you show a grant to the owner before they sign, describe its risk in plain words.
