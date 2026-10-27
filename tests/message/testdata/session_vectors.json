@@ -1,0 +1,3316 @@
+{
+    "description": "Reference vectors for the Paradex session grant typed data (EIP-712 and SNIP-12 revision 1), as produced by the Paradex server. Implementations must reproduce every hash byte for byte.",
+    "notes": [
+        "EIP-712 domain: {name: \"Paradex Session\", version: \"1\", chainId: signatureChainId (the wallet's current EVM chain)}.",
+        "SNIP-12 rev 1 domain: {name: \"Paradex Session\", version: \"1\", chainId: paradexChain, revision: \"1\"}; the message hash account is message.account.",
+        "Field order is the order of each type in typedData.types and is frozen.",
+        "Hex strings (accounts, keys, nonces) are signed exactly as written: use lowercase 0x hex without leading zeros (\"0x0\" for none). Nonces are non-zero and at most 128 bits.",
+        "Integers are JSON numbers in EIP-712 messages and decimal strings in SNIP-12 messages; both encode the same value.",
+        "SNIP-12 string fields must be printable ASCII; markets and scopes are shortstrings of at most 31 characters.",
+        "A grant without a builder uses builder {account: \"0x0\", maxFeeRate: \"0\", expiresAt: 0}.",
+        "Every limit is stated: a positive decimal string, or \"none\" for no cap (maxLeverage \"none\" is the market maximum). An empty string is invalid. Builder grants and builder passkeys must give a numeric maxLoss.",
+        "markets is non-empty; [\"*\"] means every market the server permits and must stand alone. Elsewhere * is a wildcard for any run of characters (\"*-USD-PERP\"), and a pattern must contain a letter or digit and no \"**\".",
+        "A market contains a letter, * or - and does not start with -, 0x, 0b or 0o in either case; symbols are case-sensitive and may contain _ (\"kPEPE-USD-PERP\", \"NEAR-USD-27NOV26-5_4-C\").",
+        "A mint limit under a numeric ceiling is a number at or below it; under a \"none\" ceiling it may be anything valid. Each mint market must be listed by the ceiling, matched by a ceiling pattern, or covered by a [\"*\"] ceiling; a mint pattern is covered only by the same pattern.",
+        "SessionMint's WebAuthn challenge is the 32-byte SNIP-12 message hash, base64url-encoded without padding (mintChallenge).",
+        "EIP-712 signatures are 65-byte r||s||v with v in {27, 28} and low s. Stark signatures are [r, s] over the SNIP-12 message hash.",
+        "The keys below are public test keys: never use them for anything else."
+    ],
+    "keys": {
+        "evmPrivateKey": "0x4c0883a69102937d6231471b5dbb6204fe5129617082792ae468d01a3f362318",
+        "evmAddress": "0x2c7536E3605D9C16a7a3D7b1898e529396a65c23",
+        "evmClassHash": "0x073414441639dcd11d1846f287650a00c60c416b9d3ba45d31c651672125b2c2",
+        "evmAccount": "0x62cfa432ed8abe082192a9687dd569194596096f2ebd3d498df34c1ff2f14f",
+        "starkPrivateKey": "0x2dccce1da22003777062ee0870e9881b460a8b7eca276870f57c601f182136c",
+        "starkPublicKey": "0x499f65ae2f71d5298d2d88823b2e5e19596a71aac1984710479e406a002439",
+        "starkAccount": "0x5d8b9a1c6c8e1f3b7a2d4e6f8091a2b3c4d5e6f708192a3b4c5d6e7f8091a2b",
+        "p256PrivateKey": "0xc9afa9d845ba75166b5c215767b1d6934e50c3db36e89b127b8a622b120f6721"
+    },
+    "vectors": [
+        {
+            "name": "session-grant-first-party-uncapped",
+            "primaryType": "SessionGrant",
+            "signer": "eip191",
+            "message": {
+                "paradexChain": "PRIVATE_SN_PARACLEAR_MAINNET",
+                "environment": "mainnet",
+                "account": "0x62cfa432ed8abe082192a9687dd569194596096f2ebd3d498df34c1ff2f14f",
+                "sessionKey": "0x1f2e3d4c5b6a79881726354453627180f9e8d7c6b5a493827160f5e4d3c2b1a",
+                "label": "Paradex app",
+                "scopes": ["trade"],
+                "limits": {
+                    "maxOrderNotional": "none",
+                    "maxOpenNotional": "none",
+                    "dailyNotional": "none",
+                    "maxLoss": "none",
+                    "maxLeverage": "none",
+                    "markets": ["*"]
+                },
+                "builder": {
+                    "account": "0x0",
+                    "maxFeeRate": "0",
+                    "expiresAt": 0
+                },
+                "subaccounts": [],
+                "nonce": "0x123456789abcdef0123456789abcdef0",
+                "issuedAt": 1767225600,
+                "expiresAt": 1767830400
+            },
+            "eip712": {
+                "signatureChainId": 1,
+                "typedData": {
+                    "domain": {
+                        "chainId": 1,
+                        "name": "Paradex Session",
+                        "version": "1"
+                    },
+                    "message": {
+                        "account": "0x62cfa432ed8abe082192a9687dd569194596096f2ebd3d498df34c1ff2f14f",
+                        "builder": {
+                            "account": "0x0",
+                            "expiresAt": 0,
+                            "maxFeeRate": "0"
+                        },
+                        "environment": "mainnet",
+                        "expiresAt": 1767830400,
+                        "issuedAt": 1767225600,
+                        "label": "Paradex app",
+                        "limits": {
+                            "dailyNotional": "none",
+                            "markets": ["*"],
+                            "maxLeverage": "none",
+                            "maxLoss": "none",
+                            "maxOpenNotional": "none",
+                            "maxOrderNotional": "none"
+                        },
+                        "nonce": "0x123456789abcdef0123456789abcdef0",
+                        "paradexChain": "PRIVATE_SN_PARACLEAR_MAINNET",
+                        "scopes": ["trade"],
+                        "sessionKey": "0x1f2e3d4c5b6a79881726354453627180f9e8d7c6b5a493827160f5e4d3c2b1a",
+                        "subaccounts": []
+                    },
+                    "primaryType": "SessionGrant",
+                    "types": {
+                        "Builder": [
+                            {
+                                "name": "account",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxFeeRate",
+                                "type": "string"
+                            },
+                            {
+                                "name": "expiresAt",
+                                "type": "uint64"
+                            }
+                        ],
+                        "EIP712Domain": [
+                            {
+                                "name": "name",
+                                "type": "string"
+                            },
+                            {
+                                "name": "version",
+                                "type": "string"
+                            },
+                            {
+                                "name": "chainId",
+                                "type": "uint256"
+                            }
+                        ],
+                        "Limits": [
+                            {
+                                "name": "maxOrderNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxOpenNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "dailyNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxLoss",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxLeverage",
+                                "type": "string"
+                            },
+                            {
+                                "name": "markets",
+                                "type": "string[]"
+                            }
+                        ],
+                        "SessionGrant": [
+                            {
+                                "name": "paradexChain",
+                                "type": "string"
+                            },
+                            {
+                                "name": "environment",
+                                "type": "string"
+                            },
+                            {
+                                "name": "account",
+                                "type": "string"
+                            },
+                            {
+                                "name": "sessionKey",
+                                "type": "string"
+                            },
+                            {
+                                "name": "label",
+                                "type": "string"
+                            },
+                            {
+                                "name": "scopes",
+                                "type": "string[]"
+                            },
+                            {
+                                "name": "limits",
+                                "type": "Limits"
+                            },
+                            {
+                                "name": "builder",
+                                "type": "Builder"
+                            },
+                            {
+                                "name": "subaccounts",
+                                "type": "string[]"
+                            },
+                            {
+                                "name": "nonce",
+                                "type": "string"
+                            },
+                            {
+                                "name": "issuedAt",
+                                "type": "uint64"
+                            },
+                            {
+                                "name": "expiresAt",
+                                "type": "uint64"
+                            }
+                        ]
+                    }
+                },
+                "domainSeparator": "0x829c2852d73f9458839f9c1e8d096d73c457b487e19241fa0d514ddace4a0a5d",
+                "structHash": "0xd193c2a220f04e44ee5036c924bd5d5224ccd069a33c730ff8eebd0086347056",
+                "digest": "0x0b6d136c91e4803c37c2ea042a8b7d8344a5826a96a16dfaa21522b146f4bf21",
+                "signature": "0x2311d146deb61b28451dc325467a4ac5a4ea57182db5ea83abde97a3f5b022343e88c2b97dd36dd0a4f0a9a8161890757f15dd62e4add9e80a085b453f4c63ab1c"
+            },
+            "snip12": {
+                "typedData": {
+                    "domain": {
+                        "chainId": "PRIVATE_SN_PARACLEAR_MAINNET",
+                        "name": "Paradex Session",
+                        "revision": "1",
+                        "version": "1"
+                    },
+                    "message": {
+                        "account": "0x62cfa432ed8abe082192a9687dd569194596096f2ebd3d498df34c1ff2f14f",
+                        "builder": {
+                            "account": "0x0",
+                            "expiresAt": "0",
+                            "maxFeeRate": "0"
+                        },
+                        "environment": "mainnet",
+                        "expiresAt": "1767830400",
+                        "issuedAt": "1767225600",
+                        "label": "Paradex app",
+                        "limits": {
+                            "dailyNotional": "none",
+                            "markets": ["*"],
+                            "maxLeverage": "none",
+                            "maxLoss": "none",
+                            "maxOpenNotional": "none",
+                            "maxOrderNotional": "none"
+                        },
+                        "nonce": "0x123456789abcdef0123456789abcdef0",
+                        "paradexChain": "PRIVATE_SN_PARACLEAR_MAINNET",
+                        "scopes": ["trade"],
+                        "sessionKey": "0x1f2e3d4c5b6a79881726354453627180f9e8d7c6b5a493827160f5e4d3c2b1a",
+                        "subaccounts": []
+                    },
+                    "primaryType": "SessionGrant",
+                    "types": {
+                        "Builder": [
+                            {
+                                "name": "account",
+                                "type": "ContractAddress"
+                            },
+                            {
+                                "name": "maxFeeRate",
+                                "type": "string"
+                            },
+                            {
+                                "name": "expiresAt",
+                                "type": "timestamp"
+                            }
+                        ],
+                        "Limits": [
+                            {
+                                "name": "maxOrderNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxOpenNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "dailyNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxLoss",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxLeverage",
+                                "type": "string"
+                            },
+                            {
+                                "name": "markets",
+                                "type": "shortstring*"
+                            }
+                        ],
+                        "SessionGrant": [
+                            {
+                                "name": "paradexChain",
+                                "type": "shortstring"
+                            },
+                            {
+                                "name": "environment",
+                                "type": "shortstring"
+                            },
+                            {
+                                "name": "account",
+                                "type": "ContractAddress"
+                            },
+                            {
+                                "name": "sessionKey",
+                                "type": "felt"
+                            },
+                            {
+                                "name": "label",
+                                "type": "string"
+                            },
+                            {
+                                "name": "scopes",
+                                "type": "shortstring*"
+                            },
+                            {
+                                "name": "limits",
+                                "type": "Limits"
+                            },
+                            {
+                                "name": "builder",
+                                "type": "Builder"
+                            },
+                            {
+                                "name": "subaccounts",
+                                "type": "ContractAddress*"
+                            },
+                            {
+                                "name": "nonce",
+                                "type": "felt"
+                            },
+                            {
+                                "name": "issuedAt",
+                                "type": "timestamp"
+                            },
+                            {
+                                "name": "expiresAt",
+                                "type": "timestamp"
+                            }
+                        ],
+                        "StarknetDomain": [
+                            {
+                                "name": "name",
+                                "type": "shortstring"
+                            },
+                            {
+                                "name": "version",
+                                "type": "shortstring"
+                            },
+                            {
+                                "name": "chainId",
+                                "type": "shortstring"
+                            },
+                            {
+                                "name": "revision",
+                                "type": "shortstring"
+                            }
+                        ]
+                    }
+                },
+                "domainHash": "0x754ed8f2b3555aa6168733b3b1ffffd1f17bd7693fe5778295acd4ce43b5b50",
+                "structHash": "0x6c634addf8ebcc71fa2e7ffa7636d50856bf0a4e07208a8486b6f0161c821b5",
+                "messageHash": "0x27a5b3aec42721a4cda83d26dd10463e89465cf9e73921f54b8c09c49dbfe21"
+            }
+        },
+        {
+            "name": "session-grant-builder",
+            "primaryType": "SessionGrant",
+            "signer": "eip191",
+            "message": {
+                "paradexChain": "PRIVATE_SN_PARACLEAR_MAINNET",
+                "environment": "mainnet",
+                "account": "0x62cfa432ed8abe082192a9687dd569194596096f2ebd3d498df34c1ff2f14f",
+                "sessionKey": "0x1f2e3d4c5b6a79881726354453627180f9e8d7c6b5a493827160f5e4d3c2b1a",
+                "label": "Example Builder",
+                "scopes": ["trade", "trade:rfq"],
+                "limits": {
+                    "maxOrderNotional": "25000",
+                    "maxOpenNotional": "none",
+                    "dailyNotional": "500000",
+                    "maxLoss": "5000",
+                    "maxLeverage": "10",
+                    "markets": ["BTC-USD-PERP", "ETH-USD-PERP", "*-USD-PERP"]
+                },
+                "builder": {
+                    "account": "0x1b2c3d4e5f60718293a4b5c6d7e8f9012345678a9b0c1d2e3f405162738495",
+                    "maxFeeRate": "0.0005",
+                    "expiresAt": 0
+                },
+                "subaccounts": [],
+                "nonce": "0xfedcba9876543210fedcba9876543210",
+                "issuedAt": 1767225600,
+                "expiresAt": 1767830400
+            },
+            "eip712": {
+                "signatureChainId": 42161,
+                "typedData": {
+                    "domain": {
+                        "chainId": 42161,
+                        "name": "Paradex Session",
+                        "version": "1"
+                    },
+                    "message": {
+                        "account": "0x62cfa432ed8abe082192a9687dd569194596096f2ebd3d498df34c1ff2f14f",
+                        "builder": {
+                            "account": "0x1b2c3d4e5f60718293a4b5c6d7e8f9012345678a9b0c1d2e3f405162738495",
+                            "expiresAt": 0,
+                            "maxFeeRate": "0.0005"
+                        },
+                        "environment": "mainnet",
+                        "expiresAt": 1767830400,
+                        "issuedAt": 1767225600,
+                        "label": "Example Builder",
+                        "limits": {
+                            "dailyNotional": "500000",
+                            "markets": [
+                                "BTC-USD-PERP",
+                                "ETH-USD-PERP",
+                                "*-USD-PERP"
+                            ],
+                            "maxLeverage": "10",
+                            "maxLoss": "5000",
+                            "maxOpenNotional": "none",
+                            "maxOrderNotional": "25000"
+                        },
+                        "nonce": "0xfedcba9876543210fedcba9876543210",
+                        "paradexChain": "PRIVATE_SN_PARACLEAR_MAINNET",
+                        "scopes": ["trade", "trade:rfq"],
+                        "sessionKey": "0x1f2e3d4c5b6a79881726354453627180f9e8d7c6b5a493827160f5e4d3c2b1a",
+                        "subaccounts": []
+                    },
+                    "primaryType": "SessionGrant",
+                    "types": {
+                        "Builder": [
+                            {
+                                "name": "account",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxFeeRate",
+                                "type": "string"
+                            },
+                            {
+                                "name": "expiresAt",
+                                "type": "uint64"
+                            }
+                        ],
+                        "EIP712Domain": [
+                            {
+                                "name": "name",
+                                "type": "string"
+                            },
+                            {
+                                "name": "version",
+                                "type": "string"
+                            },
+                            {
+                                "name": "chainId",
+                                "type": "uint256"
+                            }
+                        ],
+                        "Limits": [
+                            {
+                                "name": "maxOrderNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxOpenNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "dailyNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxLoss",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxLeverage",
+                                "type": "string"
+                            },
+                            {
+                                "name": "markets",
+                                "type": "string[]"
+                            }
+                        ],
+                        "SessionGrant": [
+                            {
+                                "name": "paradexChain",
+                                "type": "string"
+                            },
+                            {
+                                "name": "environment",
+                                "type": "string"
+                            },
+                            {
+                                "name": "account",
+                                "type": "string"
+                            },
+                            {
+                                "name": "sessionKey",
+                                "type": "string"
+                            },
+                            {
+                                "name": "label",
+                                "type": "string"
+                            },
+                            {
+                                "name": "scopes",
+                                "type": "string[]"
+                            },
+                            {
+                                "name": "limits",
+                                "type": "Limits"
+                            },
+                            {
+                                "name": "builder",
+                                "type": "Builder"
+                            },
+                            {
+                                "name": "subaccounts",
+                                "type": "string[]"
+                            },
+                            {
+                                "name": "nonce",
+                                "type": "string"
+                            },
+                            {
+                                "name": "issuedAt",
+                                "type": "uint64"
+                            },
+                            {
+                                "name": "expiresAt",
+                                "type": "uint64"
+                            }
+                        ]
+                    }
+                },
+                "domainSeparator": "0x3a79312ff3885a46e192b86aebb36fbd075e4e3a8a330439b9b9f60f4349480f",
+                "structHash": "0x8b56a80c90b04daee2b457a6489b9f7e58a00d494fe3c865eea5629a02bd5c53",
+                "digest": "0x9726cd36e99baecd07a74503b2d78b0019efdd9d183543b2b379e674d7d1e79f",
+                "signature": "0x9d612dc14fda097b93fc2ca30314ec5e7b378f59523ba132dbabc6c2f4d676af14aca2e13b74f4fc72b6907f6f5b3b4bc99827105ec0ceb8258d391f81e7add31b"
+            },
+            "snip12": {
+                "typedData": {
+                    "domain": {
+                        "chainId": "PRIVATE_SN_PARACLEAR_MAINNET",
+                        "name": "Paradex Session",
+                        "revision": "1",
+                        "version": "1"
+                    },
+                    "message": {
+                        "account": "0x62cfa432ed8abe082192a9687dd569194596096f2ebd3d498df34c1ff2f14f",
+                        "builder": {
+                            "account": "0x1b2c3d4e5f60718293a4b5c6d7e8f9012345678a9b0c1d2e3f405162738495",
+                            "expiresAt": "0",
+                            "maxFeeRate": "0.0005"
+                        },
+                        "environment": "mainnet",
+                        "expiresAt": "1767830400",
+                        "issuedAt": "1767225600",
+                        "label": "Example Builder",
+                        "limits": {
+                            "dailyNotional": "500000",
+                            "markets": [
+                                "BTC-USD-PERP",
+                                "ETH-USD-PERP",
+                                "*-USD-PERP"
+                            ],
+                            "maxLeverage": "10",
+                            "maxLoss": "5000",
+                            "maxOpenNotional": "none",
+                            "maxOrderNotional": "25000"
+                        },
+                        "nonce": "0xfedcba9876543210fedcba9876543210",
+                        "paradexChain": "PRIVATE_SN_PARACLEAR_MAINNET",
+                        "scopes": ["trade", "trade:rfq"],
+                        "sessionKey": "0x1f2e3d4c5b6a79881726354453627180f9e8d7c6b5a493827160f5e4d3c2b1a",
+                        "subaccounts": []
+                    },
+                    "primaryType": "SessionGrant",
+                    "types": {
+                        "Builder": [
+                            {
+                                "name": "account",
+                                "type": "ContractAddress"
+                            },
+                            {
+                                "name": "maxFeeRate",
+                                "type": "string"
+                            },
+                            {
+                                "name": "expiresAt",
+                                "type": "timestamp"
+                            }
+                        ],
+                        "Limits": [
+                            {
+                                "name": "maxOrderNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxOpenNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "dailyNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxLoss",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxLeverage",
+                                "type": "string"
+                            },
+                            {
+                                "name": "markets",
+                                "type": "shortstring*"
+                            }
+                        ],
+                        "SessionGrant": [
+                            {
+                                "name": "paradexChain",
+                                "type": "shortstring"
+                            },
+                            {
+                                "name": "environment",
+                                "type": "shortstring"
+                            },
+                            {
+                                "name": "account",
+                                "type": "ContractAddress"
+                            },
+                            {
+                                "name": "sessionKey",
+                                "type": "felt"
+                            },
+                            {
+                                "name": "label",
+                                "type": "string"
+                            },
+                            {
+                                "name": "scopes",
+                                "type": "shortstring*"
+                            },
+                            {
+                                "name": "limits",
+                                "type": "Limits"
+                            },
+                            {
+                                "name": "builder",
+                                "type": "Builder"
+                            },
+                            {
+                                "name": "subaccounts",
+                                "type": "ContractAddress*"
+                            },
+                            {
+                                "name": "nonce",
+                                "type": "felt"
+                            },
+                            {
+                                "name": "issuedAt",
+                                "type": "timestamp"
+                            },
+                            {
+                                "name": "expiresAt",
+                                "type": "timestamp"
+                            }
+                        ],
+                        "StarknetDomain": [
+                            {
+                                "name": "name",
+                                "type": "shortstring"
+                            },
+                            {
+                                "name": "version",
+                                "type": "shortstring"
+                            },
+                            {
+                                "name": "chainId",
+                                "type": "shortstring"
+                            },
+                            {
+                                "name": "revision",
+                                "type": "shortstring"
+                            }
+                        ]
+                    }
+                },
+                "domainHash": "0x754ed8f2b3555aa6168733b3b1ffffd1f17bd7693fe5778295acd4ce43b5b50",
+                "structHash": "0x3f039b4c63ecdf6b35a1494d8099541db5e72c59a11576819241e8945652910",
+                "messageHash": "0x3d3f4f19ce317b5a02afee1cb4ecfe02c5d53458fcea74aeaaf55a26f14f958"
+            }
+        },
+        {
+            "name": "session-grant-subaccounts",
+            "primaryType": "SessionGrant",
+            "signer": "eip191",
+            "message": {
+                "paradexChain": "PRIVATE_SN_PARACLEAR_MAINNET",
+                "environment": "mainnet",
+                "account": "0x62cfa432ed8abe082192a9687dd569194596096f2ebd3d498df34c1ff2f14f",
+                "sessionKey": "0x1f2e3d4c5b6a79881726354453627180f9e8d7c6b5a493827160f5e4d3c2b1a",
+                "label": "Paradex app",
+                "scopes": ["trade", "account:settings"],
+                "limits": {
+                    "maxOrderNotional": "50000.5",
+                    "maxOpenNotional": "none",
+                    "dailyNotional": "none",
+                    "maxLoss": "none",
+                    "maxLeverage": "20",
+                    "markets": ["*"]
+                },
+                "builder": {
+                    "account": "0x0",
+                    "maxFeeRate": "0",
+                    "expiresAt": 0
+                },
+                "subaccounts": [
+                    "0x12f4e6a8b0c2d4e6f8091b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f6",
+                    "0x7a8b9c0d1e2f3a4b5c6d7e8f901a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3"
+                ],
+                "nonce": "0x11111111111111111111111111111111",
+                "issuedAt": 1767225600,
+                "expiresAt": 1767830400
+            },
+            "eip712": {
+                "signatureChainId": 1,
+                "typedData": {
+                    "domain": {
+                        "chainId": 1,
+                        "name": "Paradex Session",
+                        "version": "1"
+                    },
+                    "message": {
+                        "account": "0x62cfa432ed8abe082192a9687dd569194596096f2ebd3d498df34c1ff2f14f",
+                        "builder": {
+                            "account": "0x0",
+                            "expiresAt": 0,
+                            "maxFeeRate": "0"
+                        },
+                        "environment": "mainnet",
+                        "expiresAt": 1767830400,
+                        "issuedAt": 1767225600,
+                        "label": "Paradex app",
+                        "limits": {
+                            "dailyNotional": "none",
+                            "markets": ["*"],
+                            "maxLeverage": "20",
+                            "maxLoss": "none",
+                            "maxOpenNotional": "none",
+                            "maxOrderNotional": "50000.5"
+                        },
+                        "nonce": "0x11111111111111111111111111111111",
+                        "paradexChain": "PRIVATE_SN_PARACLEAR_MAINNET",
+                        "scopes": ["trade", "account:settings"],
+                        "sessionKey": "0x1f2e3d4c5b6a79881726354453627180f9e8d7c6b5a493827160f5e4d3c2b1a",
+                        "subaccounts": [
+                            "0x12f4e6a8b0c2d4e6f8091b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f6",
+                            "0x7a8b9c0d1e2f3a4b5c6d7e8f901a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3"
+                        ]
+                    },
+                    "primaryType": "SessionGrant",
+                    "types": {
+                        "Builder": [
+                            {
+                                "name": "account",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxFeeRate",
+                                "type": "string"
+                            },
+                            {
+                                "name": "expiresAt",
+                                "type": "uint64"
+                            }
+                        ],
+                        "EIP712Domain": [
+                            {
+                                "name": "name",
+                                "type": "string"
+                            },
+                            {
+                                "name": "version",
+                                "type": "string"
+                            },
+                            {
+                                "name": "chainId",
+                                "type": "uint256"
+                            }
+                        ],
+                        "Limits": [
+                            {
+                                "name": "maxOrderNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxOpenNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "dailyNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxLoss",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxLeverage",
+                                "type": "string"
+                            },
+                            {
+                                "name": "markets",
+                                "type": "string[]"
+                            }
+                        ],
+                        "SessionGrant": [
+                            {
+                                "name": "paradexChain",
+                                "type": "string"
+                            },
+                            {
+                                "name": "environment",
+                                "type": "string"
+                            },
+                            {
+                                "name": "account",
+                                "type": "string"
+                            },
+                            {
+                                "name": "sessionKey",
+                                "type": "string"
+                            },
+                            {
+                                "name": "label",
+                                "type": "string"
+                            },
+                            {
+                                "name": "scopes",
+                                "type": "string[]"
+                            },
+                            {
+                                "name": "limits",
+                                "type": "Limits"
+                            },
+                            {
+                                "name": "builder",
+                                "type": "Builder"
+                            },
+                            {
+                                "name": "subaccounts",
+                                "type": "string[]"
+                            },
+                            {
+                                "name": "nonce",
+                                "type": "string"
+                            },
+                            {
+                                "name": "issuedAt",
+                                "type": "uint64"
+                            },
+                            {
+                                "name": "expiresAt",
+                                "type": "uint64"
+                            }
+                        ]
+                    }
+                },
+                "domainSeparator": "0x829c2852d73f9458839f9c1e8d096d73c457b487e19241fa0d514ddace4a0a5d",
+                "structHash": "0x5701c8bb4d8a9764ca2f02b868c2940730ee64881904249e82a5d71f1e36bfe0",
+                "digest": "0x4cdee65d3d4613f021d59e78aed04bf1fdc603db5014fe01e1b7606f9dcd3312",
+                "signature": "0xde541af19cbd353583295bdb9e2e983f66acca4700016865d4b41d2a4f0b5abe4a743e3641af6c82a98b6205ad4773017849e329b5de4b319007a1de39d9e1741b"
+            },
+            "snip12": {
+                "typedData": {
+                    "domain": {
+                        "chainId": "PRIVATE_SN_PARACLEAR_MAINNET",
+                        "name": "Paradex Session",
+                        "revision": "1",
+                        "version": "1"
+                    },
+                    "message": {
+                        "account": "0x62cfa432ed8abe082192a9687dd569194596096f2ebd3d498df34c1ff2f14f",
+                        "builder": {
+                            "account": "0x0",
+                            "expiresAt": "0",
+                            "maxFeeRate": "0"
+                        },
+                        "environment": "mainnet",
+                        "expiresAt": "1767830400",
+                        "issuedAt": "1767225600",
+                        "label": "Paradex app",
+                        "limits": {
+                            "dailyNotional": "none",
+                            "markets": ["*"],
+                            "maxLeverage": "20",
+                            "maxLoss": "none",
+                            "maxOpenNotional": "none",
+                            "maxOrderNotional": "50000.5"
+                        },
+                        "nonce": "0x11111111111111111111111111111111",
+                        "paradexChain": "PRIVATE_SN_PARACLEAR_MAINNET",
+                        "scopes": ["trade", "account:settings"],
+                        "sessionKey": "0x1f2e3d4c5b6a79881726354453627180f9e8d7c6b5a493827160f5e4d3c2b1a",
+                        "subaccounts": [
+                            "0x12f4e6a8b0c2d4e6f8091b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f6",
+                            "0x7a8b9c0d1e2f3a4b5c6d7e8f901a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3"
+                        ]
+                    },
+                    "primaryType": "SessionGrant",
+                    "types": {
+                        "Builder": [
+                            {
+                                "name": "account",
+                                "type": "ContractAddress"
+                            },
+                            {
+                                "name": "maxFeeRate",
+                                "type": "string"
+                            },
+                            {
+                                "name": "expiresAt",
+                                "type": "timestamp"
+                            }
+                        ],
+                        "Limits": [
+                            {
+                                "name": "maxOrderNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxOpenNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "dailyNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxLoss",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxLeverage",
+                                "type": "string"
+                            },
+                            {
+                                "name": "markets",
+                                "type": "shortstring*"
+                            }
+                        ],
+                        "SessionGrant": [
+                            {
+                                "name": "paradexChain",
+                                "type": "shortstring"
+                            },
+                            {
+                                "name": "environment",
+                                "type": "shortstring"
+                            },
+                            {
+                                "name": "account",
+                                "type": "ContractAddress"
+                            },
+                            {
+                                "name": "sessionKey",
+                                "type": "felt"
+                            },
+                            {
+                                "name": "label",
+                                "type": "string"
+                            },
+                            {
+                                "name": "scopes",
+                                "type": "shortstring*"
+                            },
+                            {
+                                "name": "limits",
+                                "type": "Limits"
+                            },
+                            {
+                                "name": "builder",
+                                "type": "Builder"
+                            },
+                            {
+                                "name": "subaccounts",
+                                "type": "ContractAddress*"
+                            },
+                            {
+                                "name": "nonce",
+                                "type": "felt"
+                            },
+                            {
+                                "name": "issuedAt",
+                                "type": "timestamp"
+                            },
+                            {
+                                "name": "expiresAt",
+                                "type": "timestamp"
+                            }
+                        ],
+                        "StarknetDomain": [
+                            {
+                                "name": "name",
+                                "type": "shortstring"
+                            },
+                            {
+                                "name": "version",
+                                "type": "shortstring"
+                            },
+                            {
+                                "name": "chainId",
+                                "type": "shortstring"
+                            },
+                            {
+                                "name": "revision",
+                                "type": "shortstring"
+                            }
+                        ]
+                    }
+                },
+                "domainHash": "0x754ed8f2b3555aa6168733b3b1ffffd1f17bd7693fe5778295acd4ce43b5b50",
+                "structHash": "0x57f9c66c42a3f19d577d5103041113537d8ecfea2fd7ceb14a244ba297aec2e",
+                "messageHash": "0x5373a2687a7237fbb26b951edb388c2b6571aed8237d3b8138eb9058130ebe1"
+            }
+        },
+        {
+            "name": "session-grant-stark-owner",
+            "primaryType": "SessionGrant",
+            "signer": "stark",
+            "message": {
+                "paradexChain": "PRIVATE_SN_PARACLEAR_MAINNET",
+                "environment": "mainnet",
+                "account": "0x5d8b9a1c6c8e1f3b7a2d4e6f8091a2b3c4d5e6f708192a3b4c5d6e7f8091a2b",
+                "sessionKey": "0x1f2e3d4c5b6a79881726354453627180f9e8d7c6b5a493827160f5e4d3c2b1a",
+                "label": "Paradex app",
+                "scopes": ["trade", "trade:block"],
+                "limits": {
+                    "maxOrderNotional": "25000",
+                    "maxOpenNotional": "100000",
+                    "dailyNotional": "500000",
+                    "maxLoss": "5000",
+                    "maxLeverage": "10",
+                    "markets": ["BTC-USD-PERP", "ETH-USD-PERP"]
+                },
+                "builder": {
+                    "account": "0x0",
+                    "maxFeeRate": "0",
+                    "expiresAt": 0
+                },
+                "subaccounts": [],
+                "nonce": "0x33333333333333333333333333333333",
+                "issuedAt": 1767225600,
+                "expiresAt": 1767830400
+            },
+            "eip712": {
+                "signatureChainId": 1,
+                "typedData": {
+                    "domain": {
+                        "chainId": 1,
+                        "name": "Paradex Session",
+                        "version": "1"
+                    },
+                    "message": {
+                        "account": "0x5d8b9a1c6c8e1f3b7a2d4e6f8091a2b3c4d5e6f708192a3b4c5d6e7f8091a2b",
+                        "builder": {
+                            "account": "0x0",
+                            "expiresAt": 0,
+                            "maxFeeRate": "0"
+                        },
+                        "environment": "mainnet",
+                        "expiresAt": 1767830400,
+                        "issuedAt": 1767225600,
+                        "label": "Paradex app",
+                        "limits": {
+                            "dailyNotional": "500000",
+                            "markets": ["BTC-USD-PERP", "ETH-USD-PERP"],
+                            "maxLeverage": "10",
+                            "maxLoss": "5000",
+                            "maxOpenNotional": "100000",
+                            "maxOrderNotional": "25000"
+                        },
+                        "nonce": "0x33333333333333333333333333333333",
+                        "paradexChain": "PRIVATE_SN_PARACLEAR_MAINNET",
+                        "scopes": ["trade", "trade:block"],
+                        "sessionKey": "0x1f2e3d4c5b6a79881726354453627180f9e8d7c6b5a493827160f5e4d3c2b1a",
+                        "subaccounts": []
+                    },
+                    "primaryType": "SessionGrant",
+                    "types": {
+                        "Builder": [
+                            {
+                                "name": "account",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxFeeRate",
+                                "type": "string"
+                            },
+                            {
+                                "name": "expiresAt",
+                                "type": "uint64"
+                            }
+                        ],
+                        "EIP712Domain": [
+                            {
+                                "name": "name",
+                                "type": "string"
+                            },
+                            {
+                                "name": "version",
+                                "type": "string"
+                            },
+                            {
+                                "name": "chainId",
+                                "type": "uint256"
+                            }
+                        ],
+                        "Limits": [
+                            {
+                                "name": "maxOrderNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxOpenNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "dailyNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxLoss",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxLeverage",
+                                "type": "string"
+                            },
+                            {
+                                "name": "markets",
+                                "type": "string[]"
+                            }
+                        ],
+                        "SessionGrant": [
+                            {
+                                "name": "paradexChain",
+                                "type": "string"
+                            },
+                            {
+                                "name": "environment",
+                                "type": "string"
+                            },
+                            {
+                                "name": "account",
+                                "type": "string"
+                            },
+                            {
+                                "name": "sessionKey",
+                                "type": "string"
+                            },
+                            {
+                                "name": "label",
+                                "type": "string"
+                            },
+                            {
+                                "name": "scopes",
+                                "type": "string[]"
+                            },
+                            {
+                                "name": "limits",
+                                "type": "Limits"
+                            },
+                            {
+                                "name": "builder",
+                                "type": "Builder"
+                            },
+                            {
+                                "name": "subaccounts",
+                                "type": "string[]"
+                            },
+                            {
+                                "name": "nonce",
+                                "type": "string"
+                            },
+                            {
+                                "name": "issuedAt",
+                                "type": "uint64"
+                            },
+                            {
+                                "name": "expiresAt",
+                                "type": "uint64"
+                            }
+                        ]
+                    }
+                },
+                "domainSeparator": "0x829c2852d73f9458839f9c1e8d096d73c457b487e19241fa0d514ddace4a0a5d",
+                "structHash": "0x6e467ea50a26cf58539248f1853df06ed986bf291a3eb20cf04a7a77a7c9343e",
+                "digest": "0xb99de5dfd7ab6ac50bed3948095bf6886316de00c9fa5a5e03bae91ec4ef39b9"
+            },
+            "snip12": {
+                "typedData": {
+                    "domain": {
+                        "chainId": "PRIVATE_SN_PARACLEAR_MAINNET",
+                        "name": "Paradex Session",
+                        "revision": "1",
+                        "version": "1"
+                    },
+                    "message": {
+                        "account": "0x5d8b9a1c6c8e1f3b7a2d4e6f8091a2b3c4d5e6f708192a3b4c5d6e7f8091a2b",
+                        "builder": {
+                            "account": "0x0",
+                            "expiresAt": "0",
+                            "maxFeeRate": "0"
+                        },
+                        "environment": "mainnet",
+                        "expiresAt": "1767830400",
+                        "issuedAt": "1767225600",
+                        "label": "Paradex app",
+                        "limits": {
+                            "dailyNotional": "500000",
+                            "markets": ["BTC-USD-PERP", "ETH-USD-PERP"],
+                            "maxLeverage": "10",
+                            "maxLoss": "5000",
+                            "maxOpenNotional": "100000",
+                            "maxOrderNotional": "25000"
+                        },
+                        "nonce": "0x33333333333333333333333333333333",
+                        "paradexChain": "PRIVATE_SN_PARACLEAR_MAINNET",
+                        "scopes": ["trade", "trade:block"],
+                        "sessionKey": "0x1f2e3d4c5b6a79881726354453627180f9e8d7c6b5a493827160f5e4d3c2b1a",
+                        "subaccounts": []
+                    },
+                    "primaryType": "SessionGrant",
+                    "types": {
+                        "Builder": [
+                            {
+                                "name": "account",
+                                "type": "ContractAddress"
+                            },
+                            {
+                                "name": "maxFeeRate",
+                                "type": "string"
+                            },
+                            {
+                                "name": "expiresAt",
+                                "type": "timestamp"
+                            }
+                        ],
+                        "Limits": [
+                            {
+                                "name": "maxOrderNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxOpenNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "dailyNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxLoss",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxLeverage",
+                                "type": "string"
+                            },
+                            {
+                                "name": "markets",
+                                "type": "shortstring*"
+                            }
+                        ],
+                        "SessionGrant": [
+                            {
+                                "name": "paradexChain",
+                                "type": "shortstring"
+                            },
+                            {
+                                "name": "environment",
+                                "type": "shortstring"
+                            },
+                            {
+                                "name": "account",
+                                "type": "ContractAddress"
+                            },
+                            {
+                                "name": "sessionKey",
+                                "type": "felt"
+                            },
+                            {
+                                "name": "label",
+                                "type": "string"
+                            },
+                            {
+                                "name": "scopes",
+                                "type": "shortstring*"
+                            },
+                            {
+                                "name": "limits",
+                                "type": "Limits"
+                            },
+                            {
+                                "name": "builder",
+                                "type": "Builder"
+                            },
+                            {
+                                "name": "subaccounts",
+                                "type": "ContractAddress*"
+                            },
+                            {
+                                "name": "nonce",
+                                "type": "felt"
+                            },
+                            {
+                                "name": "issuedAt",
+                                "type": "timestamp"
+                            },
+                            {
+                                "name": "expiresAt",
+                                "type": "timestamp"
+                            }
+                        ],
+                        "StarknetDomain": [
+                            {
+                                "name": "name",
+                                "type": "shortstring"
+                            },
+                            {
+                                "name": "version",
+                                "type": "shortstring"
+                            },
+                            {
+                                "name": "chainId",
+                                "type": "shortstring"
+                            },
+                            {
+                                "name": "revision",
+                                "type": "shortstring"
+                            }
+                        ]
+                    }
+                },
+                "domainHash": "0x754ed8f2b3555aa6168733b3b1ffffd1f17bd7693fe5778295acd4ce43b5b50",
+                "structHash": "0x51c06ab82092110bb9380765d87d9103a5203c3c0f2269e357de7a818a329e",
+                "messageHash": "0x4830e17733a49b32dada45da0d7b93bef908e98c91b0d624bfcd16b3b91cbd6",
+                "signature": [
+                    "0x705ee6ea3876d9014dce58274f41629c5578dc1e6f8121182f0425479afe617",
+                    "0x4bd9f16bc3ffa07a1adc027f88fe0e4da35c5b7dc32f288df6ca033912da528"
+                ]
+            }
+        },
+        {
+            "name": "passkey-grant-first-party",
+            "primaryType": "PasskeyGrant",
+            "signer": "eip191",
+            "message": {
+                "paradexChain": "PRIVATE_SN_PARACLEAR_MAINNET",
+                "environment": "mainnet",
+                "account": "0x62cfa432ed8abe082192a9687dd569194596096f2ebd3d498df34c1ff2f14f",
+                "passkey": {
+                    "credentialId": "dGVzdC1jcmVkZW50aWFsLWlk",
+                    "pubkeyX": "0x60fed4ba255a9d31c961eb74c6356d68c049b8923b61fa6ce669622e60f29fb6",
+                    "pubkeyY": "0x7903fe1008b8bc99a41ae9e95628bc64f2f1b20c2d7e9f5177a3c294d4462299",
+                    "rpId": "paradex.trade",
+                    "label": "iCloud Keychain"
+                },
+                "ceiling": {
+                    "scopes": ["trade"],
+                    "limits": {
+                        "maxOrderNotional": "none",
+                        "maxOpenNotional": "none",
+                        "dailyNotional": "none",
+                        "maxLoss": "none",
+                        "maxLeverage": "none",
+                        "markets": ["*"]
+                    },
+                    "subaccounts": [],
+                    "includeFutureSubaccounts": false,
+                    "maxSessionTtl": 86400,
+                    "maxConcurrentSessions": 5
+                },
+                "builderAccount": "0x0",
+                "nonce": "0x112233445566778899aabbccddeeff00",
+                "issuedAt": 1767225600,
+                "expiresAt": 1782777600
+            },
+            "eip712": {
+                "signatureChainId": 1,
+                "typedData": {
+                    "domain": {
+                        "chainId": 1,
+                        "name": "Paradex Session",
+                        "version": "1"
+                    },
+                    "message": {
+                        "account": "0x62cfa432ed8abe082192a9687dd569194596096f2ebd3d498df34c1ff2f14f",
+                        "builderAccount": "0x0",
+                        "ceiling": {
+                            "includeFutureSubaccounts": false,
+                            "limits": {
+                                "dailyNotional": "none",
+                                "markets": ["*"],
+                                "maxLeverage": "none",
+                                "maxLoss": "none",
+                                "maxOpenNotional": "none",
+                                "maxOrderNotional": "none"
+                            },
+                            "maxConcurrentSessions": 5,
+                            "maxSessionTtl": 86400,
+                            "scopes": ["trade"],
+                            "subaccounts": []
+                        },
+                        "environment": "mainnet",
+                        "expiresAt": 1782777600,
+                        "issuedAt": 1767225600,
+                        "nonce": "0x112233445566778899aabbccddeeff00",
+                        "paradexChain": "PRIVATE_SN_PARACLEAR_MAINNET",
+                        "passkey": {
+                            "credentialId": "dGVzdC1jcmVkZW50aWFsLWlk",
+                            "label": "iCloud Keychain",
+                            "pubkeyX": "0x60fed4ba255a9d31c961eb74c6356d68c049b8923b61fa6ce669622e60f29fb6",
+                            "pubkeyY": "0x7903fe1008b8bc99a41ae9e95628bc64f2f1b20c2d7e9f5177a3c294d4462299",
+                            "rpId": "paradex.trade"
+                        }
+                    },
+                    "primaryType": "PasskeyGrant",
+                    "types": {
+                        "Ceiling": [
+                            {
+                                "name": "scopes",
+                                "type": "string[]"
+                            },
+                            {
+                                "name": "limits",
+                                "type": "Limits"
+                            },
+                            {
+                                "name": "subaccounts",
+                                "type": "string[]"
+                            },
+                            {
+                                "name": "includeFutureSubaccounts",
+                                "type": "bool"
+                            },
+                            {
+                                "name": "maxSessionTtl",
+                                "type": "uint64"
+                            },
+                            {
+                                "name": "maxConcurrentSessions",
+                                "type": "uint64"
+                            }
+                        ],
+                        "EIP712Domain": [
+                            {
+                                "name": "name",
+                                "type": "string"
+                            },
+                            {
+                                "name": "version",
+                                "type": "string"
+                            },
+                            {
+                                "name": "chainId",
+                                "type": "uint256"
+                            }
+                        ],
+                        "Limits": [
+                            {
+                                "name": "maxOrderNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxOpenNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "dailyNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxLoss",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxLeverage",
+                                "type": "string"
+                            },
+                            {
+                                "name": "markets",
+                                "type": "string[]"
+                            }
+                        ],
+                        "Passkey": [
+                            {
+                                "name": "credentialId",
+                                "type": "string"
+                            },
+                            {
+                                "name": "pubkeyX",
+                                "type": "string"
+                            },
+                            {
+                                "name": "pubkeyY",
+                                "type": "string"
+                            },
+                            {
+                                "name": "rpId",
+                                "type": "string"
+                            },
+                            {
+                                "name": "label",
+                                "type": "string"
+                            }
+                        ],
+                        "PasskeyGrant": [
+                            {
+                                "name": "paradexChain",
+                                "type": "string"
+                            },
+                            {
+                                "name": "environment",
+                                "type": "string"
+                            },
+                            {
+                                "name": "account",
+                                "type": "string"
+                            },
+                            {
+                                "name": "passkey",
+                                "type": "Passkey"
+                            },
+                            {
+                                "name": "ceiling",
+                                "type": "Ceiling"
+                            },
+                            {
+                                "name": "builderAccount",
+                                "type": "string"
+                            },
+                            {
+                                "name": "nonce",
+                                "type": "string"
+                            },
+                            {
+                                "name": "issuedAt",
+                                "type": "uint64"
+                            },
+                            {
+                                "name": "expiresAt",
+                                "type": "uint64"
+                            }
+                        ]
+                    }
+                },
+                "domainSeparator": "0x829c2852d73f9458839f9c1e8d096d73c457b487e19241fa0d514ddace4a0a5d",
+                "structHash": "0x916082710c8b35bc4ba4dc3798dbf033574374ec861c2c385539cf1569ad6988",
+                "digest": "0x8f4ddee80a2efeb9ae10c55352e25af7ae76f04ac3f4d230399470aad2995428",
+                "signature": "0xe9fd65453403e13e7111d6d03675c1648a655aa1a5a861e892085d9229398ad67ae5e67582d12ce18ffa64dd6ac2a27a57c73fc60e5698eaf3e5020853562e191c"
+            },
+            "snip12": {
+                "typedData": {
+                    "domain": {
+                        "chainId": "PRIVATE_SN_PARACLEAR_MAINNET",
+                        "name": "Paradex Session",
+                        "revision": "1",
+                        "version": "1"
+                    },
+                    "message": {
+                        "account": "0x62cfa432ed8abe082192a9687dd569194596096f2ebd3d498df34c1ff2f14f",
+                        "builderAccount": "0x0",
+                        "ceiling": {
+                            "includeFutureSubaccounts": false,
+                            "limits": {
+                                "dailyNotional": "none",
+                                "markets": ["*"],
+                                "maxLeverage": "none",
+                                "maxLoss": "none",
+                                "maxOpenNotional": "none",
+                                "maxOrderNotional": "none"
+                            },
+                            "maxConcurrentSessions": "5",
+                            "maxSessionTtl": "86400",
+                            "scopes": ["trade"],
+                            "subaccounts": []
+                        },
+                        "environment": "mainnet",
+                        "expiresAt": "1782777600",
+                        "issuedAt": "1767225600",
+                        "nonce": "0x112233445566778899aabbccddeeff00",
+                        "paradexChain": "PRIVATE_SN_PARACLEAR_MAINNET",
+                        "passkey": {
+                            "credentialId": "dGVzdC1jcmVkZW50aWFsLWlk",
+                            "label": "iCloud Keychain",
+                            "pubkeyX": "0x60fed4ba255a9d31c961eb74c6356d68c049b8923b61fa6ce669622e60f29fb6",
+                            "pubkeyY": "0x7903fe1008b8bc99a41ae9e95628bc64f2f1b20c2d7e9f5177a3c294d4462299",
+                            "rpId": "paradex.trade"
+                        }
+                    },
+                    "primaryType": "PasskeyGrant",
+                    "types": {
+                        "Ceiling": [
+                            {
+                                "name": "scopes",
+                                "type": "shortstring*"
+                            },
+                            {
+                                "name": "limits",
+                                "type": "Limits"
+                            },
+                            {
+                                "name": "subaccounts",
+                                "type": "ContractAddress*"
+                            },
+                            {
+                                "name": "includeFutureSubaccounts",
+                                "type": "bool"
+                            },
+                            {
+                                "name": "maxSessionTtl",
+                                "type": "u128"
+                            },
+                            {
+                                "name": "maxConcurrentSessions",
+                                "type": "u128"
+                            }
+                        ],
+                        "Limits": [
+                            {
+                                "name": "maxOrderNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxOpenNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "dailyNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxLoss",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxLeverage",
+                                "type": "string"
+                            },
+                            {
+                                "name": "markets",
+                                "type": "shortstring*"
+                            }
+                        ],
+                        "Passkey": [
+                            {
+                                "name": "credentialId",
+                                "type": "string"
+                            },
+                            {
+                                "name": "pubkeyX",
+                                "type": "string"
+                            },
+                            {
+                                "name": "pubkeyY",
+                                "type": "string"
+                            },
+                            {
+                                "name": "rpId",
+                                "type": "string"
+                            },
+                            {
+                                "name": "label",
+                                "type": "string"
+                            }
+                        ],
+                        "PasskeyGrant": [
+                            {
+                                "name": "paradexChain",
+                                "type": "shortstring"
+                            },
+                            {
+                                "name": "environment",
+                                "type": "shortstring"
+                            },
+                            {
+                                "name": "account",
+                                "type": "ContractAddress"
+                            },
+                            {
+                                "name": "passkey",
+                                "type": "Passkey"
+                            },
+                            {
+                                "name": "ceiling",
+                                "type": "Ceiling"
+                            },
+                            {
+                                "name": "builderAccount",
+                                "type": "ContractAddress"
+                            },
+                            {
+                                "name": "nonce",
+                                "type": "felt"
+                            },
+                            {
+                                "name": "issuedAt",
+                                "type": "timestamp"
+                            },
+                            {
+                                "name": "expiresAt",
+                                "type": "timestamp"
+                            }
+                        ],
+                        "StarknetDomain": [
+                            {
+                                "name": "name",
+                                "type": "shortstring"
+                            },
+                            {
+                                "name": "version",
+                                "type": "shortstring"
+                            },
+                            {
+                                "name": "chainId",
+                                "type": "shortstring"
+                            },
+                            {
+                                "name": "revision",
+                                "type": "shortstring"
+                            }
+                        ]
+                    }
+                },
+                "domainHash": "0x754ed8f2b3555aa6168733b3b1ffffd1f17bd7693fe5778295acd4ce43b5b50",
+                "structHash": "0x6c47b448d087c99c9f6f86d6d33ba816c58fdc8518043ebcaf7dd930fe478e5",
+                "messageHash": "0x5b4ea64de162308104ad9ffe8bf047f1944eacdc3d4f75669928a257aaf770c"
+            }
+        },
+        {
+            "name": "passkey-grant-builder",
+            "primaryType": "PasskeyGrant",
+            "signer": "eip191",
+            "message": {
+                "paradexChain": "PRIVATE_SN_PARACLEAR_MAINNET",
+                "environment": "mainnet",
+                "account": "0x62cfa432ed8abe082192a9687dd569194596096f2ebd3d498df34c1ff2f14f",
+                "passkey": {
+                    "credentialId": "dGVzdC1jcmVkZW50aWFsLWlk",
+                    "pubkeyX": "0x60fed4ba255a9d31c961eb74c6356d68c049b8923b61fa6ce669622e60f29fb6",
+                    "pubkeyY": "0x7903fe1008b8bc99a41ae9e95628bc64f2f1b20c2d7e9f5177a3c294d4462299",
+                    "rpId": "builder.example",
+                    "label": "Example Builder passkey"
+                },
+                "ceiling": {
+                    "scopes": ["trade"],
+                    "limits": {
+                        "maxOrderNotional": "25000",
+                        "maxOpenNotional": "100000",
+                        "dailyNotional": "500000",
+                        "maxLoss": "5000",
+                        "maxLeverage": "none",
+                        "markets": ["BTC-USD-PERP", "ETH-USD-PERP"]
+                    },
+                    "subaccounts": [],
+                    "includeFutureSubaccounts": false,
+                    "maxSessionTtl": 86400,
+                    "maxConcurrentSessions": 5
+                },
+                "builderAccount": "0x1b2c3d4e5f60718293a4b5c6d7e8f9012345678a9b0c1d2e3f405162738495",
+                "nonce": "0x44444444444444444444444444444444",
+                "issuedAt": 1767225600,
+                "expiresAt": 1782777600
+            },
+            "eip712": {
+                "signatureChainId": 8453,
+                "typedData": {
+                    "domain": {
+                        "chainId": 8453,
+                        "name": "Paradex Session",
+                        "version": "1"
+                    },
+                    "message": {
+                        "account": "0x62cfa432ed8abe082192a9687dd569194596096f2ebd3d498df34c1ff2f14f",
+                        "builderAccount": "0x1b2c3d4e5f60718293a4b5c6d7e8f9012345678a9b0c1d2e3f405162738495",
+                        "ceiling": {
+                            "includeFutureSubaccounts": false,
+                            "limits": {
+                                "dailyNotional": "500000",
+                                "markets": ["BTC-USD-PERP", "ETH-USD-PERP"],
+                                "maxLeverage": "none",
+                                "maxLoss": "5000",
+                                "maxOpenNotional": "100000",
+                                "maxOrderNotional": "25000"
+                            },
+                            "maxConcurrentSessions": 5,
+                            "maxSessionTtl": 86400,
+                            "scopes": ["trade"],
+                            "subaccounts": []
+                        },
+                        "environment": "mainnet",
+                        "expiresAt": 1782777600,
+                        "issuedAt": 1767225600,
+                        "nonce": "0x44444444444444444444444444444444",
+                        "paradexChain": "PRIVATE_SN_PARACLEAR_MAINNET",
+                        "passkey": {
+                            "credentialId": "dGVzdC1jcmVkZW50aWFsLWlk",
+                            "label": "Example Builder passkey",
+                            "pubkeyX": "0x60fed4ba255a9d31c961eb74c6356d68c049b8923b61fa6ce669622e60f29fb6",
+                            "pubkeyY": "0x7903fe1008b8bc99a41ae9e95628bc64f2f1b20c2d7e9f5177a3c294d4462299",
+                            "rpId": "builder.example"
+                        }
+                    },
+                    "primaryType": "PasskeyGrant",
+                    "types": {
+                        "Ceiling": [
+                            {
+                                "name": "scopes",
+                                "type": "string[]"
+                            },
+                            {
+                                "name": "limits",
+                                "type": "Limits"
+                            },
+                            {
+                                "name": "subaccounts",
+                                "type": "string[]"
+                            },
+                            {
+                                "name": "includeFutureSubaccounts",
+                                "type": "bool"
+                            },
+                            {
+                                "name": "maxSessionTtl",
+                                "type": "uint64"
+                            },
+                            {
+                                "name": "maxConcurrentSessions",
+                                "type": "uint64"
+                            }
+                        ],
+                        "EIP712Domain": [
+                            {
+                                "name": "name",
+                                "type": "string"
+                            },
+                            {
+                                "name": "version",
+                                "type": "string"
+                            },
+                            {
+                                "name": "chainId",
+                                "type": "uint256"
+                            }
+                        ],
+                        "Limits": [
+                            {
+                                "name": "maxOrderNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxOpenNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "dailyNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxLoss",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxLeverage",
+                                "type": "string"
+                            },
+                            {
+                                "name": "markets",
+                                "type": "string[]"
+                            }
+                        ],
+                        "Passkey": [
+                            {
+                                "name": "credentialId",
+                                "type": "string"
+                            },
+                            {
+                                "name": "pubkeyX",
+                                "type": "string"
+                            },
+                            {
+                                "name": "pubkeyY",
+                                "type": "string"
+                            },
+                            {
+                                "name": "rpId",
+                                "type": "string"
+                            },
+                            {
+                                "name": "label",
+                                "type": "string"
+                            }
+                        ],
+                        "PasskeyGrant": [
+                            {
+                                "name": "paradexChain",
+                                "type": "string"
+                            },
+                            {
+                                "name": "environment",
+                                "type": "string"
+                            },
+                            {
+                                "name": "account",
+                                "type": "string"
+                            },
+                            {
+                                "name": "passkey",
+                                "type": "Passkey"
+                            },
+                            {
+                                "name": "ceiling",
+                                "type": "Ceiling"
+                            },
+                            {
+                                "name": "builderAccount",
+                                "type": "string"
+                            },
+                            {
+                                "name": "nonce",
+                                "type": "string"
+                            },
+                            {
+                                "name": "issuedAt",
+                                "type": "uint64"
+                            },
+                            {
+                                "name": "expiresAt",
+                                "type": "uint64"
+                            }
+                        ]
+                    }
+                },
+                "domainSeparator": "0x94efa2990631b88318d0f93c54d71acd54194e7cf7e20dc869527cc61265172b",
+                "structHash": "0xd5eec9af9cfa88b05d3459c0f6bf24eecd81b366cfd86224e0ad6a59399d6418",
+                "digest": "0xce02907e9c98d283a76c2a719ff5978326640fbcbc33a62608e6f8c3c020dddc",
+                "signature": "0xc21d1c5b3be955f86ec061d377bcc1aa4af2273bc3404e7095ef1bcf1f35342b1794ece381dc3c41bb4267a43d46ddbf9fbd4aab1283c9a7c2bd966781d029fc1b"
+            },
+            "snip12": {
+                "typedData": {
+                    "domain": {
+                        "chainId": "PRIVATE_SN_PARACLEAR_MAINNET",
+                        "name": "Paradex Session",
+                        "revision": "1",
+                        "version": "1"
+                    },
+                    "message": {
+                        "account": "0x62cfa432ed8abe082192a9687dd569194596096f2ebd3d498df34c1ff2f14f",
+                        "builderAccount": "0x1b2c3d4e5f60718293a4b5c6d7e8f9012345678a9b0c1d2e3f405162738495",
+                        "ceiling": {
+                            "includeFutureSubaccounts": false,
+                            "limits": {
+                                "dailyNotional": "500000",
+                                "markets": ["BTC-USD-PERP", "ETH-USD-PERP"],
+                                "maxLeverage": "none",
+                                "maxLoss": "5000",
+                                "maxOpenNotional": "100000",
+                                "maxOrderNotional": "25000"
+                            },
+                            "maxConcurrentSessions": "5",
+                            "maxSessionTtl": "86400",
+                            "scopes": ["trade"],
+                            "subaccounts": []
+                        },
+                        "environment": "mainnet",
+                        "expiresAt": "1782777600",
+                        "issuedAt": "1767225600",
+                        "nonce": "0x44444444444444444444444444444444",
+                        "paradexChain": "PRIVATE_SN_PARACLEAR_MAINNET",
+                        "passkey": {
+                            "credentialId": "dGVzdC1jcmVkZW50aWFsLWlk",
+                            "label": "Example Builder passkey",
+                            "pubkeyX": "0x60fed4ba255a9d31c961eb74c6356d68c049b8923b61fa6ce669622e60f29fb6",
+                            "pubkeyY": "0x7903fe1008b8bc99a41ae9e95628bc64f2f1b20c2d7e9f5177a3c294d4462299",
+                            "rpId": "builder.example"
+                        }
+                    },
+                    "primaryType": "PasskeyGrant",
+                    "types": {
+                        "Ceiling": [
+                            {
+                                "name": "scopes",
+                                "type": "shortstring*"
+                            },
+                            {
+                                "name": "limits",
+                                "type": "Limits"
+                            },
+                            {
+                                "name": "subaccounts",
+                                "type": "ContractAddress*"
+                            },
+                            {
+                                "name": "includeFutureSubaccounts",
+                                "type": "bool"
+                            },
+                            {
+                                "name": "maxSessionTtl",
+                                "type": "u128"
+                            },
+                            {
+                                "name": "maxConcurrentSessions",
+                                "type": "u128"
+                            }
+                        ],
+                        "Limits": [
+                            {
+                                "name": "maxOrderNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxOpenNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "dailyNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxLoss",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxLeverage",
+                                "type": "string"
+                            },
+                            {
+                                "name": "markets",
+                                "type": "shortstring*"
+                            }
+                        ],
+                        "Passkey": [
+                            {
+                                "name": "credentialId",
+                                "type": "string"
+                            },
+                            {
+                                "name": "pubkeyX",
+                                "type": "string"
+                            },
+                            {
+                                "name": "pubkeyY",
+                                "type": "string"
+                            },
+                            {
+                                "name": "rpId",
+                                "type": "string"
+                            },
+                            {
+                                "name": "label",
+                                "type": "string"
+                            }
+                        ],
+                        "PasskeyGrant": [
+                            {
+                                "name": "paradexChain",
+                                "type": "shortstring"
+                            },
+                            {
+                                "name": "environment",
+                                "type": "shortstring"
+                            },
+                            {
+                                "name": "account",
+                                "type": "ContractAddress"
+                            },
+                            {
+                                "name": "passkey",
+                                "type": "Passkey"
+                            },
+                            {
+                                "name": "ceiling",
+                                "type": "Ceiling"
+                            },
+                            {
+                                "name": "builderAccount",
+                                "type": "ContractAddress"
+                            },
+                            {
+                                "name": "nonce",
+                                "type": "felt"
+                            },
+                            {
+                                "name": "issuedAt",
+                                "type": "timestamp"
+                            },
+                            {
+                                "name": "expiresAt",
+                                "type": "timestamp"
+                            }
+                        ],
+                        "StarknetDomain": [
+                            {
+                                "name": "name",
+                                "type": "shortstring"
+                            },
+                            {
+                                "name": "version",
+                                "type": "shortstring"
+                            },
+                            {
+                                "name": "chainId",
+                                "type": "shortstring"
+                            },
+                            {
+                                "name": "revision",
+                                "type": "shortstring"
+                            }
+                        ]
+                    }
+                },
+                "domainHash": "0x754ed8f2b3555aa6168733b3b1ffffd1f17bd7693fe5778295acd4ce43b5b50",
+                "structHash": "0x4168eada12201f4e06805c0f7974f5fd21d74cb9eca836026676456be2e23b9",
+                "messageHash": "0x10ddda14e8a145fb24b9ffb25f6b8d2f7ae92e32084357e5acf80f4489cec19"
+            }
+        },
+        {
+            "name": "passkey-grant-stark-owner-subaccounts",
+            "primaryType": "PasskeyGrant",
+            "signer": "stark",
+            "message": {
+                "paradexChain": "PRIVATE_SN_PARACLEAR_MAINNET",
+                "environment": "mainnet",
+                "account": "0x5d8b9a1c6c8e1f3b7a2d4e6f8091a2b3c4d5e6f708192a3b4c5d6e7f8091a2b",
+                "passkey": {
+                    "credentialId": "dGVzdC1jcmVkZW50aWFsLWlk",
+                    "pubkeyX": "0x60fed4ba255a9d31c961eb74c6356d68c049b8923b61fa6ce669622e60f29fb6",
+                    "pubkeyY": "0x7903fe1008b8bc99a41ae9e95628bc64f2f1b20c2d7e9f5177a3c294d4462299",
+                    "rpId": "paradex.trade",
+                    "label": "iCloud Keychain"
+                },
+                "ceiling": {
+                    "scopes": ["trade"],
+                    "limits": {
+                        "maxOrderNotional": "none",
+                        "maxOpenNotional": "none",
+                        "dailyNotional": "none",
+                        "maxLoss": "none",
+                        "maxLeverage": "none",
+                        "markets": ["*"]
+                    },
+                    "subaccounts": [
+                        "0x12f4e6a8b0c2d4e6f8091b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f6"
+                    ],
+                    "includeFutureSubaccounts": true,
+                    "maxSessionTtl": 604800,
+                    "maxConcurrentSessions": 3
+                },
+                "builderAccount": "0x0",
+                "nonce": "0x55555555555555555555555555555555",
+                "issuedAt": 1767225600,
+                "expiresAt": 1782777600
+            },
+            "eip712": {
+                "signatureChainId": 1,
+                "typedData": {
+                    "domain": {
+                        "chainId": 1,
+                        "name": "Paradex Session",
+                        "version": "1"
+                    },
+                    "message": {
+                        "account": "0x5d8b9a1c6c8e1f3b7a2d4e6f8091a2b3c4d5e6f708192a3b4c5d6e7f8091a2b",
+                        "builderAccount": "0x0",
+                        "ceiling": {
+                            "includeFutureSubaccounts": true,
+                            "limits": {
+                                "dailyNotional": "none",
+                                "markets": ["*"],
+                                "maxLeverage": "none",
+                                "maxLoss": "none",
+                                "maxOpenNotional": "none",
+                                "maxOrderNotional": "none"
+                            },
+                            "maxConcurrentSessions": 3,
+                            "maxSessionTtl": 604800,
+                            "scopes": ["trade"],
+                            "subaccounts": [
+                                "0x12f4e6a8b0c2d4e6f8091b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f6"
+                            ]
+                        },
+                        "environment": "mainnet",
+                        "expiresAt": 1782777600,
+                        "issuedAt": 1767225600,
+                        "nonce": "0x55555555555555555555555555555555",
+                        "paradexChain": "PRIVATE_SN_PARACLEAR_MAINNET",
+                        "passkey": {
+                            "credentialId": "dGVzdC1jcmVkZW50aWFsLWlk",
+                            "label": "iCloud Keychain",
+                            "pubkeyX": "0x60fed4ba255a9d31c961eb74c6356d68c049b8923b61fa6ce669622e60f29fb6",
+                            "pubkeyY": "0x7903fe1008b8bc99a41ae9e95628bc64f2f1b20c2d7e9f5177a3c294d4462299",
+                            "rpId": "paradex.trade"
+                        }
+                    },
+                    "primaryType": "PasskeyGrant",
+                    "types": {
+                        "Ceiling": [
+                            {
+                                "name": "scopes",
+                                "type": "string[]"
+                            },
+                            {
+                                "name": "limits",
+                                "type": "Limits"
+                            },
+                            {
+                                "name": "subaccounts",
+                                "type": "string[]"
+                            },
+                            {
+                                "name": "includeFutureSubaccounts",
+                                "type": "bool"
+                            },
+                            {
+                                "name": "maxSessionTtl",
+                                "type": "uint64"
+                            },
+                            {
+                                "name": "maxConcurrentSessions",
+                                "type": "uint64"
+                            }
+                        ],
+                        "EIP712Domain": [
+                            {
+                                "name": "name",
+                                "type": "string"
+                            },
+                            {
+                                "name": "version",
+                                "type": "string"
+                            },
+                            {
+                                "name": "chainId",
+                                "type": "uint256"
+                            }
+                        ],
+                        "Limits": [
+                            {
+                                "name": "maxOrderNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxOpenNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "dailyNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxLoss",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxLeverage",
+                                "type": "string"
+                            },
+                            {
+                                "name": "markets",
+                                "type": "string[]"
+                            }
+                        ],
+                        "Passkey": [
+                            {
+                                "name": "credentialId",
+                                "type": "string"
+                            },
+                            {
+                                "name": "pubkeyX",
+                                "type": "string"
+                            },
+                            {
+                                "name": "pubkeyY",
+                                "type": "string"
+                            },
+                            {
+                                "name": "rpId",
+                                "type": "string"
+                            },
+                            {
+                                "name": "label",
+                                "type": "string"
+                            }
+                        ],
+                        "PasskeyGrant": [
+                            {
+                                "name": "paradexChain",
+                                "type": "string"
+                            },
+                            {
+                                "name": "environment",
+                                "type": "string"
+                            },
+                            {
+                                "name": "account",
+                                "type": "string"
+                            },
+                            {
+                                "name": "passkey",
+                                "type": "Passkey"
+                            },
+                            {
+                                "name": "ceiling",
+                                "type": "Ceiling"
+                            },
+                            {
+                                "name": "builderAccount",
+                                "type": "string"
+                            },
+                            {
+                                "name": "nonce",
+                                "type": "string"
+                            },
+                            {
+                                "name": "issuedAt",
+                                "type": "uint64"
+                            },
+                            {
+                                "name": "expiresAt",
+                                "type": "uint64"
+                            }
+                        ]
+                    }
+                },
+                "domainSeparator": "0x829c2852d73f9458839f9c1e8d096d73c457b487e19241fa0d514ddace4a0a5d",
+                "structHash": "0xfdebef43bf7e2c1676e7b0d31603ba0896ab8a8a7de804e03cde1360bdc8463f",
+                "digest": "0x2c03215180a9b124dc3ce1786e36802d6ebdc2a0fc42ec5f08ab682b81481231"
+            },
+            "snip12": {
+                "typedData": {
+                    "domain": {
+                        "chainId": "PRIVATE_SN_PARACLEAR_MAINNET",
+                        "name": "Paradex Session",
+                        "revision": "1",
+                        "version": "1"
+                    },
+                    "message": {
+                        "account": "0x5d8b9a1c6c8e1f3b7a2d4e6f8091a2b3c4d5e6f708192a3b4c5d6e7f8091a2b",
+                        "builderAccount": "0x0",
+                        "ceiling": {
+                            "includeFutureSubaccounts": true,
+                            "limits": {
+                                "dailyNotional": "none",
+                                "markets": ["*"],
+                                "maxLeverage": "none",
+                                "maxLoss": "none",
+                                "maxOpenNotional": "none",
+                                "maxOrderNotional": "none"
+                            },
+                            "maxConcurrentSessions": "3",
+                            "maxSessionTtl": "604800",
+                            "scopes": ["trade"],
+                            "subaccounts": [
+                                "0x12f4e6a8b0c2d4e6f8091b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f6"
+                            ]
+                        },
+                        "environment": "mainnet",
+                        "expiresAt": "1782777600",
+                        "issuedAt": "1767225600",
+                        "nonce": "0x55555555555555555555555555555555",
+                        "paradexChain": "PRIVATE_SN_PARACLEAR_MAINNET",
+                        "passkey": {
+                            "credentialId": "dGVzdC1jcmVkZW50aWFsLWlk",
+                            "label": "iCloud Keychain",
+                            "pubkeyX": "0x60fed4ba255a9d31c961eb74c6356d68c049b8923b61fa6ce669622e60f29fb6",
+                            "pubkeyY": "0x7903fe1008b8bc99a41ae9e95628bc64f2f1b20c2d7e9f5177a3c294d4462299",
+                            "rpId": "paradex.trade"
+                        }
+                    },
+                    "primaryType": "PasskeyGrant",
+                    "types": {
+                        "Ceiling": [
+                            {
+                                "name": "scopes",
+                                "type": "shortstring*"
+                            },
+                            {
+                                "name": "limits",
+                                "type": "Limits"
+                            },
+                            {
+                                "name": "subaccounts",
+                                "type": "ContractAddress*"
+                            },
+                            {
+                                "name": "includeFutureSubaccounts",
+                                "type": "bool"
+                            },
+                            {
+                                "name": "maxSessionTtl",
+                                "type": "u128"
+                            },
+                            {
+                                "name": "maxConcurrentSessions",
+                                "type": "u128"
+                            }
+                        ],
+                        "Limits": [
+                            {
+                                "name": "maxOrderNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxOpenNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "dailyNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxLoss",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxLeverage",
+                                "type": "string"
+                            },
+                            {
+                                "name": "markets",
+                                "type": "shortstring*"
+                            }
+                        ],
+                        "Passkey": [
+                            {
+                                "name": "credentialId",
+                                "type": "string"
+                            },
+                            {
+                                "name": "pubkeyX",
+                                "type": "string"
+                            },
+                            {
+                                "name": "pubkeyY",
+                                "type": "string"
+                            },
+                            {
+                                "name": "rpId",
+                                "type": "string"
+                            },
+                            {
+                                "name": "label",
+                                "type": "string"
+                            }
+                        ],
+                        "PasskeyGrant": [
+                            {
+                                "name": "paradexChain",
+                                "type": "shortstring"
+                            },
+                            {
+                                "name": "environment",
+                                "type": "shortstring"
+                            },
+                            {
+                                "name": "account",
+                                "type": "ContractAddress"
+                            },
+                            {
+                                "name": "passkey",
+                                "type": "Passkey"
+                            },
+                            {
+                                "name": "ceiling",
+                                "type": "Ceiling"
+                            },
+                            {
+                                "name": "builderAccount",
+                                "type": "ContractAddress"
+                            },
+                            {
+                                "name": "nonce",
+                                "type": "felt"
+                            },
+                            {
+                                "name": "issuedAt",
+                                "type": "timestamp"
+                            },
+                            {
+                                "name": "expiresAt",
+                                "type": "timestamp"
+                            }
+                        ],
+                        "StarknetDomain": [
+                            {
+                                "name": "name",
+                                "type": "shortstring"
+                            },
+                            {
+                                "name": "version",
+                                "type": "shortstring"
+                            },
+                            {
+                                "name": "chainId",
+                                "type": "shortstring"
+                            },
+                            {
+                                "name": "revision",
+                                "type": "shortstring"
+                            }
+                        ]
+                    }
+                },
+                "domainHash": "0x754ed8f2b3555aa6168733b3b1ffffd1f17bd7693fe5778295acd4ce43b5b50",
+                "structHash": "0x1dfd76bbd582b4af0588ebb7dc5b8e81377257296d0669e8dc3fb7b004e8663",
+                "messageHash": "0x1ccc87a1e22658d3292ddb8584a4ad7878dc6b180edda017c239380aa74e962",
+                "signature": [
+                    "0x6ce265deeec75d0b8710966b26c6c0b1c64e4aafabe2678fa6aa8e5eee6cc77",
+                    "0x6ef6a67c75076b196694700ed5baf9f99ee1524c5579f54b43e98a79018eca2"
+                ]
+            }
+        },
+        {
+            "name": "session-mint-first-party",
+            "primaryType": "SessionMint",
+            "signer": "passkey",
+            "message": {
+                "paradexChain": "PRIVATE_SN_PARACLEAR_MAINNET",
+                "environment": "mainnet",
+                "account": "0x62cfa432ed8abe082192a9687dd569194596096f2ebd3d498df34c1ff2f14f",
+                "credentialId": "dGVzdC1jcmVkZW50aWFsLWlk",
+                "sessionKey": "0x1f2e3d4c5b6a79881726354453627180f9e8d7c6b5a493827160f5e4d3c2b1a",
+                "scopes": ["trade"],
+                "limits": {
+                    "maxOrderNotional": "none",
+                    "maxOpenNotional": "none",
+                    "dailyNotional": "none",
+                    "maxLoss": "none",
+                    "maxLeverage": "none",
+                    "markets": ["*"]
+                },
+                "subaccounts": [],
+                "nonce": "0xa0a1a2a3a4a5a6a7a8a9aaabacadaeaf",
+                "expiresAt": 1767312000
+            },
+            "eip712": {
+                "signatureChainId": 1,
+                "typedData": {
+                    "domain": {
+                        "chainId": 1,
+                        "name": "Paradex Session",
+                        "version": "1"
+                    },
+                    "message": {
+                        "account": "0x62cfa432ed8abe082192a9687dd569194596096f2ebd3d498df34c1ff2f14f",
+                        "credentialId": "dGVzdC1jcmVkZW50aWFsLWlk",
+                        "environment": "mainnet",
+                        "expiresAt": 1767312000,
+                        "limits": {
+                            "dailyNotional": "none",
+                            "markets": ["*"],
+                            "maxLeverage": "none",
+                            "maxLoss": "none",
+                            "maxOpenNotional": "none",
+                            "maxOrderNotional": "none"
+                        },
+                        "nonce": "0xa0a1a2a3a4a5a6a7a8a9aaabacadaeaf",
+                        "paradexChain": "PRIVATE_SN_PARACLEAR_MAINNET",
+                        "scopes": ["trade"],
+                        "sessionKey": "0x1f2e3d4c5b6a79881726354453627180f9e8d7c6b5a493827160f5e4d3c2b1a",
+                        "subaccounts": []
+                    },
+                    "primaryType": "SessionMint",
+                    "types": {
+                        "EIP712Domain": [
+                            {
+                                "name": "name",
+                                "type": "string"
+                            },
+                            {
+                                "name": "version",
+                                "type": "string"
+                            },
+                            {
+                                "name": "chainId",
+                                "type": "uint256"
+                            }
+                        ],
+                        "Limits": [
+                            {
+                                "name": "maxOrderNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxOpenNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "dailyNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxLoss",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxLeverage",
+                                "type": "string"
+                            },
+                            {
+                                "name": "markets",
+                                "type": "string[]"
+                            }
+                        ],
+                        "SessionMint": [
+                            {
+                                "name": "paradexChain",
+                                "type": "string"
+                            },
+                            {
+                                "name": "environment",
+                                "type": "string"
+                            },
+                            {
+                                "name": "account",
+                                "type": "string"
+                            },
+                            {
+                                "name": "credentialId",
+                                "type": "string"
+                            },
+                            {
+                                "name": "sessionKey",
+                                "type": "string"
+                            },
+                            {
+                                "name": "scopes",
+                                "type": "string[]"
+                            },
+                            {
+                                "name": "limits",
+                                "type": "Limits"
+                            },
+                            {
+                                "name": "subaccounts",
+                                "type": "string[]"
+                            },
+                            {
+                                "name": "nonce",
+                                "type": "string"
+                            },
+                            {
+                                "name": "expiresAt",
+                                "type": "uint64"
+                            }
+                        ]
+                    }
+                },
+                "domainSeparator": "0x829c2852d73f9458839f9c1e8d096d73c457b487e19241fa0d514ddace4a0a5d",
+                "structHash": "0xdb69d3183d3bc3380692b8a2c8d3b0544ee36038df3a4154a2018507fdabd0df",
+                "digest": "0xe394b0178ed1d8f57e58fd4f08d963e4091a45050f27da53e69bcf50ac91bef2"
+            },
+            "snip12": {
+                "typedData": {
+                    "domain": {
+                        "chainId": "PRIVATE_SN_PARACLEAR_MAINNET",
+                        "name": "Paradex Session",
+                        "revision": "1",
+                        "version": "1"
+                    },
+                    "message": {
+                        "account": "0x62cfa432ed8abe082192a9687dd569194596096f2ebd3d498df34c1ff2f14f",
+                        "credentialId": "dGVzdC1jcmVkZW50aWFsLWlk",
+                        "environment": "mainnet",
+                        "expiresAt": "1767312000",
+                        "limits": {
+                            "dailyNotional": "none",
+                            "markets": ["*"],
+                            "maxLeverage": "none",
+                            "maxLoss": "none",
+                            "maxOpenNotional": "none",
+                            "maxOrderNotional": "none"
+                        },
+                        "nonce": "0xa0a1a2a3a4a5a6a7a8a9aaabacadaeaf",
+                        "paradexChain": "PRIVATE_SN_PARACLEAR_MAINNET",
+                        "scopes": ["trade"],
+                        "sessionKey": "0x1f2e3d4c5b6a79881726354453627180f9e8d7c6b5a493827160f5e4d3c2b1a",
+                        "subaccounts": []
+                    },
+                    "primaryType": "SessionMint",
+                    "types": {
+                        "Limits": [
+                            {
+                                "name": "maxOrderNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxOpenNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "dailyNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxLoss",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxLeverage",
+                                "type": "string"
+                            },
+                            {
+                                "name": "markets",
+                                "type": "shortstring*"
+                            }
+                        ],
+                        "SessionMint": [
+                            {
+                                "name": "paradexChain",
+                                "type": "shortstring"
+                            },
+                            {
+                                "name": "environment",
+                                "type": "shortstring"
+                            },
+                            {
+                                "name": "account",
+                                "type": "ContractAddress"
+                            },
+                            {
+                                "name": "credentialId",
+                                "type": "string"
+                            },
+                            {
+                                "name": "sessionKey",
+                                "type": "felt"
+                            },
+                            {
+                                "name": "scopes",
+                                "type": "shortstring*"
+                            },
+                            {
+                                "name": "limits",
+                                "type": "Limits"
+                            },
+                            {
+                                "name": "subaccounts",
+                                "type": "ContractAddress*"
+                            },
+                            {
+                                "name": "nonce",
+                                "type": "felt"
+                            },
+                            {
+                                "name": "expiresAt",
+                                "type": "timestamp"
+                            }
+                        ],
+                        "StarknetDomain": [
+                            {
+                                "name": "name",
+                                "type": "shortstring"
+                            },
+                            {
+                                "name": "version",
+                                "type": "shortstring"
+                            },
+                            {
+                                "name": "chainId",
+                                "type": "shortstring"
+                            },
+                            {
+                                "name": "revision",
+                                "type": "shortstring"
+                            }
+                        ]
+                    }
+                },
+                "domainHash": "0x754ed8f2b3555aa6168733b3b1ffffd1f17bd7693fe5778295acd4ce43b5b50",
+                "structHash": "0x38d714f35eefd66f25665495f26f6da95928724e72c727c0da742c83441ff5d",
+                "messageHash": "0x4648eea1863eb978b5cf5cdcc1dd28213044444ec170677b3e7df814568e2d8"
+            },
+            "mintChallenge": "BGSO6hhj65eLXPXNzB3SghMERETsFwZ3s-ffgUVo4tg"
+        },
+        {
+            "name": "session-mint-builder-limits",
+            "primaryType": "SessionMint",
+            "signer": "passkey",
+            "message": {
+                "paradexChain": "PRIVATE_SN_PARACLEAR_MAINNET",
+                "environment": "mainnet",
+                "account": "0x62cfa432ed8abe082192a9687dd569194596096f2ebd3d498df34c1ff2f14f",
+                "credentialId": "dGVzdC1jcmVkZW50aWFsLWlk",
+                "sessionKey": "0x1f2e3d4c5b6a79881726354453627180f9e8d7c6b5a493827160f5e4d3c2b1a",
+                "scopes": ["trade"],
+                "limits": {
+                    "maxOrderNotional": "10000",
+                    "maxOpenNotional": "50000",
+                    "dailyNotional": "250000",
+                    "maxLoss": "2500",
+                    "maxLeverage": "5",
+                    "markets": ["BTC-USD-PERP"]
+                },
+                "subaccounts": [],
+                "nonce": "0x66666666666666666666666666666666",
+                "expiresAt": 1767312000
+            },
+            "eip712": {
+                "signatureChainId": 1,
+                "typedData": {
+                    "domain": {
+                        "chainId": 1,
+                        "name": "Paradex Session",
+                        "version": "1"
+                    },
+                    "message": {
+                        "account": "0x62cfa432ed8abe082192a9687dd569194596096f2ebd3d498df34c1ff2f14f",
+                        "credentialId": "dGVzdC1jcmVkZW50aWFsLWlk",
+                        "environment": "mainnet",
+                        "expiresAt": 1767312000,
+                        "limits": {
+                            "dailyNotional": "250000",
+                            "markets": ["BTC-USD-PERP"],
+                            "maxLeverage": "5",
+                            "maxLoss": "2500",
+                            "maxOpenNotional": "50000",
+                            "maxOrderNotional": "10000"
+                        },
+                        "nonce": "0x66666666666666666666666666666666",
+                        "paradexChain": "PRIVATE_SN_PARACLEAR_MAINNET",
+                        "scopes": ["trade"],
+                        "sessionKey": "0x1f2e3d4c5b6a79881726354453627180f9e8d7c6b5a493827160f5e4d3c2b1a",
+                        "subaccounts": []
+                    },
+                    "primaryType": "SessionMint",
+                    "types": {
+                        "EIP712Domain": [
+                            {
+                                "name": "name",
+                                "type": "string"
+                            },
+                            {
+                                "name": "version",
+                                "type": "string"
+                            },
+                            {
+                                "name": "chainId",
+                                "type": "uint256"
+                            }
+                        ],
+                        "Limits": [
+                            {
+                                "name": "maxOrderNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxOpenNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "dailyNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxLoss",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxLeverage",
+                                "type": "string"
+                            },
+                            {
+                                "name": "markets",
+                                "type": "string[]"
+                            }
+                        ],
+                        "SessionMint": [
+                            {
+                                "name": "paradexChain",
+                                "type": "string"
+                            },
+                            {
+                                "name": "environment",
+                                "type": "string"
+                            },
+                            {
+                                "name": "account",
+                                "type": "string"
+                            },
+                            {
+                                "name": "credentialId",
+                                "type": "string"
+                            },
+                            {
+                                "name": "sessionKey",
+                                "type": "string"
+                            },
+                            {
+                                "name": "scopes",
+                                "type": "string[]"
+                            },
+                            {
+                                "name": "limits",
+                                "type": "Limits"
+                            },
+                            {
+                                "name": "subaccounts",
+                                "type": "string[]"
+                            },
+                            {
+                                "name": "nonce",
+                                "type": "string"
+                            },
+                            {
+                                "name": "expiresAt",
+                                "type": "uint64"
+                            }
+                        ]
+                    }
+                },
+                "domainSeparator": "0x829c2852d73f9458839f9c1e8d096d73c457b487e19241fa0d514ddace4a0a5d",
+                "structHash": "0x5d4ced3fd82b5dffe964601962216c245db595d2691f51ff9fafda42264a0811",
+                "digest": "0xc35d488de7a2b1653e8775f031e69616341675db8bbf8814791b12f0a30593bf"
+            },
+            "snip12": {
+                "typedData": {
+                    "domain": {
+                        "chainId": "PRIVATE_SN_PARACLEAR_MAINNET",
+                        "name": "Paradex Session",
+                        "revision": "1",
+                        "version": "1"
+                    },
+                    "message": {
+                        "account": "0x62cfa432ed8abe082192a9687dd569194596096f2ebd3d498df34c1ff2f14f",
+                        "credentialId": "dGVzdC1jcmVkZW50aWFsLWlk",
+                        "environment": "mainnet",
+                        "expiresAt": "1767312000",
+                        "limits": {
+                            "dailyNotional": "250000",
+                            "markets": ["BTC-USD-PERP"],
+                            "maxLeverage": "5",
+                            "maxLoss": "2500",
+                            "maxOpenNotional": "50000",
+                            "maxOrderNotional": "10000"
+                        },
+                        "nonce": "0x66666666666666666666666666666666",
+                        "paradexChain": "PRIVATE_SN_PARACLEAR_MAINNET",
+                        "scopes": ["trade"],
+                        "sessionKey": "0x1f2e3d4c5b6a79881726354453627180f9e8d7c6b5a493827160f5e4d3c2b1a",
+                        "subaccounts": []
+                    },
+                    "primaryType": "SessionMint",
+                    "types": {
+                        "Limits": [
+                            {
+                                "name": "maxOrderNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxOpenNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "dailyNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxLoss",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxLeverage",
+                                "type": "string"
+                            },
+                            {
+                                "name": "markets",
+                                "type": "shortstring*"
+                            }
+                        ],
+                        "SessionMint": [
+                            {
+                                "name": "paradexChain",
+                                "type": "shortstring"
+                            },
+                            {
+                                "name": "environment",
+                                "type": "shortstring"
+                            },
+                            {
+                                "name": "account",
+                                "type": "ContractAddress"
+                            },
+                            {
+                                "name": "credentialId",
+                                "type": "string"
+                            },
+                            {
+                                "name": "sessionKey",
+                                "type": "felt"
+                            },
+                            {
+                                "name": "scopes",
+                                "type": "shortstring*"
+                            },
+                            {
+                                "name": "limits",
+                                "type": "Limits"
+                            },
+                            {
+                                "name": "subaccounts",
+                                "type": "ContractAddress*"
+                            },
+                            {
+                                "name": "nonce",
+                                "type": "felt"
+                            },
+                            {
+                                "name": "expiresAt",
+                                "type": "timestamp"
+                            }
+                        ],
+                        "StarknetDomain": [
+                            {
+                                "name": "name",
+                                "type": "shortstring"
+                            },
+                            {
+                                "name": "version",
+                                "type": "shortstring"
+                            },
+                            {
+                                "name": "chainId",
+                                "type": "shortstring"
+                            },
+                            {
+                                "name": "revision",
+                                "type": "shortstring"
+                            }
+                        ]
+                    }
+                },
+                "domainHash": "0x754ed8f2b3555aa6168733b3b1ffffd1f17bd7693fe5778295acd4ce43b5b50",
+                "structHash": "0x5588529579c351458a2afada2997bfec9a12691e2055e1bca2ab08aebcf45c8",
+                "messageHash": "0x1bcbe2b01f4d97a9798c9ec68840edad3412729f3f12a9b3703257c679de3f"
+            },
+            "mintChallenge": "ABvL4rAfTZepeYyexohA7a00EnKfPxKps3AyV8Z53j8"
+        },
+        {
+            "name": "session-mint-subaccount",
+            "primaryType": "SessionMint",
+            "signer": "passkey",
+            "message": {
+                "paradexChain": "PRIVATE_SN_PARACLEAR_MAINNET",
+                "environment": "mainnet",
+                "account": "0x5d8b9a1c6c8e1f3b7a2d4e6f8091a2b3c4d5e6f708192a3b4c5d6e7f8091a2b",
+                "credentialId": "dGVzdC1jcmVkZW50aWFsLWlk",
+                "sessionKey": "0x1f2e3d4c5b6a79881726354453627180f9e8d7c6b5a493827160f5e4d3c2b1a",
+                "scopes": ["trade"],
+                "limits": {
+                    "maxOrderNotional": "5000",
+                    "maxOpenNotional": "none",
+                    "dailyNotional": "none",
+                    "maxLoss": "1000",
+                    "maxLeverage": "none",
+                    "markets": ["SOL-USD-PERP", "*-USD-PERP"]
+                },
+                "subaccounts": [
+                    "0x12f4e6a8b0c2d4e6f8091b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f6"
+                ],
+                "nonce": "0x77777777777777777777777777777777",
+                "expiresAt": 1767312000
+            },
+            "eip712": {
+                "signatureChainId": 1,
+                "typedData": {
+                    "domain": {
+                        "chainId": 1,
+                        "name": "Paradex Session",
+                        "version": "1"
+                    },
+                    "message": {
+                        "account": "0x5d8b9a1c6c8e1f3b7a2d4e6f8091a2b3c4d5e6f708192a3b4c5d6e7f8091a2b",
+                        "credentialId": "dGVzdC1jcmVkZW50aWFsLWlk",
+                        "environment": "mainnet",
+                        "expiresAt": 1767312000,
+                        "limits": {
+                            "dailyNotional": "none",
+                            "markets": ["SOL-USD-PERP", "*-USD-PERP"],
+                            "maxLeverage": "none",
+                            "maxLoss": "1000",
+                            "maxOpenNotional": "none",
+                            "maxOrderNotional": "5000"
+                        },
+                        "nonce": "0x77777777777777777777777777777777",
+                        "paradexChain": "PRIVATE_SN_PARACLEAR_MAINNET",
+                        "scopes": ["trade"],
+                        "sessionKey": "0x1f2e3d4c5b6a79881726354453627180f9e8d7c6b5a493827160f5e4d3c2b1a",
+                        "subaccounts": [
+                            "0x12f4e6a8b0c2d4e6f8091b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f6"
+                        ]
+                    },
+                    "primaryType": "SessionMint",
+                    "types": {
+                        "EIP712Domain": [
+                            {
+                                "name": "name",
+                                "type": "string"
+                            },
+                            {
+                                "name": "version",
+                                "type": "string"
+                            },
+                            {
+                                "name": "chainId",
+                                "type": "uint256"
+                            }
+                        ],
+                        "Limits": [
+                            {
+                                "name": "maxOrderNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxOpenNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "dailyNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxLoss",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxLeverage",
+                                "type": "string"
+                            },
+                            {
+                                "name": "markets",
+                                "type": "string[]"
+                            }
+                        ],
+                        "SessionMint": [
+                            {
+                                "name": "paradexChain",
+                                "type": "string"
+                            },
+                            {
+                                "name": "environment",
+                                "type": "string"
+                            },
+                            {
+                                "name": "account",
+                                "type": "string"
+                            },
+                            {
+                                "name": "credentialId",
+                                "type": "string"
+                            },
+                            {
+                                "name": "sessionKey",
+                                "type": "string"
+                            },
+                            {
+                                "name": "scopes",
+                                "type": "string[]"
+                            },
+                            {
+                                "name": "limits",
+                                "type": "Limits"
+                            },
+                            {
+                                "name": "subaccounts",
+                                "type": "string[]"
+                            },
+                            {
+                                "name": "nonce",
+                                "type": "string"
+                            },
+                            {
+                                "name": "expiresAt",
+                                "type": "uint64"
+                            }
+                        ]
+                    }
+                },
+                "domainSeparator": "0x829c2852d73f9458839f9c1e8d096d73c457b487e19241fa0d514ddace4a0a5d",
+                "structHash": "0xeeb9c422033fe7be97f8e1768e5cb256bee6cf6e042ae0e76d591f724cab8852",
+                "digest": "0x99d1fb067a574c66e8a3d797cea6c31fc343389ea3414603870722d21cdce9b6"
+            },
+            "snip12": {
+                "typedData": {
+                    "domain": {
+                        "chainId": "PRIVATE_SN_PARACLEAR_MAINNET",
+                        "name": "Paradex Session",
+                        "revision": "1",
+                        "version": "1"
+                    },
+                    "message": {
+                        "account": "0x5d8b9a1c6c8e1f3b7a2d4e6f8091a2b3c4d5e6f708192a3b4c5d6e7f8091a2b",
+                        "credentialId": "dGVzdC1jcmVkZW50aWFsLWlk",
+                        "environment": "mainnet",
+                        "expiresAt": "1767312000",
+                        "limits": {
+                            "dailyNotional": "none",
+                            "markets": ["SOL-USD-PERP", "*-USD-PERP"],
+                            "maxLeverage": "none",
+                            "maxLoss": "1000",
+                            "maxOpenNotional": "none",
+                            "maxOrderNotional": "5000"
+                        },
+                        "nonce": "0x77777777777777777777777777777777",
+                        "paradexChain": "PRIVATE_SN_PARACLEAR_MAINNET",
+                        "scopes": ["trade"],
+                        "sessionKey": "0x1f2e3d4c5b6a79881726354453627180f9e8d7c6b5a493827160f5e4d3c2b1a",
+                        "subaccounts": [
+                            "0x12f4e6a8b0c2d4e6f8091b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f6"
+                        ]
+                    },
+                    "primaryType": "SessionMint",
+                    "types": {
+                        "Limits": [
+                            {
+                                "name": "maxOrderNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxOpenNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "dailyNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxLoss",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxLeverage",
+                                "type": "string"
+                            },
+                            {
+                                "name": "markets",
+                                "type": "shortstring*"
+                            }
+                        ],
+                        "SessionMint": [
+                            {
+                                "name": "paradexChain",
+                                "type": "shortstring"
+                            },
+                            {
+                                "name": "environment",
+                                "type": "shortstring"
+                            },
+                            {
+                                "name": "account",
+                                "type": "ContractAddress"
+                            },
+                            {
+                                "name": "credentialId",
+                                "type": "string"
+                            },
+                            {
+                                "name": "sessionKey",
+                                "type": "felt"
+                            },
+                            {
+                                "name": "scopes",
+                                "type": "shortstring*"
+                            },
+                            {
+                                "name": "limits",
+                                "type": "Limits"
+                            },
+                            {
+                                "name": "subaccounts",
+                                "type": "ContractAddress*"
+                            },
+                            {
+                                "name": "nonce",
+                                "type": "felt"
+                            },
+                            {
+                                "name": "expiresAt",
+                                "type": "timestamp"
+                            }
+                        ],
+                        "StarknetDomain": [
+                            {
+                                "name": "name",
+                                "type": "shortstring"
+                            },
+                            {
+                                "name": "version",
+                                "type": "shortstring"
+                            },
+                            {
+                                "name": "chainId",
+                                "type": "shortstring"
+                            },
+                            {
+                                "name": "revision",
+                                "type": "shortstring"
+                            }
+                        ]
+                    }
+                },
+                "domainHash": "0x754ed8f2b3555aa6168733b3b1ffffd1f17bd7693fe5778295acd4ce43b5b50",
+                "structHash": "0x12d4604dcb57dfea70f1630b23dcf82b78cc0f96d84a3026f36b2b06f584d7e",
+                "messageHash": "0x4ab94c1d735558eacb3ae5bb715d623860f83fab5b07265b719cf007e557a79"
+            },
+            "mintChallenge": "BKuUwdc1VY6ss65btxXWI4YPg_q1sHJltxnPAH5Venk"
+        }
+    ]
+}
