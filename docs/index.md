@@ -92,6 +92,77 @@ await paradex.ws_client.subscribe(ParadexWebsocketChannel.MARKETS_SUMMARY, callb
 | **WebSocket** | ✅ Supported | ✅ Supported |
 | **Order Management** | ✅ Supported | ✅ Supported |
 
+## Session Keys (Experimental)
+
+!!! warning
+    **Experimental.** Session keys are rolling out on the server and `POST /v2/sessions` is not live yet;
+    names and payloads may change.
+
+An account owner signs one `SessionGrant` (EIP-712, or SNIP-12 for Stark owners) that lets a scoped,
+expiring Stark session key trade the anchor account and any listed sub-accounts. A session can never
+withdraw. `SessionAccounts` then keeps a JWT (at most 15 minutes, never past the session's expiry),
+a REST client and a websocket per account, routes calls by account, and drops every account at once
+when the session expires or is revoked.
+
+Every grant states each limit: a positive decimal, or `"none"` for no cap from this session.
+`markets` lists symbols or patterns, or is `["*"]` for every permitted market. Empty values are
+refused before signing. `Limits()`, the default, states no caps: every limit `"none"` and markets
+`["*"]`. While the server enforces no session limits, that is the only form it accepts, and it also
+refuses grants that approve a builder. A grant that approves a builder can't include `trade:block` or
+`account:settings`. `Limits.caps` can refuse limits
+above your own ceilings before signing; there are none by default, and the server enforces its own.
+
+When you show a grant to the owner before they sign, describe its risk in plain words.
+`Limits.loss_wording()` gives "Cannot withdraw; can lose up to <maxLoss> USD by trading", or, when
+`maxLoss` is `"none"`, "Cannot withdraw; trading losses are not capped by this session".
+
+For now, RFQ endpoints refuse session tokens with HTTP 403, even when the grant includes `trade:rfq`.
+A 403 is a refused action, never a revocation signal, so it does not drop the session.
+
+```python
+from paradex_py import SessionAccounts
+from paradex_py.message.session import SessionGrant
+from paradex_py.session_accounts import LocalOwnerSigner, new_session_key, register_session
+
+session_private_key, session_public_key = new_session_key()
+grant = SessionGrant.new(
+    paradex_chain="PRIVATE_SN_PARACLEAR_TESTNET",
+    environment="testnet",
+    account="0x<main-account>",
+    subaccounts=["0x<sub-account>"],
+    session_key=session_public_key,
+    label="my bot",
+    scopes=["trade"],
+    ttl_seconds=7 * 24 * 3600,
+)
+# Any OwnerSigner works here, e.g. an MPC service that signs the EIP-712 typed data itself.
+grant_id = register_session("testnet", grant, LocalOwnerSigner("0x<owner-eth-key>"))["grant_id"]
+
+session = SessionAccounts(
+    env="testnet", grant=grant, session_private_key=session_private_key, grant_id=grant_id
+)
+session.submit_order("0x<sub-account>", order)
+await session.connect_ws()
+```
+
+::: paradex_py.session_accounts.SessionAccounts
+    handler: python
+    options:
+      show_source: false
+      show_root_heading: true
+
+::: paradex_py.api.protocols.OwnerSigner
+    handler: python
+    options:
+      show_source: false
+      show_root_heading: true
+
+::: paradex_py.message.session.SessionGrant
+    handler: python
+    options:
+      show_source: false
+      show_root_heading: true
+
 ## API Documentation Links
 
 Full details for REST API & WebSocket JSON-RPC API can be found at the following links:
