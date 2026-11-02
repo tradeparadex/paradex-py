@@ -32,7 +32,6 @@ Examples:
     ...     session_key="0x5678",
     ...     label="my bot",
     ...     scopes=["trade"],
-    ...     limits=Limits("25000", "100000", "500000", "5000", "10", ["BTC-USD-PERP"]),
     ...     ttl_seconds=7 * 24 * 3600,
     ... )
     >>> typed_data = grant.eip712_typed_data(signature_chain_id=1)  # for any EIP-712 signer
@@ -52,12 +51,11 @@ from fnmatch import fnmatchcase
 from types import MappingProxyType
 from typing import Any, cast
 
-from eth_account import Account as EthAccount
 from eth_account.messages import _hash_eip191_message, encode_typed_data
 from starknet_py.constants import FIELD_PRIME
 from starknet_py.net.models.typed_data import TypedDataDict
 
-from paradex_py.account.utils import message_signature, typed_data_to_message_hash
+from paradex_py.account.utils import message_signature, sign_eip712_typed_data, typed_data_to_message_hash
 from paradex_py.utils import raise_value_error
 
 __all__ = [
@@ -123,13 +121,6 @@ PASSKEY_MAX_CONCURRENT_SESSIONS = 5
 # cannot make a grant at a lifetime cap read as longer than the cap. The server accepts issuedAt up to
 # 24 hours old.
 _ISSUED_AT_BACKDATE_SECONDS = 60
-
-
-def sign_eip712_typed_data(typed_data: dict[str, Any], eth_private_key: str) -> str:
-    """Sign full EIP-712 typed data with a local EVM key; returns the 65-byte ``0x`` r||s||v signature."""
-    signable = encode_typed_data(full_message=typed_data)
-    signature = EthAccount.sign_message(signable, eth_private_key).signature.hex()
-    return signature if signature.startswith("0x") else "0x" + signature
 
 
 def new_nonce() -> str:
@@ -240,9 +231,9 @@ def _environment(value: str) -> str:
     return _shortstring(value, "environment")
 
 
-def _scopes(scopes: Sequence[str]) -> list[str]:
+def _scopes(scopes: Sequence[str], *, allow_empty: bool = False) -> list[str]:
     scope_list = list(scopes)
-    if not scope_list:
+    if not scope_list and not allow_empty:
         raise_value_error("scopes must name at least one scope")
     for scope in scope_list:
         if scope in REFUSED_SCOPES:
@@ -556,7 +547,7 @@ class SessionGrant(_TypedMessage):
         account: The anchor account address; its owner signs the grant.
         session_key: The session's Stark public key.
         label: The front end's own label. Display uses the builder's registered name, not this.
-        scopes: Granted scopes, from :data:`GRANTABLE_SCOPES`.
+        scopes: Granted scopes, from :data:`GRANTABLE_SCOPES`. Empty is a read-only session.
         limits: Trading limits; ``Limits()`` (no caps) by default.
         builder: Builder approval; ``Builder()`` for none.
         subaccounts: Sub-account addresses the session also covers. Empty means the anchor only.
@@ -595,7 +586,7 @@ class SessionGrant(_TypedMessage):
     def to_message(self) -> dict[str, Any]:
         """Validate and render the message, refusing what the server would refuse."""
         account = _hex(self.account, "account")
-        scopes = _scopes(self.scopes)
+        scopes = _scopes(self.scopes, allow_empty=True)  # no scopes is a read-only session
         _window(self.issued_at, self.expires_at)
         lifetime = self.expires_at - self.issued_at
         if lifetime > SESSION_MAX_SECONDS:
@@ -741,8 +732,8 @@ class SessionMint(_TypedMessage):
     scopes: Sequence[str]
     limits: Limits
     expires_at: int
+    nonce: str  # from POST /v2/passkeys/challenge; the server refuses a nonce it did not issue
     subaccounts: Sequence[str] = ()
-    nonce: str = field(default_factory=new_nonce)
 
     _PRIMARY = "SessionMint"
     _SPEC = _SESSION_MINT

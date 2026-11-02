@@ -178,6 +178,25 @@ def test_sign_eip712_recovers_owner():
     assert EthAccount.recover_message(signable, signature=signature) == owner.address
 
 
+def test_grant_with_no_scopes_is_a_read_only_session():
+    grant = _grant(scopes=[], builder=Builder())
+    assert grant.to_message()["scopes"] == []
+    assert grant.eip712_typed_data(ARBITRUM)["message"]["scopes"] == []
+    assert grant.snip12_typed_data()["message"]["scopes"] == []
+
+
+def test_passkey_grant_and_mint_still_need_a_scope():
+    with pytest.raises(ValueError, match="at least one scope"):
+        _mint(scopes=[]).to_message()
+
+
+def test_mint_nonce_is_required():
+    mint = _mint()
+    fields = {f.name: getattr(mint, f.name) for f in dataclasses.fields(mint) if f.name != "nonce"}
+    with pytest.raises(TypeError, match="nonce"):
+        SessionMint(**fields)
+
+
 def test_sign_snip12_verifies():
     private_key = 0x1234567
     grant = _grant()
@@ -217,12 +236,12 @@ def test_grant_environment():
         ({"scopes": ["trade", "withdraw:owner"]}, "reserved and refused"),
         ({"scopes": ["trade:isolated"]}, "reserved and refused"),
         ({"scopes": ["read"]}, "unknown scope"),
-        ({"scopes": []}, "at least one scope"),
         ({"scopes": ["trade", "trade"]}, "must not repeat"),
         ({"environment": ""}, "environment must be"),
         ({"expires_at": 1700000000}, "must be after issuedAt"),
         ({"expires_at": 1700000000 + 181 * 86400}, "at most 180 days"),
         ({"scopes": ["trade:block"], "builder": Builder(), "expires_at": 1700000000 + 8 * 86400}, "at most 7 days"),
+        ({"scopes": ["trade:block"], "builder": Builder(), "expires_at": 1700000000 + 7 * 86400 + 1}, "at most 7 days"),
         (
             {"scopes": ["account:settings"], "builder": Builder(), "expires_at": 1700000000 + 8 * 86400},
             "at most 7 days",
