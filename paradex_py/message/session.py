@@ -77,6 +77,7 @@ __all__ = [
     "SessionMint",
     "grant_environment",
     "new_nonce",
+    "sign_eip712_typed_data",
 ]
 
 DOMAIN_NAME = "Paradex Session"
@@ -122,6 +123,13 @@ PASSKEY_MAX_CONCURRENT_SESSIONS = 5
 # cannot make a grant at a lifetime cap read as longer than the cap. The server accepts issuedAt up to
 # 24 hours old.
 _ISSUED_AT_BACKDATE_SECONDS = 60
+
+
+def sign_eip712_typed_data(typed_data: dict[str, Any], eth_private_key: str) -> str:
+    """Sign full EIP-712 typed data with a local EVM key; returns the 65-byte ``0x`` r||s||v signature."""
+    signable = encode_typed_data(full_message=typed_data)
+    signature = EthAccount.sign_message(signable, eth_private_key).signature.hex()
+    return signature if signature.startswith("0x") else "0x" + signature
 
 
 def new_nonce() -> str:
@@ -508,9 +516,7 @@ class _TypedMessage:
 
     def sign_eip712(self, eth_private_key: str, signature_chain_id: int) -> str:
         """Sign with a local EVM key; returns the 65-byte ``0x`` r||s||v signature."""
-        signable = encode_typed_data(full_message=self.eip712_typed_data(signature_chain_id))
-        signature = EthAccount.sign_message(signable, eth_private_key).signature.hex()
-        return signature if signature.startswith("0x") else "0x" + signature
+        return sign_eip712_typed_data(self.eip712_typed_data(signature_chain_id), eth_private_key)
 
     def snip12_typed_data(self) -> TypedDataDict:
         """The SNIP-12 revision 1 typed data for a Stark-key owner.
