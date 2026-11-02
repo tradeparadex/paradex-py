@@ -63,6 +63,8 @@ SESSION_AUTH_MAX_SECONDS = 15 * 60
 # Grant states after which the session is gone for good.
 _DEAD_STATES = frozenset({"revoked", "expired", "unknown"})
 # /auth attempts while the grant is not known to be gone, and the first backoff between them.
+# The 400 errors /auth answers a session key with for a revoked, expired or unknown grant.
+_SESSION_REFUSAL_ERRORS = frozenset({"SESSION_REVOKED", "SESSION_EXPIRED", "INVALID_SUBKEY"})
 _AUTH_ATTEMPTS = 3
 _AUTH_BACKOFF_SECONDS = 0.5
 # Query parameters a session must not set itself: token usage is decided by the server.
@@ -75,7 +77,7 @@ class SessionDroppedError(RuntimeError):
 
 
 class SessionRejectedError(ValueError):
-    """The server refused the session key (HTTP 401 or 403)."""
+    """The server refused the session key (HTTP 401 or 403, or a 400 naming a session error)."""
 
     def __init__(self, status_code: int, body: str):
         super().__init__(f"HTTP {status_code}: {body[:200]}")
@@ -203,6 +205,17 @@ def _refuse_on_behalf_of(params: Any, payload: Any) -> None:
             raise_value_error("SessionAccounts: sessions never act on_behalf_of another account")
 
 
+def _session_refusal(res: httpx.Response) -> bool:
+    """A 400 whose ``error`` says the session key's grant is revoked, expired or unknown."""
+    if res.status_code != 400:
+        return False
+    try:
+        body = res.json()
+    except ValueError:
+        return False
+    return isinstance(body, dict) and body.get("error") in _SESSION_REFUSAL_ERRORS
+
+
 def _grant_not_found(res: httpx.Response) -> bool:
     """Whether the server says the grant does not exist, as opposed to a 404 for an unknown route."""
     if res.status_code != 404:
@@ -224,7 +237,7 @@ class _SessionApiClient(ParadexApiClient):
         super().__init__(**kwargs)
 
     def _handle_response(self, res: httpx.Response, url: str, http_method: HttpMethod) -> Any:
-        if res.status_code in (401, 403):
+        if res.status_code in (401, 403) or _session_refusal(res):
             raise SessionRejectedError(res.status_code, res.text)
         return super()._handle_response(res, url, http_method)
 
@@ -233,10 +246,10 @@ class _SessionApiClient(ParadexApiClient):
         try:
             return super().request(url, http_method, *args, **kwargs)
         except SessionRejectedError as e:
-            # A 401 may only mean this JWT went stale, so log in again first: auth() checks the grant
-            # if that is refused too. A 403 is a refused action (e.g. a scope the grant lacks), and
-            # refusals of /auth itself are handled by auth().
-            if e.status_code == 401 and "/auth/" not in url:
+            # A 401 (or a session error) may only mean this JWT went stale, so log in again first:
+            # auth() checks the grant if that is refused too. A 403 is a refused action (e.g. a scope
+            # the grant lacks), and refusals of /auth itself are handled by auth().
+            if e.status_code != 403 and "/auth/" not in url:
                 self.auth()
             raise
 
@@ -500,7 +513,7 @@ class SessionAccounts:
         client._validate_auth()
         url = f"{client._v2_api_url}/sessions/{self.grant_id}"
         res = client.client.send(client.client.build_request("DELETE", url))
-        if res.status_code in (401, 403):
+        if res.status_code in (401, 403) or _session_refusal(res):
             # The session key was refused: if the grant is already revoked or expired, this drops it.
             self._on_refused(SessionRejectedError(res.status_code, res.text))
         if not (res.is_success or _grant_not_found(res)):
@@ -596,7 +609,7 @@ class SessionAccounts:
         """
         self._ensure_live()
         self._loop = asyncio.get_running_loop()
-        if self._expiry_task is None:
+        if self._expiry_task is None or self._expiry_task.done():  # e.g. its loop ended
             self._expiry_task = self._loop.create_task(self._drop_at_expiry())
         connected: list[ParadexWebsocketClient] = []
         for address, ws in self._sockets.items():

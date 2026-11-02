@@ -74,6 +74,7 @@ class FakeServer:
     def __init__(self):
         self.requests: list[httpx.Request] = []
         self.revoked: set[str] = set()
+        self.refusal_error = "SESSION_REVOKED"
         self.refuse_orders_with: int | None = None
         self.auth_counts: dict[str, int] = {}
         self.grant_state = "active"
@@ -96,13 +97,12 @@ class FakeServer:
             if self.auth_failure == "rate-limited":
                 return httpx.Response(429, json={"error": "RATE_LIMIT", "message": "slow down", "data": None})
             if account in self.revoked:
-                return httpx.Response(401, json={"error": "INVALID_SUBKEY", "message": "subkey revoked", "data": None})
+                # The 400 /auth answers a session key with for a revoked, expired or unknown grant.
+                return httpx.Response(400, json={"error": self.refusal_error, "message": "refused", "data": None})
             return httpx.Response(200, json={"jwt_token": _jwt(account, time.time() + SESSION_AUTH_MAX_SECONDS)})
         if path in ("/v1/orders", "/v1/orders/batch"):
             if self.refuse_orders_with:
-                return httpx.Response(
-                    self.refuse_orders_with, json={"error": "FORBIDDEN", "message": "no", "data": None}
-                )
+                return httpx.Response(self.refuse_orders_with, json=self._error_body(self.refuse_orders_with))
             return httpx.Response(201, json={"id": "order-1"})
         if path.startswith("/v2/sessions"):
             return self._sessions(request)
@@ -129,6 +129,8 @@ class FakeServer:
             return {"message": "Not Found"}  # a 404 page for a route the server doesn't serve
         if status == 404:
             return {"error": "NOT_FOUND", "message": "session not found"}
+        if status == 400:
+            return {"error": self.refusal_error, "message": "refused", "data": None}
         return {"error": "X", "message": "x", "data": None}
 
     def client(self) -> httpx.Client:
@@ -356,6 +358,60 @@ def test_refused_login_with_an_active_grant_retries_then_raises():
     assert len(server.by_path(f"/v2/sessions/{GRANT_ID}/status")) == 3
     server.revoked.clear()
     session.submit_order(SUB_1, _order())  # the caller can retry
+
+
+@pytest.mark.parametrize("error", ["SESSION_REVOKED", "SESSION_EXPIRED", "INVALID_SUBKEY"])
+def test_session_error_from_login_checks_the_grant_and_drops(error):
+    server, clock = FakeServer(), Clock()
+    reasons = []
+    session = _session(server, clock, on_dropped=reasons.append)
+    server.revoked.add(SUB_1)
+    server.refusal_error = error
+    server.grant_state = "revoked"
+    session.api(SUB_1)._token_exp = 0
+
+    with pytest.raises(SessionDroppedError, match="revoked"):
+        session.submit_order(SUB_1, _order())
+    assert not session.is_live
+    assert reasons == [f"grant {GRANT_ID} is revoked"]
+    assert len(server.by_path(f"/v2/sessions/{GRANT_ID}/status")) == 1
+
+
+def test_other_400_from_login_is_not_a_session_refusal():
+    server, clock = FakeServer(), Clock()
+    session = _session(server, clock)
+    server.revoked.add(SUB_1)
+    server.refusal_error = "VALIDATION_ERROR"
+    session.api(SUB_1)._token_exp = 0
+
+    with pytest.raises(ValueError) as raised:
+        session.submit_order(SUB_1, _order())
+    assert not isinstance(raised.value, SessionRejectedError)
+    assert session.is_live
+    assert not server.by_path(f"/v2/sessions/{GRANT_ID}/status")
+
+
+def test_session_error_on_a_call_logs_in_again_and_drops_a_revoked_grant():
+    server, clock = FakeServer(), Clock()
+    session = _session(server, clock)
+    server.refuse_orders_with = 400
+    server.revoked.add(MAIN)
+    server.grant_state = "revoked"
+
+    with pytest.raises(SessionDroppedError, match="revoked"):
+        session.submit_order(MAIN, _order())
+    assert not session.is_live
+
+
+def test_revoke_refused_with_a_session_error_for_a_grant_revoked_elsewhere_drops():
+    server, clock = FakeServer(), Clock()
+    session = _session(server, clock)
+    server.delete_status = 400
+    server.grant_state = "revoked"
+
+    with pytest.raises(SessionDroppedError, match="revoked"):
+        session.revoke()
+    assert not session.is_live
 
 
 def test_401_on_a_call_with_a_revoked_grant_drops_everything():
@@ -634,6 +690,24 @@ async def test_sockets_drop_at_session_expiry():
     await asyncio.gather(*session._close_tasks)
     assert all(socket.state == State.CLOSED for socket in connector.sockets)
     await session.close()
+
+
+def test_connect_ws_on_a_new_loop_restarts_the_expiry_timer():
+    server, clock, connector = FakeServer(), Clock(), FakeConnector()
+    grant = _grant(clock)
+    session = _session(server, clock, grant=grant, ws_enabled=True, ws_connector=connector)
+    asyncio.run(session.connect_ws())  # the loop ends, cancelling its expiry timer
+
+    async def second_loop() -> None:
+        clock.now = grant.expires_at - 0.05
+        await session.connect_ws()
+        await asyncio.sleep(0.2)
+        assert session.dropped_reason == "session expired"
+        await asyncio.gather(*session._close_tasks)
+        await session.close()
+
+    asyncio.run(second_loop())
+    assert all(socket.state == State.CLOSED for socket in connector.sockets[3:])
 
 
 @pytest.mark.asyncio
