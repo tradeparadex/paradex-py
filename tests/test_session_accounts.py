@@ -3,6 +3,7 @@
 import asyncio
 import base64
 import json
+import threading
 import time
 from decimal import Decimal
 
@@ -79,6 +80,8 @@ class FakeServer:
         self.status_code = 200
         self.delete_status = 204
         self.unknown_route = False
+        self.auth_failure: str | None = None
+        self.auth_threads: list[int] = []
         self.fail_connect_after: int | None = None
 
     def handler(self, request: httpx.Request) -> httpx.Response:
@@ -87,6 +90,11 @@ class FakeServer:
         if path.startswith("/v1/auth/"):
             account = request.headers["PARADEX-STARKNET-ACCOUNT"]
             self.auth_counts[account] = self.auth_counts.get(account, 0) + 1
+            self.auth_threads.append(threading.get_ident())
+            if self.auth_failure == "network":
+                raise httpx.ConnectError("unreachable", request=request)
+            if self.auth_failure == "rate-limited":
+                return httpx.Response(429, json={"error": "RATE_LIMIT", "message": "slow down", "data": None})
             if account in self.revoked:
                 return httpx.Response(401, json={"error": "INVALID_SUBKEY", "message": "subkey revoked", "data": None})
             return httpx.Response(200, json={"jwt_token": _jwt(account, time.time() + SESSION_AUTH_MAX_SECONDS)})
@@ -713,10 +721,14 @@ def test_ws_disabled():
 
 @pytest.mark.asyncio
 async def test_async_context_manager_closes():
-    server, clock = FakeServer(), Clock()
-    async with _session(server, clock) as session:
+    server, clock, connector = FakeServer(), Clock(), FakeConnector()
+    async with _session(server, clock, ws_enabled=True, ws_connector=connector) as session:
+        await session.connect_ws()
         assert session.is_live
     assert session.dropped_reason == "closed"
+    assert all(client.client.is_closed for client in session._clients.values())
+    assert session._expiry_task.cancelled()
+    assert all(socket.state == State.CLOSED for socket in connector.sockets)
 
 
 # -- registration and the owner-signature hook ---------------------------------------------------
@@ -914,3 +926,100 @@ async def test_refused_reconnect_login_never_logs_in_on_the_loop():
     assert server.auth_counts[MAIN] == 1 + 3
     assert len(connector.sockets) == 4
     await session.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["network", "rate-limited"])
+async def test_a_failed_relogin_still_reconnects(failure):
+    server, clock, connector = FakeServer(), Clock(), FakeConnector()
+    session = _session(server, clock, ws_enabled=True, ws_connector=connector)
+    await session.connect_ws()
+    ws = session._sockets[MAIN]
+    ws.account.set_jwt_token(_jwt(MAIN, time.time() - 1))
+    server.auth_failure = failure
+
+    await ws._reconnect()
+    await ws._reconnect_with_auth_refresh()
+
+    assert session.is_live
+    assert len(connector.sockets) == 3 + 2  # both paths reconnected
+    await session.close()
+
+
+@pytest.mark.asyncio
+async def test_relogin_runs_off_the_event_loop_thread():
+    server, clock, connector = FakeServer(), Clock(), FakeConnector()
+    session = _session(server, clock, ws_enabled=True, ws_connector=connector)
+    await session.connect_ws()
+    ws = session._sockets[MAIN]
+    ws.account.set_jwt_token(_jwt(MAIN, time.time() - 1))
+    server.auth_threads.clear()
+
+    await ws._reconnect()
+
+    assert server.auth_threads
+    assert threading.get_ident() not in server.auth_threads
+    await session.close()
+
+
+def test_revoke_refused_for_a_grant_revoked_elsewhere_drops():
+    server, clock = FakeServer(), Clock()
+    session = _session(server, clock)
+    server.delete_status = 401
+    server.grant_state = "revoked"  # e.g. the owner revoked it from another device
+
+    with pytest.raises(SessionDroppedError, match="revoked"):
+        session.revoke()
+    assert not session.is_live
+
+
+def test_revoke_refused_with_an_active_grant_stays_live():
+    server, clock = FakeServer(), Clock()
+    session = _session(server, clock)
+    server.delete_status = 401
+
+    with pytest.raises(SessionRevokeError):
+        session.revoke()
+    assert session.is_live
+
+
+@pytest.mark.asyncio
+async def test_connect_ws_refreshes_a_stale_jwt_before_connecting():
+    server, clock, connector = FakeServer(), Clock(), FakeConnector()
+    session = _session(server, clock, ws_enabled=True, ws_connector=connector)
+    session.api(MAIN)._token_exp = 0
+
+    await session.connect_ws()
+
+    assert server.auth_counts[MAIN] == 2
+    assert connector.sockets[0].sent[0]["params"]["bearer"] == _jwt_account(session, MAIN)
+    await session.close()
+
+
+@pytest.mark.asyncio
+async def test_a_drop_during_connect_closes_the_new_socket():
+    server, clock = FakeServer(), Clock()
+
+    class DroppingConnector(FakeConnector):
+        async def __call__(self, url, headers):
+            socket = await super().__call__(url, headers)
+            session.drop("revoked")
+            return socket
+
+    connector = DroppingConnector()
+    session = _session(server, clock, ws_enabled=True, ws_connector=connector)
+
+    assert await session._sockets[MAIN].connect() is False
+    assert connector.sockets[0].state == State.CLOSED
+    await session.close()
+
+
+def test_client_options_reach_every_account():
+    from paradex_py.api.protocols import DefaultRetryStrategy
+
+    server, clock = FakeServer(), Clock()
+    strategy = DefaultRetryStrategy(max_retries=1)
+    session = _session(server, clock, api_base_url="https://api.example.test/v1", retry_strategy=strategy)
+
+    assert {r.url.host for r in server.by_path("/v1/auth/")} == {"api.example.test"}
+    assert all(client.retry_strategy is strategy for client in session._clients.values())

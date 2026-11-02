@@ -97,9 +97,10 @@ await paradex.ws_client.subscribe(ParadexWebsocketChannel.MARKETS_SUMMARY, callb
 !!! warning
     **Experimental.** The session endpoints are live, but this SDK API may still change.
 
-An account owner signs one `SessionGrant` (EIP-712, or SNIP-12 for Stark owners) that lets a scoped,
-expiring Stark session key trade the anchor account and any listed sub-accounts. A session can never
-withdraw. `SessionAccounts` then keeps a JWT (at most 15 minutes, never past the session's expiry),
+An account owner signs one `SessionGrant` that lets a scoped, expiring Stark session key trade the
+anchor account and any listed sub-accounts. A session can never withdraw. `register_session` takes
+an EVM (EIP-712) owner signature; `SessionGrant` also renders SNIP-12 typed data for Stark-key owners,
+but the SDK does not register those yet. `SessionAccounts` then keeps a JWT (at most 15 minutes, never past the session's expiry),
 a REST client and a websocket per account, routes calls by account, and drops every account at once
 when the session expires or is revoked.
 

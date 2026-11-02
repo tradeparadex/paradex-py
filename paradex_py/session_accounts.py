@@ -44,7 +44,7 @@ from paradex_py.utils import raise_value_error
 
 if TYPE_CHECKING:
     from paradex_py.api.models import SystemConfig
-    from paradex_py.api.protocols import OwnerSigner, WebSocketConnector
+    from paradex_py.api.protocols import OwnerSigner, RetryStrategy, WebSocketConnector
     from paradex_py.common.order import Order
 
 __all__ = [
@@ -132,7 +132,7 @@ def register_session(
     http_client: HttpClient | None = None,
     api_base_url: str | None = None,
 ) -> dict:
-    """Have the owner sign ``grant`` and register it with ``POST /v2/sessions``.
+    """Have an EVM owner sign ``grant`` (EIP-712) and register it with ``POST /v2/sessions``.
 
     .. warning::
         Experimental: this SDK API may still change.
@@ -297,14 +297,8 @@ class _SessionWebsocketClient(ParadexWebsocketClient):
     async def _reconnect(self):
         if not self._owner.is_live:
             return
-        if self._is_token_expired():
-            # Log in on a thread: a session login may back off with blocking sleeps.
-            try:
-                await asyncio.to_thread(self._session_client.auth)
-            except SessionDroppedError:
-                return
-            except SessionRejectedError:
-                self.logger.warning(f"{self.classname}: session login refused; the grant is still active, retrying")
+        if self._is_token_expired() and not await self._relogin():
+            return
         if self._owner.is_live and not self.disable_reconnect:
             # The base reconnect would log in again, on the loop, if the JWT is still stale; reconnect
             # directly instead and let the server refuse a stale token.
@@ -321,13 +315,23 @@ class _SessionWebsocketClient(ParadexWebsocketClient):
         # and drops every account if it is revoked or expired.
         if not self._owner.is_live or self.disable_reconnect:
             return
+        if await self._relogin():
+            await self._reconnect()
+
+    async def _relogin(self) -> bool:
+        """Log in again on a thread (a session login may back off with blocking sleeps).
+
+        Returns False once the session is dropped. Any other failure (refused with the grant still
+        active, a network error, a 429) is logged and the reconnect goes ahead, as in the base client,
+        so the socket's reader keeps running.
+        """
         try:
             await asyncio.to_thread(self._session_client.auth)
         except SessionDroppedError:
-            return
-        except SessionRejectedError:
-            self.logger.warning(f"{self.classname}: session login refused; the grant is still active, retrying")
-        await self._reconnect()
+            return False
+        except Exception:
+            self.logger.warning(f"{self.classname}: session login failed; reconnecting anyway", exc_info=True)
+        return True
 
 
 class SessionAccounts:
@@ -345,6 +349,8 @@ class SessionAccounts:
         logger: Logger.
         auth_params: Extra ``/auth`` query parameters. ``token_usage`` is refused: the server decides it.
         http_client_factory: Builds the HTTP client for each account (each holds its own JWT header).
+        api_base_url: Optional ``/v1`` base URL override for every account's client, as in ``register_session``.
+        retry_strategy: Optional retry strategy for every account's client (e.g. ``DefaultRetryStrategy``).
         ws_enabled: Whether to create a websocket client per account.
         ws_connector: Optional websocket connector, passed to every websocket client.
         on_dropped: Called once with the reason when the session is dropped.
@@ -370,6 +376,8 @@ class SessionAccounts:
         logger: logging.Logger | None = None,
         auth_params: dict | None = None,
         http_client_factory: Callable[[], httpx.Client] | None = None,
+        api_base_url: str | None = None,
+        retry_strategy: RetryStrategy | None = None,
         ws_enabled: bool = True,
         ws_connector: WebSocketConnector | None = None,
         on_dropped: Callable[[str], None] | None = None,
@@ -393,6 +401,7 @@ class SessionAccounts:
         self.logger = logger or logging.getLogger(__name__)
         self._clock = clock
         self._sleep = sleep
+        self._client_options: dict[str, Any] = {"api_base_url": api_base_url, "retry_strategy": retry_strategy}
         self._loop: asyncio.AbstractEventLoop | None = None
         self._on_dropped = on_dropped
         self.dropped_reason: str | None = None
@@ -441,7 +450,12 @@ class SessionAccounts:
             if http_client is not None and any(c.client is http_client for c in self._clients.values()):
                 raise_value_error("SessionAccounts: http_client_factory must build a new client per account")
             self._clients[address] = _SessionApiClient(
-                owner=self, env=self.env, logger=self.logger, http_client=http_client, auth_params=auth_params
+                owner=self,
+                env=self.env,
+                logger=self.logger,
+                http_client=http_client,
+                auth_params=auth_params,
+                **self._client_options,
             )
 
     # -- lifecycle -----------------------------------------------------------------------------
@@ -486,6 +500,9 @@ class SessionAccounts:
         client._validate_auth()
         url = f"{client._v2_api_url}/sessions/{self.grant_id}"
         res = client.client.send(client.client.build_request("DELETE", url))
+        if res.status_code in (401, 403):
+            # The session key was refused: if the grant is already revoked or expired, this drops it.
+            self._on_refused(SessionRejectedError(res.status_code, res.text))
         if not (res.is_success or _grant_not_found(res)):
             raise SessionRevokeError(res.status_code, res.text)
         self.drop("revoked by this session")
