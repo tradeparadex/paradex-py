@@ -55,10 +55,9 @@ from typing import Any, cast
 from eth_account import Account as EthAccount
 from eth_account.messages import _hash_eip191_message, encode_typed_data
 from starknet_py.constants import FIELD_PRIME
-from starknet_py.hash.utils import message_signature
 from starknet_py.net.models.typed_data import TypedDataDict
-from starknet_py.utils.typed_data import TypedData
 
+from paradex_py.account.utils import message_signature, typed_data_to_message_hash
 from paradex_py.utils import raise_value_error
 
 __all__ = [
@@ -113,6 +112,16 @@ _MARKET = re.compile(r"^[A-Za-z0-9_*-]{1,31}$")
 DEFAULT_LIMIT_CAPS: Mapping[str, str] = MappingProxyType({})
 # Integers stay below 2^53 so every JSON implementation reads them exactly.
 _UINT_MAX = 2**53 - 1
+_LABEL_MAX = 64
+_BASE64URL = re.compile(r"^[A-Za-z0-9_-]+$")
+# What the server allows a passkey to grant the sessions it opens.
+PASSKEY_SCOPES = frozenset({"trade"})
+PASSKEY_MAX_SESSION_SECONDS = 7 * 24 * 3600
+PASSKEY_MAX_CONCURRENT_SESSIONS = 5
+# A grant's issuedAt is stamped this far in the past, so a client clock running ahead of the server's
+# cannot make a grant at a lifetime cap read as longer than the cap. The server accepts issuedAt up to
+# 24 hours old.
+_ISSUED_AT_BACKDATE_SECONDS = 60
 
 
 def new_nonce() -> str:
@@ -210,8 +219,16 @@ def _p256_coordinate(value: str, what: str) -> str:
     return value
 
 
+def _label(value: str, what: str) -> str:
+    if not isinstance(value, str) or len(value) > _LABEL_MAX or not _printable_ascii(value):
+        raise_value_error(f"{what} must be printable ASCII of at most {_LABEL_MAX} characters, got {value!r}")
+    return value
+
+
 def _environment(value: str) -> str:
     # The server checks the value; the SDK only makes sure it can be encoded.
+    if value == "prod":
+        raise_value_error("environment is 'mainnet', not 'prod'; grant_environment() maps the SDK's names")
     return _shortstring(value, "environment")
 
 
@@ -382,7 +399,8 @@ class Limits:
     by default (:data:`DEFAULT_LIMIT_CAPS`); the server enforces its own.
 
     ``Limits()`` states no caps: every limit ``"none"`` and markets ``["*"]``. It is what a grant uses
-    unless told otherwise, and while the server enforces no session limits it is the only form it accepts.
+    unless told otherwise. The server accepts a number only for a limit it enforces, and ``"none"``
+    (markets ``["*"]``) for the rest.
     """
 
     max_order_notional: str = NO_LIMIT
@@ -393,7 +411,7 @@ class Limits:
     markets: Sequence[str] = (ALL_MARKETS,)
     caps: Mapping[str, str] = field(default_factory=lambda: DEFAULT_LIMIT_CAPS, compare=False, repr=False)
 
-    def to_message(self) -> dict[str, Any]:
+    def to_message(self, *, numeric_max_loss: bool = False) -> dict[str, Any]:
         message: dict[str, Any] = {
             "maxOrderNotional": _limit(self.max_order_notional, "maxOrderNotional"),
             "maxOpenNotional": _limit(self.max_open_notional, "maxOpenNotional"),
@@ -402,6 +420,8 @@ class Limits:
             "maxLeverage": _limit(self.max_leverage, "maxLeverage"),
             "markets": _markets(self.markets),
         }
+        if numeric_max_loss and message["maxLoss"] == NO_LIMIT:
+            raise_value_error("limits.maxLoss must be a number on builder grants, not 'none'")
         for name, cap in self.caps.items():
             if name not in _LIMIT_NAMES:
                 raise_value_error(f"limit cap names an unknown limit {name!r}")
@@ -429,7 +449,9 @@ def _markets(markets: Sequence[str]) -> list[str]:
 class Builder:
     """The builder a grant approves, with its maximum fee rate. ``account="0x0"`` means none.
 
-    ``expires_at=0`` makes the approval follow the session's own expiry.
+    ``expires_at=0`` makes the approval follow the session's own expiry. A grant that approves a builder
+    must give ``limits.maxLoss`` as a number, and the server refuses builder grants until it enforces
+    ``maxLoss``.
     """
 
     account: str = NO_BUILDER
@@ -493,8 +515,7 @@ class _TypedMessage:
     def snip12_typed_data(self) -> TypedDataDict:
         """The SNIP-12 revision 1 typed data for a Stark-key owner.
 
-        starknet-py encodes SNIP-12 ``string`` values as ASCII only, so free text (labels, passkey
-        fields) must be ASCII here. EIP-712 has no such limit.
+        SNIP-12 ``string`` values must be printable ASCII.
         """
         message = _decimal_integers(self.to_message())
         _require_ascii(message)
@@ -510,8 +531,7 @@ class _TypedMessage:
 
     def snip12_hash(self) -> int:
         """The SNIP-12 message hash, bound to the grant's ``account``."""
-        typed_data = TypedData.from_dict(self.snip12_typed_data())
-        return typed_data.message_hash(int(_hex(self.account, "account"), 16))
+        return typed_data_to_message_hash(self.snip12_typed_data(), int(_hex(self.account, "account"), 16))
 
     def sign_snip12(self, stark_private_key: str | int) -> list[str]:
         """Sign with a local Stark key; returns ``[r, s]`` as decimal strings."""
@@ -558,8 +578,12 @@ class SessionGrant(_TypedMessage):
 
     @classmethod
     def new(cls, *, ttl_seconds: int, **kwargs: Any) -> SessionGrant:
-        """Build a grant issued now, expiring ``ttl_seconds`` later, with a fresh nonce."""
-        issued_at = int(time.time())
+        """Build a grant issued now, expiring ``ttl_seconds`` later, with a fresh nonce.
+
+        ``issuedAt`` is stamped a minute early, so a client clock ahead of the server's cannot push a
+        grant at a lifetime cap over it.
+        """
+        issued_at = int(time.time()) - _ISSUED_AT_BACKDATE_SECONDS
         return cls(issued_at=issued_at, expires_at=issued_at + ttl_seconds, **kwargs)
 
     def to_message(self) -> dict[str, Any]:
@@ -576,16 +600,15 @@ class SessionGrant(_TypedMessage):
             raise_value_error("builder grants may not carry trade:block or account:settings")
         if self.builder.is_set and self.builder.expires_at and self.builder.expires_at > self.expires_at:
             raise_value_error("builder.expiresAt must not outlive the session")
-        if not isinstance(self.label, str):
-            raise_value_error("label must be a string")
         return {
             "paradexChain": _shortstring(self.paradex_chain, "paradexChain"),
             "environment": _environment(self.environment),
             "account": account,
             "sessionKey": _hex(self.session_key, "sessionKey"),
-            "label": self.label,
+            "label": _label(self.label, "label"),
             "scopes": scopes,
-            "limits": self.limits.to_message(),
+            # A builder grant must cap losses.
+            "limits": self.limits.to_message(numeric_max_loss=self.builder.is_set),
             "builder": self.builder.to_message(),
             "subaccounts": _subaccounts(account, self.subaccounts),
             "nonce": _nonce(self.nonce),
@@ -611,14 +634,16 @@ class Passkey:
     label: str = ""
 
     def to_message(self) -> dict[str, Any]:
-        if not self.credential_id or not self.rp_id:
-            raise_value_error("passkey credentialId and rpId are required")
+        if not isinstance(self.credential_id, str) or not _BASE64URL.match(self.credential_id):
+            raise_value_error(f"passkey credentialId must be unpadded base64url, got {self.credential_id!r}")
+        if not isinstance(self.rp_id, str) or not self.rp_id or self.rp_id != self.rp_id.lower():
+            raise_value_error(f"passkey rpId must be a lowercase domain, got {self.rp_id!r}")
         return {
             "credentialId": self.credential_id,
             "pubkeyX": _p256_coordinate(self.pubkey_x, "passkey.pubkeyX"),
             "pubkeyY": _p256_coordinate(self.pubkey_y, "passkey.pubkeyY"),
             "rpId": self.rp_id,
-            "label": self.label,
+            "label": _label(self.label, "passkey.label"),
         }
 
 
@@ -633,16 +658,22 @@ class Ceiling:
     subaccounts: Sequence[str] = ()
     include_future_subaccounts: bool = False
 
-    def to_message(self, account: str) -> dict[str, Any]:
-        if _uint(self.max_session_ttl, "maxSessionTtl") == 0 or self.max_session_ttl > SESSION_MAX_SECONDS:
-            raise_value_error(f"ceiling.maxSessionTtl must be 1..{SESSION_MAX_SECONDS} seconds")
-        if _uint(self.max_concurrent_sessions, "maxConcurrentSessions") == 0:
-            raise_value_error("ceiling.maxConcurrentSessions must be positive")
+    def to_message(self, account: str, *, numeric_max_loss: bool = False) -> dict[str, Any]:
+        ttl = _uint(self.max_session_ttl, "maxSessionTtl")
+        if not 0 < ttl <= PASSKEY_MAX_SESSION_SECONDS:
+            raise_value_error(f"ceiling.maxSessionTtl must be 1..{PASSKEY_MAX_SESSION_SECONDS} seconds")
+        if not 0 < _uint(self.max_concurrent_sessions, "maxConcurrentSessions") <= PASSKEY_MAX_CONCURRENT_SESSIONS:
+            raise_value_error(f"ceiling.maxConcurrentSessions must be 1..{PASSKEY_MAX_CONCURRENT_SESSIONS}")
+        scopes = _scopes(self.scopes)
+        if not set(scopes) <= PASSKEY_SCOPES:
+            raise_value_error(f"a passkey may grant only {sorted(PASSKEY_SCOPES)}, got {scopes}")
+        if not isinstance(self.include_future_subaccounts, bool):
+            raise_value_error(f"includeFutureSubaccounts must be a bool, got {self.include_future_subaccounts!r}")
         return {
-            "scopes": _scopes(self.scopes),
-            "limits": self.limits.to_message(),
+            "scopes": scopes,
+            "limits": self.limits.to_message(numeric_max_loss=numeric_max_loss),
             "subaccounts": _subaccounts(account, self.subaccounts),
-            "includeFutureSubaccounts": bool(self.include_future_subaccounts),
+            "includeFutureSubaccounts": self.include_future_subaccounts,
             "maxSessionTtl": _uint(self.max_session_ttl, "maxSessionTtl"),
             "maxConcurrentSessions": _uint(self.max_concurrent_sessions, "maxConcurrentSessions"),
         }
@@ -653,7 +684,9 @@ class PasskeyGrant(_TypedMessage):
     """An owner's grant letting a passkey open sessions within ``ceiling``.
 
     ``builder_account="0x0"`` binds the passkey to the Paradex app; any other address binds it to that
-    builder. ``include_future_subaccounts`` is allowed only for the Paradex app's own passkeys.
+    builder. ``include_future_subaccounts`` is allowed only for the Paradex app's own passkeys. A builder
+    passkey must give ``maxLoss`` as a number, and the server refuses builder passkeys until it enforces
+    ``maxLoss``.
     """
 
     paradex_chain: str
@@ -681,7 +714,8 @@ class PasskeyGrant(_TypedMessage):
             "environment": _environment(self.environment),
             "account": account,
             "passkey": self.passkey.to_message(),
-            "ceiling": self.ceiling.to_message(account),
+            # A builder passkey must cap losses.
+            "ceiling": self.ceiling.to_message(account, numeric_max_loss=int(builder_account, 16) != 0),
             "builderAccount": builder_account,
             "nonce": _nonce(self.nonce),
             "issuedAt": self.issued_at,

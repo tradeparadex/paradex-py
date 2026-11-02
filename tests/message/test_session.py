@@ -125,23 +125,13 @@ def test_hash_vectors(message, eip712_hash, snip12_hash):
     assert message.snip12_hash() == snip12_hash
 
 
-def test_eip712_unicode_label_vector():
-    grant = _grant(
-        account="0x1",
-        session_key="0x2",
-        label="Bøt 🤖",
-        scopes=["trade"],
-        builder=Builder(),
-        subaccounts=[],
-        nonce=_nonce(5),
-        issued_at=1,
-        expires_at=2,
-    )
-    assert grant.eip712_hash(ARBITRUM).hex() == "0d19ed0efe6e43f3c08c58b6d8e15b1c7108a0c06236e87e117f1c0c00b08bec"
-    with pytest.raises(ValueError, match="printable ASCII for SNIP-12"):
-        grant.snip12_hash()
-    with pytest.raises(ValueError, match="printable ASCII for SNIP-12"):
-        dataclasses.replace(grant, label="tab\there").snip12_hash()
+@pytest.mark.parametrize("label", ["Bøt 🤖", "tab\there", "x" * 65])
+def test_labels_are_printable_ascii_of_at_most_64_characters_in_both_encodings(label):
+    with pytest.raises(ValueError, match="printable ASCII of at most 64"):
+        _grant(label=label).eip712_typed_data(ARBITRUM)
+    with pytest.raises(ValueError, match="printable ASCII of at most 64"):
+        _passkey_grant(passkey=Passkey("Y3JlZA", PUB_X, PUB_Y, "paradex.trade", label)).to_message()
+    assert _grant(label="x" * 64).to_message()["label"] == "x" * 64
 
 
 def test_eip712_typed_data_shape():
@@ -274,7 +264,8 @@ def test_grant_environment():
         ({"issued_at": -1}, "2\\^53"),
         ({"expires_at": 2**53}, "2\\^53"),
         ({"limits": dataclasses.replace(LIMITS, max_loss=5000)}, "maxLoss must be a positive decimal"),
-        ({"label": None}, "label must be a string"),
+        ({"label": None}, "label must be printable ASCII"),
+        ({"environment": "prod"}, "'mainnet', not 'prod'"),
     ],
 )
 def test_session_grant_refusals(overrides, error):
@@ -326,7 +317,13 @@ def test_bad_signature_chain_refused(chain_id):
         ({"ceiling": Ceiling(["trade"], LIMITS, 86400, 0)}, "maxConcurrentSessions"),
         ({"ceiling": Ceiling(["withdraw:owner"], LIMITS, 86400, 5)}, "reserved and refused"),
         ({"ceiling": Ceiling(["trade"], LIMITS, 86400, 5, ["0x1234"])}, "anchor account"),
-        ({"passkey": Passkey("", PUB_X, PUB_Y, "paradex.trade")}, "credentialId and rpId"),
+        ({"passkey": Passkey("", PUB_X, PUB_Y, "paradex.trade")}, "credentialId must be unpadded base64url"),
+        ({"passkey": Passkey("ab+/cd==", PUB_X, PUB_Y, "paradex.trade")}, "credentialId must be unpadded base64url"),
+        ({"passkey": Passkey("Y3JlZA", PUB_X, PUB_Y, "Paradex.Trade")}, "rpId must be a lowercase domain"),
+        ({"ceiling": Ceiling(["trade"], LIMITS, 7 * 86400 + 1, 5)}, "maxSessionTtl"),
+        ({"ceiling": Ceiling(["trade"], LIMITS, 86400, 6)}, "maxConcurrentSessions"),
+        ({"ceiling": Ceiling(["trade", "trade:rfq"], LIMITS, 86400, 5)}, "a passkey may grant only"),
+        ({"ceiling": Ceiling(["trade"], LIMITS, 86400, 5, [], "false")}, "includeFutureSubaccounts must be a bool"),
         ({"passkey": Passkey("c", "0xaa", PUB_Y, "paradex.trade")}, "pubkeyX"),
         ({"passkey": Passkey("c", PUB_X, "0x" + "CD" * 32, "paradex.trade")}, "pubkeyY"),
         ({"expires_at": 1}, "must be after issuedAt"),
@@ -449,7 +446,6 @@ def test_mint_limits_must_match_the_ceiling(ceiling, mint, error):
         ({"scopes": ["trade", "trade:rfq"]}, {}, "exceed the ceiling"),
         ({"subaccounts": ["0x77"]}, {"subaccounts": ["0x99"]}, "sub-accounts the ceiling does not"),
         ({"expires_at": 1500 + 86401}, {}, "outlives"),
-        ({"expires_at": 10**6 + 1}, {"max_session_ttl": 180 * 86400}, "outlives"),
     ],
 )
 def test_mint_refused_outside_the_ceiling(mint, ceiling, error):
@@ -561,9 +557,40 @@ def test_limits_default_to_no_caps():
     assert grant.limits == Limits()
 
 
-def test_builder_grants_and_passkeys_may_leave_max_loss_uncapped():
-    assert _grant(limits=Limits()).to_message()["limits"]["maxLoss"] == "none"
-    ceiling = Ceiling(["trade"], Limits(), 86400, 5)
-    assert (
-        _passkey_grant(ceiling=ceiling, builder_account="0xb1").to_message()["ceiling"]["limits"]["maxLoss"] == "none"
+def test_builder_grants_and_passkeys_need_a_numeric_max_loss():
+    with pytest.raises(ValueError, match="maxLoss must be a number on builder grants"):
+        _grant(limits=Limits()).to_message()
+    with pytest.raises(ValueError, match="maxLoss must be a number on builder grants"):
+        _passkey_grant(ceiling=Ceiling(["trade"], Limits(), 86400, 5), builder_account="0xb1").to_message()
+    assert _grant(limits=Limits(max_loss="5000")).to_message()["limits"]["maxLoss"] == "5000"
+    first_party = _passkey_grant(ceiling=Ceiling(["trade"], Limits(), 86400, 5)).to_message()
+    assert first_party["ceiling"]["limits"]["maxLoss"] == "none"
+
+
+def test_mint_may_not_outlive_its_grant():
+    grant = _ceiling_grant(LIMITS)  # expires at 10**6
+    mint = _mint(limits=LIMITS, subaccounts=[], expires_at=10**6 + 1)
+    with pytest.raises(ValueError, match="outlives"):
+        mint.check_within(grant, now=10**6 - 100)
+
+
+def test_builder_approval_may_end_with_its_grant():
+    grant = _grant(builder=Builder("0xb1", "0.0005", 1700600000), expires_at=1700600000)
+    assert grant.to_message()["builder"]["expiresAt"] == 1700600000
+
+
+def test_new_backdates_issued_at():
+    import time as _time
+
+    before = int(_time.time())
+    grant = SessionGrant.new(
+        ttl_seconds=3600,
+        paradex_chain=MAINNET,
+        environment="mainnet",
+        account="0x1",
+        session_key="0x2",
+        label="x",
+        scopes=["trade"],
     )
+    assert before - 61 <= grant.issued_at <= before - 59
+    assert grant.expires_at - grant.issued_at == 3600

@@ -8,10 +8,10 @@
         "Integers are JSON numbers in EIP-712 messages and decimal strings in SNIP-12 messages; both encode the same value.",
         "SNIP-12 string fields must be printable ASCII; markets and scopes are shortstrings of at most 31 characters.",
         "A grant without a builder uses builder {account: \"0x0\", maxFeeRate: \"0\", expiresAt: 0}.",
-        "Every limit is stated: a positive decimal string, or \"none\" for no cap (maxLeverage \"none\" is the market maximum). An empty string is invalid. Builder grants and builder passkeys must give a numeric maxLoss.",
+        "Every limit is stated: a positive decimal string, or \"none\" for no cap (maxLeverage \"none\" is the market maximum). An empty string is invalid. A server accepts a number only for the limits it enforces and \"none\" (markets [\"*\"]) for the rest; which it enforces changes no hash here. Builder grants and builder passkeys must give a numeric maxLoss, so a server that does not enforce maxLoss refuses them.",
         "markets is non-empty; [\"*\"] means every market the server permits and must stand alone. Elsewhere * is a wildcard for any run of characters (\"*-USD-PERP\"), and a pattern must contain a letter or digit and no \"**\".",
         "A market contains a letter, * or - and does not start with -, 0x, 0b or 0o in either case; symbols are case-sensitive and may contain _ (\"kPEPE-USD-PERP\", \"NEAR-USD-27NOV26-5_4-C\").",
-        "A mint limit under a numeric ceiling is a number at or below it; under a \"none\" ceiling it may be anything valid. Each mint market must be listed by the ceiling, matched by a ceiling pattern, or covered by a [\"*\"] ceiling; a mint pattern is covered only by the same pattern.",
+        "An enforced mint limit under a numeric ceiling is a number at or below it; under a \"none\" ceiling it may be anything valid. An unenforced one is \"none\" under any ceiling. Each mint market must be listed by the ceiling, matched by a ceiling pattern, or covered by a [\"*\"] ceiling; a mint pattern is covered only by the same pattern.",
         "SessionMint's WebAuthn challenge is the 32-byte SNIP-12 message hash, base64url-encoded without padding (mintChallenge).",
         "EIP-712 signatures are 65-byte r||s||v with v in {27, 28} and low s. Stark signatures are [r, s] over the SNIP-12 message hash.",
         "The keys below are public test keys: never use them for anything else."
