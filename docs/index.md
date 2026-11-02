@@ -95,8 +95,7 @@ await paradex.ws_client.subscribe(ParadexWebsocketChannel.MARKETS_SUMMARY, callb
 ## Session Keys (Experimental)
 
 !!! warning
-    **Experimental.** Session keys are rolling out on the server and `POST /v2/sessions` is not live yet;
-    names and payloads may change.
+    **Experimental.** The session endpoints are live, but this SDK API may still change.
 
 An account owner signs one `SessionGrant` (EIP-712, or SNIP-12 for Stark owners) that lets a scoped,
 expiring Stark session key trade the anchor account and any listed sub-accounts. A session can never

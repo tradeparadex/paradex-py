@@ -1,8 +1,7 @@
 """Trade several accounts from one session key and its owner-signed grant.
 
 .. warning::
-    Experimental. Session keys are being rolled out on the server, and ``POST /v2/sessions``
-    is coded to the published design, not to a live endpoint. Names and payloads may change.
+    Experimental. The session endpoints are live, but this SDK API may still change.
 
 A ``SessionGrant`` names an anchor account and, optionally, sub-accounts. The server keeps
 one session row per listed account, so the session key authenticates to each one on its own:
@@ -32,7 +31,6 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 from eth_account import Account as EthAccount
-from eth_account.messages import encode_typed_data
 from starknet_py.constants import EC_ORDER
 from starknet_py.net.signer.key_pair import KeyPair
 
@@ -41,7 +39,7 @@ from paradex_py.api.api_client import ParadexApiClient
 from paradex_py.api.http_client import HttpClient, HttpMethod
 from paradex_py.api.ws_client import ParadexWebsocketClient
 from paradex_py.environment import Environment, _validate_env
-from paradex_py.message.session import SessionGrant, grant_environment
+from paradex_py.message.session import SessionGrant, grant_environment, sign_eip712_typed_data
 from paradex_py.utils import raise_value_error
 
 if TYPE_CHECKING:
@@ -124,9 +122,7 @@ class LocalOwnerSigner:
         return self._signature_chain_id
 
     def sign_typed_data(self, typed_data: dict[str, Any]) -> str:
-        signable = encode_typed_data(full_message=typed_data)
-        signature = EthAccount.sign_message(signable, self._eth_private_key).signature.hex()
-        return signature if signature.startswith("0x") else "0x" + signature
+        return sign_eip712_typed_data(typed_data, self._eth_private_key)
 
 
 def register_session(
@@ -139,7 +135,7 @@ def register_session(
     """Have the owner sign ``grant`` and register it with ``POST /v2/sessions``.
 
     .. warning::
-        Experimental: the endpoint is coded to the published design and is not live yet.
+        Experimental: this SDK API may still change.
 
     Args:
         env: Environment.
@@ -207,6 +203,17 @@ def _refuse_on_behalf_of(params: Any, payload: Any) -> None:
             raise_value_error("SessionAccounts: sessions never act on_behalf_of another account")
 
 
+def _grant_not_found(res: httpx.Response) -> bool:
+    """Whether the server says the grant does not exist, as opposed to a 404 for an unknown route."""
+    if res.status_code != 404:
+        return False
+    try:
+        body = res.json()
+    except ValueError:
+        return False
+    return isinstance(body, dict) and body.get("error") == "NOT_FOUND"
+
+
 class _SessionApiClient(ParadexApiClient):
     """REST client for one account of a session: refuses calls once the session is dropped."""
 
@@ -258,7 +265,7 @@ class _SessionApiClient(ParadexApiClient):
         request = self.client.build_request("GET", f"{self._v2_api_url}/sessions/{self._owner.grant_id}/status")
         request.headers.pop("Authorization", None)
         res = self.client.send(request)
-        if res.status_code == 404:
+        if _grant_not_found(res):
             return "unknown"
         if res.status_code != 200:
             return None
@@ -298,8 +305,16 @@ class _SessionWebsocketClient(ParadexWebsocketClient):
                 return
             except SessionRejectedError:
                 self.logger.warning(f"{self.classname}: session login refused; the grant is still active, retrying")
-        if self._owner.is_live:
-            await super()._reconnect()
+        if self._owner.is_live and not self.disable_reconnect:
+            # The base reconnect would log in again, on the loop, if the JWT is still stale; reconnect
+            # directly instead and let the server refuse a stale token.
+            try:
+                async with self._recv_lock:
+                    await self._close_connection()
+                    await self.connect()
+                await self._resubscribe()
+            except Exception:
+                self.logger.exception(f"{self.classname}: Reconnect failed")
 
     async def _reconnect_with_auth_refresh(self):
         # The server refused this socket's login: log in again over REST, which checks the grant
@@ -471,7 +486,7 @@ class SessionAccounts:
         client._validate_auth()
         url = f"{client._v2_api_url}/sessions/{self.grant_id}"
         res = client.client.send(client.client.build_request("DELETE", url))
-        if not (res.is_success or res.status_code == 404):
+        if not (res.is_success or _grant_not_found(res)):
             raise SessionRevokeError(res.status_code, res.text)
         self.drop("revoked by this session")
 

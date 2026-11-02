@@ -78,6 +78,7 @@ class FakeServer:
         self.grant_state = "active"
         self.status_code = 200
         self.delete_status = 204
+        self.unknown_route = False
         self.fail_connect_after: int | None = None
 
     def handler(self, request: httpx.Request) -> httpx.Response:
@@ -106,14 +107,21 @@ class FakeServer:
             if self.status_code == 0:
                 raise httpx.ConnectError("unreachable", request=request)
             if self.status_code != 200:
-                return httpx.Response(self.status_code, json={"error": "X", "message": "x", "data": None})
+                return httpx.Response(self.status_code, json=self._error_body(self.status_code))
             return httpx.Response(200, json={"state": self.grant_state})
         if path == f"/v2/sessions/{GRANT_ID}" and request.method == "DELETE":
             if self.delete_status != 204:
-                return httpx.Response(self.delete_status, json={"error": "X", "message": "x", "data": None})
+                return httpx.Response(self.delete_status, json=self._error_body(self.delete_status))
             self.grant_state = "revoked"
             return httpx.Response(204)
         return httpx.Response(201, json={"grant_id": GRANT_ID, "expires_at": 1, "accounts": [MAIN]})
+
+    def _error_body(self, status: int) -> dict:
+        if status == 404 and self.unknown_route:
+            return {"message": "Not Found"}  # a 404 page for a route the server doesn't serve
+        if status == 404:
+            return {"error": "NOT_FOUND", "message": "session not found"}
+        return {"error": "X", "message": "x", "data": None}
 
     def client(self) -> httpx.Client:
         return httpx.Client(transport=httpx.MockTransport(self.handler))
@@ -319,6 +327,7 @@ def test_forbidden_request_does_not_drop_the_session():
 
     assert excinfo.value.status_code == 403
     assert session.is_live
+    assert server.auth_counts[MAIN] == 1  # no fresh login either: only a 401 means the JWT may be stale
     assert not server.by_path(f"/v2/sessions/{GRANT_ID}/status")  # a refused action is not a revocation signal
 
 
@@ -863,3 +872,45 @@ async def test_failed_construction_stops_websocket_readers():
 
     readers = [t for t in asyncio.all_tasks() if "_read_messages" in repr(t.get_coro())]
     assert all(t.cancelled() or t.done() for t in readers)
+
+
+def test_a_404_page_is_not_an_unknown_grant():
+    server, clock = FakeServer(), Clock()
+    session = _session(server, clock)
+    server.revoked.add(SUB_2)
+    server.status_code = 404
+    server.unknown_route = True  # e.g. the status route is missing, not the grant
+    session.api(SUB_2)._token_exp = 0
+
+    with pytest.raises(SessionRejectedError):
+        session.submit_order(SUB_2, _order())
+    assert session.is_live
+
+
+def test_revoke_does_not_drop_on_a_404_page():
+    server, clock = FakeServer(), Clock()
+    session = _session(server, clock)
+    server.delete_status = 404
+    server.unknown_route = True
+
+    with pytest.raises(SessionRevokeError) as excinfo:
+        session.revoke()
+    assert excinfo.value.status_code == 404
+    assert session.is_live
+
+
+@pytest.mark.asyncio
+async def test_refused_reconnect_login_never_logs_in_on_the_loop():
+    server, clock, connector = FakeServer(), Clock(), FakeConnector()
+    session = _session(server, clock, ws_enabled=True, ws_connector=connector)
+    await session.connect_ws()
+    ws = session._sockets[MAIN]
+    ws.account.set_jwt_token(_jwt(MAIN, time.time() - 1))
+    server.revoked.add(MAIN)  # the login is refused, but the grant is still active
+
+    await ws._reconnect()
+
+    # Only the threaded attempts: the reconnect itself does not log in again with blocking sleeps.
+    assert server.auth_counts[MAIN] == 1 + 3
+    assert len(connector.sockets) == 4
+    await session.close()
