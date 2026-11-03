@@ -11,6 +11,7 @@ import httpx
 import pytest
 from eth_account import Account as EthAccount
 from eth_account.messages import encode_typed_data
+from eth_utils import keccak
 from starknet_py.common import int_from_bytes
 from starknet_py.hash.utils import verify_message_signature
 from starknet_py.utils.typed_data import TypedData
@@ -30,6 +31,7 @@ from paradex_py.session_accounts import (
     SessionDroppedError,
     SessionRejectedError,
     SessionRevokeError,
+    _grant_ids,
     new_session_key,
     register_session,
 )
@@ -40,7 +42,7 @@ MAIN = "0xa1"
 SUB_1 = "0xb1"
 SUB_2 = "0xb2"
 SESSION_PRIVATE, SESSION_PUBLIC = new_session_key()
-GRANT_ID = "0x" + "ab" * 32
+REGISTERED_ID = "0x" + "ab" * 32  # what the fake server answers a registration with
 LIMITS = Limits("25000", "100000", "500000", "5000", "10", ["BTC-USD-PERP"])
 
 CONFIG = SystemConfig(
@@ -110,19 +112,19 @@ class FakeServer:
 
     def _sessions(self, request: httpx.Request) -> httpx.Response:
         path = request.url.path
-        if path == f"/v2/sessions/{GRANT_ID}/status":
+        if path.endswith("/status"):
             assert "Authorization" not in request.headers  # the status endpoint is unauthenticated
             if self.status_code == 0:
                 raise httpx.ConnectError("unreachable", request=request)
             if self.status_code != 200:
                 return httpx.Response(self.status_code, json=self._error_body(self.status_code))
             return httpx.Response(200, json={"state": self.grant_state})
-        if path == f"/v2/sessions/{GRANT_ID}" and request.method == "DELETE":
+        if request.method == "DELETE":
             if self.delete_status != 204:
                 return httpx.Response(self.delete_status, json=self._error_body(self.delete_status))
             self.grant_state = "revoked"
             return httpx.Response(204)
-        return httpx.Response(201, json={"grant_id": GRANT_ID, "expires_at": 1, "accounts": [MAIN]})
+        return httpx.Response(201, json={"grant_id": REGISTERED_ID, "expires_at": 1, "accounts": [MAIN]})
 
     def _error_body(self, status: int) -> dict:
         if status == 404 and self.unknown_route:
@@ -197,14 +199,23 @@ def _grant(clock: Clock, ttl: int = 3600, **overrides) -> SessionGrant:
     return SessionGrant(**fields)
 
 
+def _grant_id(grant: SessionGrant) -> str:
+    return _grant_ids(grant)[0]  # an EVM owner's grant
+
+
+def _status_checks(server: FakeServer, session: SessionAccounts) -> list[httpx.Request]:
+    return server.by_path(f"/v2/sessions/{session.grant_id}/status")
+
+
 def _session(server: FakeServer, clock: Clock, grant: SessionGrant | None = None, **kwargs) -> SessionAccounts:
     kwargs.setdefault("ws_enabled", False)
-    kwargs.setdefault("grant_id", GRANT_ID)
+    grant = grant or _grant(clock)
+    kwargs.setdefault("grant_id", _grant_id(grant))
     kwargs.setdefault("sleep", lambda seconds: None)
     kwargs.setdefault("http_client_factory", server.client)
     return SessionAccounts(
         env=TESTNET,
-        grant=grant or _grant(clock),
+        grant=grant,
         session_private_key=SESSION_PRIVATE,
         config=CONFIG,
         clock=clock,
@@ -338,7 +349,7 @@ def test_forbidden_request_does_not_drop_the_session():
     assert excinfo.value.status_code == 403
     assert session.is_live
     assert server.auth_counts[MAIN] == 1  # no fresh login either: only a 401 means the JWT may be stale
-    assert not server.by_path(f"/v2/sessions/{GRANT_ID}/status")  # a refused action is not a revocation signal
+    assert not _status_checks(server, session)  # a refused action is not a revocation signal
 
 
 def test_refused_login_with_an_active_grant_retries_then_raises():
@@ -355,7 +366,7 @@ def test_refused_login_with_an_active_grant_retries_then_raises():
     assert server.auth_counts[SUB_1] == 4  # the first login, then three refused attempts
     assert sleeps == [0.5, 1.0]  # backoff between attempts
     # The state is asked once per refusal, without a login; no polling.
-    assert len(server.by_path(f"/v2/sessions/{GRANT_ID}/status")) == 3
+    assert len(_status_checks(server, session)) == 3
     server.revoked.clear()
     session.submit_order(SUB_1, _order())  # the caller can retry
 
@@ -373,8 +384,8 @@ def test_session_error_from_login_checks_the_grant_and_drops(error):
     with pytest.raises(SessionDroppedError, match="revoked"):
         session.submit_order(SUB_1, _order())
     assert not session.is_live
-    assert reasons == [f"grant {GRANT_ID} is revoked"]
-    assert len(server.by_path(f"/v2/sessions/{GRANT_ID}/status")) == 1
+    assert reasons == [f"grant {session.grant_id} is revoked"]
+    assert len(_status_checks(server, session)) == 1
 
 
 def test_other_400_from_login_is_not_a_session_refusal():
@@ -388,7 +399,7 @@ def test_other_400_from_login_is_not_a_session_refusal():
         session.submit_order(SUB_1, _order())
     assert not isinstance(raised.value, SessionRejectedError)
     assert session.is_live
-    assert not server.by_path(f"/v2/sessions/{GRANT_ID}/status")
+    assert not _status_checks(server, session)
 
 
 def test_session_error_on_a_call_logs_in_again_and_drops_a_revoked_grant():
@@ -436,7 +447,7 @@ def test_401_on_a_call_logs_in_again_and_raises_when_the_login_works():
 
     assert session.is_live
     assert server.auth_counts[MAIN] == 2
-    assert not server.by_path(f"/v2/sessions/{GRANT_ID}/status")  # the login worked, so the grant is fine
+    assert not _status_checks(server, session)  # the login worked, so the grant is fine
 
 
 def test_unknown_grant_state_does_not_drop():
@@ -461,11 +472,12 @@ def test_revoked_before_the_first_login_drops_and_closes_clients():
         created.append(server.client())
         return created[-1]
 
+    grant = _grant(clock)
     with pytest.raises(SessionDroppedError, match="revoked"):
-        _session(server, clock, http_client_factory=factory)
+        _session(server, clock, grant=grant, http_client_factory=factory)
 
     # No JWT exists yet; the unauthenticated status endpoint still answers.
-    assert len(server.by_path(f"/v2/sessions/{GRANT_ID}/status")) == 1
+    assert len(server.by_path(f"/v2/sessions/{_grant_id(grant)}/status")) == 1
     assert all(client.is_closed for client in created)
 
 
@@ -488,7 +500,7 @@ def test_unknown_grant_drops_everything():
     server.status_code = 404
     session.api(SUB_2)._token_exp = 0
 
-    with pytest.raises(SessionDroppedError, match=f"{GRANT_ID} is unknown"):
+    with pytest.raises(SessionDroppedError, match=f"{session.grant_id} is unknown"):
         session.submit_order(SUB_2, _order())
     assert not session.is_live
 
@@ -516,11 +528,52 @@ def test_revoke_deletes_the_grant_and_drops_everything():
     session.revoke()
 
     (request,) = [r for r in server.requests if r.method == "DELETE"]
-    assert request.url.path == f"/v2/sessions/{GRANT_ID}"
+    assert request.url.path == f"/v2/sessions/{session.grant_id}"
     assert request.url.params["cancel_orders"] == "true"  # otherwise a self-revoke leaves orders working
     assert request.headers["Authorization"] == f"Bearer {jwt}"
     assert reasons == ["revoked by this session"]
     assert not session.is_live
+
+
+def test_grant_ids_are_the_hashes_the_server_derives():
+    clock = Clock()
+    grant = _grant(clock)
+    evm_id, stark_id = _grant_ids(grant)
+    # The EIP-712 digest is keccak(0x1901 || domain separator || struct hash): the id is the struct
+    # hash, the same whatever chain the owner signs on.
+    for chain_id in (1, 42161, 11155111):
+        signable = encode_typed_data(full_message=grant.eip712_typed_data(chain_id))
+        assert "0x" + signable.body.hex() == evm_id
+        assert keccak(b"\x19\x01" + signable.header + signable.body) == grant.eip712_hash(chain_id)
+    assert stark_id == f"0x{grant.snip12_hash():064x}"
+
+
+def test_session_accepts_a_stark_owners_grant_id():
+    server, clock = FakeServer(), Clock()
+    grant = _grant(clock)
+    session = _session(server, clock, grant=grant, grant_id=_grant_ids(grant)[1])
+    assert session.grant_id == f"0x{grant.snip12_hash():064x}"
+
+
+@pytest.mark.parametrize("status", [500, 503])
+def test_revoke_failing_on_the_server_says_the_owner_must_cancel(status):
+    server, clock = FakeServer(), Clock()
+    session = _session(server, clock)
+    server.delete_status = status
+
+    with pytest.raises(SessionRevokeError, match="cancel_orders=true"):
+        session.revoke()
+    assert session.is_live
+
+
+def test_revoke_refused_by_the_client_side_does_not_mention_orders():
+    server, clock = FakeServer(), Clock()
+    session = _session(server, clock)
+    server.delete_status = 409
+
+    with pytest.raises(SessionRevokeError) as raised:
+        session.revoke()
+    assert "cancel_orders" not in str(raised.value)
 
 
 def test_revoke_can_keep_orders_working():
@@ -543,8 +596,9 @@ def test_revoked_at_start_drops_everything():
     server.grant_state = "revoked"
     reasons = []
 
-    with pytest.raises(SessionDroppedError, match=f"{GRANT_ID} is revoked"):
-        _session(server, clock, on_dropped=reasons.append)
+    grant = _grant(clock)
+    with pytest.raises(SessionDroppedError, match=f"{_grant_id(grant)} is revoked"):
+        _session(server, clock, grant=grant, on_dropped=reasons.append)
 
     assert len(reasons) == 1
     assert SUB_2 not in server.auth_counts  # no further account is authenticated
@@ -606,10 +660,8 @@ def test_drop_is_idempotent():
         ({"environment": "mainnet"}, {}, "the 'testnet' environment needs 'testnet'"),
         ({"paradex_chain": "PRIVATE_SN_PARACLEAR_MAINNET"}, {}, "grant is for chain"),
         ({}, {"auth_params": {"token_usage": "interactive"}}, "set by the server"),
-        ({}, {"grant_id": ""}, "grant_id must be 0x"),
-        ({}, {"grant_id": "0X" + GRANT_ID[2:]}, "grant_id must be 0x"),
-        ({}, {"grant_id": GRANT_ID[2:]}, "grant_id must be 0x"),
-        ({}, {"grant_id": GRANT_ID[:-1]}, "grant_id must be 0x"),
+        ({}, {"grant_id": ""}, "is not this grant's id"),
+        ({}, {"grant_id": REGISTERED_ID}, "is not this grant's id"),  # well formed, but another grant's
         ({"scopes": ["withdraw:owner"]}, {}, "reserved and refused"),
         ({"builder": Builder("0xbb", "0.0005"), "limits": Limits("", "", "", "", "", [])}, {}, "maxOrderNotional"),
     ],
@@ -640,11 +692,12 @@ def test_fetches_config_once_when_not_given():
             return httpx.Response(200, json={**CONFIG.__dict__, "bridged_tokens": []})
         return server.handler(request)
 
+    grant = _grant(clock)
     session = SessionAccounts(
         env=TESTNET,
-        grant=_grant(clock),
+        grant=grant,
         session_private_key=SESSION_PRIVATE,
-        grant_id=GRANT_ID,
+        grant_id=_grant_id(grant),
         http_client_factory=lambda: httpx.Client(transport=httpx.MockTransport(handler)),
         ws_enabled=False,
         clock=clock,
@@ -756,7 +809,7 @@ async def test_refused_websocket_login_with_a_revoked_grant_drops_without_reconn
     await session._sockets[SUB_1]._reconnect_with_auth_refresh()
     await asyncio.sleep(0.05)  # the drop ran on the login thread, which hands the closes to the loop
 
-    assert session.dropped_reason == f"grant {GRANT_ID} is revoked"
+    assert session.dropped_reason == f"grant {session.grant_id} is revoked"
     assert len(connector.sockets) == 3  # no new socket was opened
     assert all(socket.state == State.CLOSED for socket in connector.sockets)
     await session.close()
@@ -851,7 +904,7 @@ def test_register_session_signs_through_the_owner_hook():
 
     result = register_session(TESTNET, grant, signer, http_client=HttpClient(http_client=server.client()))
 
-    assert result["grant_id"] == GRANT_ID
+    assert result["grant_id"] == REGISTERED_ID
     (request,) = server.requests
     assert str(request.url) == "https://api.testnet.paradex.trade/v2/sessions"
     body = json.loads(request.content)
@@ -961,7 +1014,7 @@ async def test_refused_websocket_login_with_an_active_grant_keeps_the_session_an
 
     assert session.is_live
     assert server.auth_counts[SUB_1] == 1 + 3  # the first login, then three refused attempts
-    assert len(server.by_path(f"/v2/sessions/{GRANT_ID}/status")) == 3
+    assert len(_status_checks(server, session)) == 3
     assert len(connector.sockets) == 4  # it still reconnected
     await session.close()
 

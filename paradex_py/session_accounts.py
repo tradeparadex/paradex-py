@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import re
 import secrets
 import time
 from collections.abc import Callable
@@ -32,6 +31,7 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 from eth_account import Account as EthAccount
+from eth_account.messages import encode_typed_data
 from starknet_py.constants import EC_ORDER
 from starknet_py.net.signer.key_pair import KeyPair
 
@@ -65,8 +65,6 @@ SESSION_AUTH_MAX_SECONDS = 15 * 60
 _DEAD_STATES = frozenset({"revoked", "expired", "unknown"})
 # The 400 errors /auth answers a session key with for a revoked, expired or unknown grant.
 _SESSION_REFUSAL_ERRORS = frozenset({"SESSION_REVOKED", "SESSION_EXPIRED", "INVALID_SUBKEY"})
-# The form of a grant id, as the server returns it.
-_GRANT_ID = re.compile(r"^0x[0-9a-f]{64}$")
 # /auth attempts while the grant is not known to be gone, and the first backoff between them.
 _AUTH_ATTEMPTS = 3
 _AUTH_BACKOFF_SECONDS = 0.5
@@ -88,10 +86,21 @@ class SessionRejectedError(ValueError):
 
 
 class SessionRevokeError(RuntimeError):
-    """The server did not confirm revoking the grant; the session is still live."""
+    """The server did not confirm revoking the grant; the session is still live.
+
+    After a 5xx the server may have revoked the grant without cancelling its orders. A retry from this
+    session is then refused and drops it; only the owner's ``DELETE /v2/sessions/{grant_id}`` with
+    ``cancel_orders=true`` cancels them.
+    """
 
     def __init__(self, status_code: int, body: str):
-        super().__init__(f"revoke failed: HTTP {status_code}: {body[:200]}")
+        message = f"revoke failed: HTTP {status_code}: {body[:200]}"
+        if status_code >= 500:
+            message += (
+                "; the grant may already be revoked with its orders still working. If a retry drops the"
+                " session, the owner must revoke it with cancel_orders=true to cancel them"
+            )
+        super().__init__(message)
         self.status_code = status_code
 
 
@@ -207,6 +216,13 @@ def _refuse_on_behalf_of(params: Any, payload: Any) -> None:
     for fields in (params, *bodies):
         if isinstance(fields, dict) and _FORBIDDEN_ORDER_FIELDS.intersection(fields):
             raise_value_error("SessionAccounts: sessions never act on_behalf_of another account")
+
+
+def _grant_ids(grant: SessionGrant) -> tuple[str, str]:
+    """The ids the server gives ``grant``: for an EVM owner, its EIP-712 struct hash (the same on every
+    chain); for a Stark owner, its SNIP-12 message hash."""
+    struct_hash = encode_typed_data(full_message=grant.eip712_typed_data(1)).body
+    return f"0x{struct_hash.hex()}", f"0x{grant.snip12_hash():064x}"
 
 
 def _error_code(res: httpx.Response) -> str | None:
@@ -358,7 +374,8 @@ class SessionAccounts:
         env: Environment.
         grant: The owner-signed grant (already registered with the server).
         session_private_key: The session's Stark private key; its public key must be ``grant.session_key``.
-        grant_id: The id ``register_session`` returned; used to check and revoke the grant.
+        grant_id: The id ``register_session`` returned for ``grant`` (a hash of it, so it is checked);
+            used to check and revoke the grant.
         config: Pre-fetched system configuration; fetched once if omitted.
         logger: Logger.
         auth_params: Extra ``/auth`` query parameters. ``token_usage`` is refused: the server decides it.
@@ -402,10 +419,10 @@ class SessionAccounts:
         _check_grant_environment(env, grant)
         if auth_params and _FORBIDDEN_AUTH_PARAMS.intersection(auth_params):
             raise_value_error(f"SessionAccounts: {sorted(_FORBIDDEN_AUTH_PARAMS)} is set by the server, not the client")
-        if not isinstance(grant_id, str) or not _GRANT_ID.match(grant_id):
-            # The server answers a malformed id with 404, which revoke() would read as a revoked grant.
-            raise_value_error(f"SessionAccounts: grant_id must be 0x and 64 lowercase hex digits, got {grant_id!r}")
         self.accounts: list[str] = grant.accounts  # validates the grant
+        if grant_id not in _grant_ids(grant):
+            # Another grant's id would check and revoke that grant; a malformed one reads as revoked (404).
+            raise_value_error(f"SessionAccounts: grant_id {grant_id!r} is not this grant's id")
         public_key = KeyPair.from_private_key(int(session_private_key, 16)).public_key
         if public_key != int(grant.session_key, 16):
             raise_value_error("SessionAccounts: session_private_key does not match grant.session_key")
@@ -513,6 +530,8 @@ class SessionAccounts:
 
         The session drops only when the server confirms: success, or 404 for a grant it no longer has.
         Otherwise it stays live and :class:`SessionRevokeError` is raised, so the call can be retried.
+        After a 5xx the grant may already be revoked with its orders still working: a retry is then
+        refused and drops the session, and only the owner's revoke with ``cancel_orders`` cancels them.
         Call it before :meth:`close`: a dropped session no longer logs in, so it cannot revoke.
         """
         client = self._clients[self.accounts[0]]
