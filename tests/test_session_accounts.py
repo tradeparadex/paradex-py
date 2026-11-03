@@ -5,13 +5,13 @@ import base64
 import json
 import threading
 import time
+from collections.abc import Callable
 from decimal import Decimal
 
 import httpx
 import pytest
 from eth_account import Account as EthAccount
 from eth_account.messages import encode_typed_data
-from eth_utils import keccak
 from starknet_py.common import int_from_bytes
 from starknet_py.hash.utils import verify_message_signature
 from starknet_py.utils.typed_data import TypedData
@@ -31,7 +31,6 @@ from paradex_py.session_accounts import (
     SessionDroppedError,
     SessionRejectedError,
     SessionRevokeError,
-    _grant_ids,
     new_session_key,
     register_session,
 )
@@ -86,6 +85,7 @@ class FakeServer:
         self.auth_failure: str | None = None
         self.auth_threads: list[int] = []
         self.fail_connect_after: int | None = None
+        self.after_login: Callable[[], None] | None = None
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
@@ -101,6 +101,8 @@ class FakeServer:
             if account in self.revoked:
                 # The 400 /auth answers a session key with for a revoked, expired or unknown grant.
                 return httpx.Response(400, json={"error": self.refusal_error, "message": "refused", "data": None})
+            if self.after_login:
+                self.after_login()
             return httpx.Response(200, json={"jwt_token": _jwt(account, time.time() + SESSION_AUTH_MAX_SECONDS)})
         if path in ("/v1/orders", "/v1/orders/batch"):
             if self.refuse_orders_with:
@@ -200,7 +202,7 @@ def _grant(clock: Clock, ttl: int = 3600, **overrides) -> SessionGrant:
 
 
 def _grant_id(grant: SessionGrant) -> str:
-    return _grant_ids(grant)[0]  # an EVM owner's grant
+    return grant.grant_ids()[0]  # an EVM owner's grant
 
 
 def _status_checks(server: FakeServer, session: SessionAccounts) -> list[httpx.Request]:
@@ -535,23 +537,38 @@ def test_revoke_deletes_the_grant_and_drops_everything():
     assert not session.is_live
 
 
-def test_grant_ids_are_the_hashes_the_server_derives():
-    clock = Clock()
+def test_a_call_whose_login_overlaps_a_drop_is_not_sent():
+    server, clock = FakeServer(), Clock()
+    session = _session(server, clock)
+    session.api(MAIN)._token_exp = 0
+    server.after_login = lambda: session.drop("revoked by this session")  # e.g. revoke() on another thread
+
+    with pytest.raises(SessionDroppedError):
+        session.submit_order(MAIN, _order())
+    assert not server.by_path("/v1/orders")
+
+
+def test_session_restarts_from_a_saved_grant():
+    server, clock = FakeServer(), Clock()
     grant = _grant(clock)
-    evm_id, stark_id = _grant_ids(grant)
-    # The EIP-712 digest is keccak(0x1901 || domain separator || struct hash): the id is the struct
-    # hash, the same whatever chain the owner signs on.
-    for chain_id in (1, 42161, 11155111):
-        signable = encode_typed_data(full_message=grant.eip712_typed_data(chain_id))
-        assert "0x" + signable.body.hex() == evm_id
-        assert keccak(b"\x19\x01" + signable.header + signable.body) == grant.eip712_hash(chain_id)
-    assert stark_id == f"0x{grant.snip12_hash():064x}"
+    saved = json.loads(json.dumps({"grant": grant.to_message(), "grant_id": _grant_id(grant)}))
+
+    session = _session(server, clock, grant=SessionGrant.from_message(saved["grant"]), grant_id=saved["grant_id"])
+    session.submit_order(MAIN, _order())
+    assert session.grant_id == _grant_id(grant)
+
+
+def test_a_grant_rebuilt_with_a_new_nonce_is_refused_for_the_saved_id():
+    server, clock = FakeServer(), Clock()
+    grant = _grant(clock)
+    with pytest.raises(ValueError, match="is not this grant's id"):
+        _session(server, clock, grant=_grant(clock), grant_id=_grant_id(grant))
 
 
 def test_session_accepts_a_stark_owners_grant_id():
     server, clock = FakeServer(), Clock()
     grant = _grant(clock)
-    session = _session(server, clock, grant=grant, grant_id=_grant_ids(grant)[1])
+    session = _session(server, clock, grant=grant, grant_id=grant.grant_ids()[1])
     assert session.grant_id == f"0x{grant.snip12_hash():064x}"
 
 

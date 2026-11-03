@@ -1,4 +1,5 @@
 import dataclasses
+import json
 
 import pytest
 from eth_account import Account as EthAccount
@@ -176,6 +177,33 @@ def test_sign_eip712_recovers_owner():
     signature = grant.sign_eip712(owner.key.hex(), ARBITRUM)
     signable = encode_typed_data(full_message=grant.eip712_typed_data(ARBITRUM))
     assert EthAccount.recover_message(signable, signature=signature) == owner.address
+
+
+def test_grant_ids_are_chain_independent_struct_and_snip12_hashes():
+    grant = _grant()
+    evm_id, stark_id = grant.grant_ids()
+    for chain_id in (1, ARBITRUM, 11155111):
+        assert grant.eip712_hash(chain_id).hex() != evm_id[2:]  # the struct hash, not the signed digest
+        assert grant.eip712_typed_data(chain_id)["message"] == grant.to_message()
+    assert len(evm_id) == len(stark_id) == 66
+    assert int(stark_id, 16) == grant.snip12_hash()
+
+
+@pytest.mark.parametrize(
+    "grant",
+    [_grant(), _grant(scopes=[], builder=Builder(), subaccounts=[]), _grant(limits=Limits(), builder=Builder())],
+    ids=["builder", "read-only", "no-caps"],
+)
+def test_grant_round_trips_through_its_message(grant):
+    rebuilt = SessionGrant.from_message(json.loads(json.dumps(grant.to_message())))
+    assert rebuilt.to_message() == grant.to_message()
+    assert rebuilt.grant_ids() == grant.grant_ids()
+
+
+def test_grant_from_its_eip712_message():
+    grant = _grant()
+    rebuilt = SessionGrant.from_message(grant.eip712_typed_data(ARBITRUM)["message"])
+    assert rebuilt.grant_ids() == grant.grant_ids()
 
 
 def test_grant_with_no_scopes_is_a_read_only_session():

@@ -140,6 +140,9 @@ grant = SessionGrant.new(
 )
 # Any OwnerSigner works here, e.g. an MPC service that signs the EIP-712 typed data itself.
 grant_id = register_session("testnet", grant, LocalOwnerSigner("0x<owner-eth-key>"))["grant_id"]
+# The grant id is the grant's hash, so a restart needs this exact grant: keep grant.to_message() and
+# grant_id with the session key, and rebuild with SessionGrant.from_message(saved_message).
+saved_message = grant.to_message()
 
 session = SessionAccounts(
     env="testnet", grant=grant, session_private_key=session_private_key, grant_id=grant_id

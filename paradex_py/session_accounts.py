@@ -31,7 +31,6 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 from eth_account import Account as EthAccount
-from eth_account.messages import encode_typed_data
 from starknet_py.constants import EC_ORDER
 from starknet_py.net.signer.key_pair import KeyPair
 
@@ -218,13 +217,6 @@ def _refuse_on_behalf_of(params: Any, payload: Any) -> None:
             raise_value_error("SessionAccounts: sessions never act on_behalf_of another account")
 
 
-def _grant_ids(grant: SessionGrant) -> tuple[str, str]:
-    """The ids the server gives ``grant``: for an EVM owner, its EIP-712 struct hash (the same on every
-    chain); for a Stark owner, its SNIP-12 message hash."""
-    struct_hash = encode_typed_data(full_message=grant.eip712_typed_data(1)).body
-    return f"0x{struct_hash.hex()}", f"0x{grant.snip12_hash():064x}"
-
-
 def _error_code(res: httpx.Response) -> str | None:
     """The ``error`` code of an API error body, or None if the body is not one."""
     try:
@@ -305,6 +297,7 @@ class _SessionApiClient(ParadexApiClient):
     def _validate_auth(self):
         self._owner._ensure_live()
         super()._validate_auth()
+        self._owner._ensure_live()  # a drop while this thread logged in (e.g. revoke()) stops the call
 
 
 class _SessionWebsocketClient(ParadexWebsocketClient):
@@ -420,7 +413,7 @@ class SessionAccounts:
         if auth_params and _FORBIDDEN_AUTH_PARAMS.intersection(auth_params):
             raise_value_error(f"SessionAccounts: {sorted(_FORBIDDEN_AUTH_PARAMS)} is set by the server, not the client")
         self.accounts: list[str] = grant.accounts  # validates the grant
-        if grant_id not in _grant_ids(grant):
+        if grant_id not in grant.grant_ids():
             # Another grant's id would check and revoke that grant; a malformed one reads as revoked (404).
             raise_value_error(f"SessionAccounts: grant_id {grant_id!r} is not this grant's id")
         public_key = KeyPair.from_private_key(int(session_private_key, 16)).public_key

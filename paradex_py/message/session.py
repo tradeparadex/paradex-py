@@ -428,6 +428,18 @@ class Limits:
                 raise_value_error(f"limits.{name} {message[name]} is over the cap of {cap}")
         return message
 
+    @classmethod
+    def from_message(cls, message: Mapping[str, Any]) -> Limits:
+        """Rebuild limits from :meth:`to_message` output."""
+        return cls(
+            max_order_notional=message["maxOrderNotional"],
+            max_open_notional=message["maxOpenNotional"],
+            daily_notional=message["dailyNotional"],
+            max_loss=message["maxLoss"],
+            max_leverage=message["maxLeverage"],
+            markets=list(message["markets"]),
+        )
+
     def loss_wording(self) -> str:
         """The plain-words risk line to show the owner before they sign."""
         if self.max_loss == NO_LIMIT:
@@ -470,6 +482,11 @@ class Builder:
         if message["account"] == NO_BUILDER and (message["maxFeeRate"] != "0" or message["expiresAt"] != 0):
             raise_value_error('a grant without a builder uses builder {account: "0x0", maxFeeRate: "0", expiresAt: 0}')
         return message
+
+    @classmethod
+    def from_message(cls, message: Mapping[str, Any]) -> Builder:
+        """Rebuild a builder approval from :meth:`to_message` output."""
+        return cls(message["account"], message["maxFeeRate"], int(message["expiresAt"]))
 
 
 class _TypedMessage:
@@ -612,6 +629,37 @@ class SessionGrant(_TypedMessage):
             "issuedAt": self.issued_at,
             "expiresAt": self.expires_at,
         }
+
+    @classmethod
+    def from_message(cls, message: Mapping[str, Any]) -> SessionGrant:
+        """Rebuild a grant from :meth:`to_message` output (or the EIP-712 typed data's ``message``).
+
+        Save ``grant.to_message()`` with the session key and the grant id: a session restarted later
+        needs this exact grant, since the grant id is its hash.
+        """
+        return cls(
+            paradex_chain=message["paradexChain"],
+            environment=message["environment"],
+            account=message["account"],
+            session_key=message["sessionKey"],
+            label=message["label"],
+            scopes=list(message["scopes"]),
+            limits=Limits.from_message(message["limits"]),
+            builder=Builder.from_message(message["builder"]),
+            subaccounts=list(message["subaccounts"]),
+            nonce=message["nonce"],
+            issued_at=int(message["issuedAt"]),
+            expires_at=int(message["expiresAt"]),
+        )
+
+    def grant_ids(self) -> tuple[str, str]:
+        """The ids the server gives this grant: ``(evm_id, stark_id)``.
+
+        For an EVM owner the id is the EIP-712 struct hash of the message, the same on every chain; for
+        a Stark owner it is the SNIP-12 message hash. Both are ``0x`` and 64 lowercase hex digits.
+        """
+        struct_hash = encode_typed_data(full_message=self.eip712_typed_data(1)).body
+        return f"0x{struct_hash.hex()}", f"0x{self.snip12_hash():064x}"
 
     @property
     def accounts(self) -> list[str]:

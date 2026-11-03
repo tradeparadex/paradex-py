@@ -15,7 +15,6 @@ from paradex_py.message.session import (
     SessionGrant,
     SessionMint,
 )
-from paradex_py.session_accounts import _grant_ids
 
 DATA = json.loads((Path(__file__).parent / "testdata" / "session_vectors.json").read_text())
 KEYS = DATA["keys"]
@@ -109,7 +108,8 @@ def test_vectors_cover_every_message_type():
 def test_grant_ids_match_the_server(vector):
     # The server's grant id is the EIP-712 struct hash for an EVM owner, the SNIP-12 hash for a Stark one.
     grant = _build("SessionGrant", vector["message"])
-    evm_id, stark_id = _grant_ids(grant)
+    assert SessionGrant.from_message(vector["message"]) == grant
+    evm_id, stark_id = grant.grant_ids()
     assert evm_id == vector["eip712"]["structHash"]
     assert len(stark_id) == 66  # zero-padded, as the server formats grant ids; the vector's hash is not
     assert int(stark_id, 16) == int(vector["snip12"]["messageHash"], 16)
