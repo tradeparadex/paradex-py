@@ -103,7 +103,9 @@ an EVM (EIP-712) owner signature; `SessionGrant` also renders SNIP-12 typed data
 but the SDK does not register those yet. Paradex enables sessions per account: until it does,
 `register_session` raises `SESSIONS_DISABLED`. `SessionAccounts` then keeps a JWT (at most 15 minutes, never past the session's expiry),
 a REST client and a websocket per account, routes calls by account, and drops every account at once
-when the session expires or is revoked.
+when the session expires or is revoked. `session.revoke()` also cancels the session's resting orders,
+TWAPs and untriggered stops; `revoke(cancel_orders=False)` leaves them working, and the revoked key
+can no longer cancel them.
 
 Every grant states each limit: a positive decimal, or `"none"` for no cap from this session.
 `markets` lists symbols or patterns, or is `["*"]` for every permitted market. Empty values are

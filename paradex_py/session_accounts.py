@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import secrets
 import time
 from collections.abc import Callable
@@ -62,9 +63,11 @@ __all__ = [
 SESSION_AUTH_MAX_SECONDS = 15 * 60
 # Grant states after which the session is gone for good.
 _DEAD_STATES = frozenset({"revoked", "expired", "unknown"})
-# /auth attempts while the grant is not known to be gone, and the first backoff between them.
 # The 400 errors /auth answers a session key with for a revoked, expired or unknown grant.
 _SESSION_REFUSAL_ERRORS = frozenset({"SESSION_REVOKED", "SESSION_EXPIRED", "INVALID_SUBKEY"})
+# The form of a grant id, as the server returns it.
+_GRANT_ID = re.compile(r"^0x[0-9a-f]{64}$")
+# /auth attempts while the grant is not known to be gone, and the first backoff between them.
 _AUTH_ATTEMPTS = 3
 _AUTH_BACKOFF_SECONDS = 0.5
 # Query parameters a session must not set itself: token usage is decided by the server.
@@ -175,8 +178,9 @@ def register_session(
 
 
 def _check_grant_environment(env: Environment, grant: SessionGrant) -> None:
-    if grant.environment != grant_environment(env):
-        raise_value_error(f"grant is for {grant.environment!r}, not the {env!r} environment")
+    expected = grant_environment(env)
+    if grant.environment != expected:
+        raise_value_error(f"grant environment is {grant.environment!r}; the {env!r} environment needs {expected!r}")
 
 
 class _SessionKeyAccount(SubkeyAccount):
@@ -205,26 +209,23 @@ def _refuse_on_behalf_of(params: Any, payload: Any) -> None:
             raise_value_error("SessionAccounts: sessions never act on_behalf_of another account")
 
 
-def _session_refusal(res: httpx.Response) -> bool:
-    """A 400 whose ``error`` says the session key's grant is revoked, expired or unknown."""
-    if res.status_code != 400:
-        return False
+def _error_code(res: httpx.Response) -> str | None:
+    """The ``error`` code of an API error body, or None if the body is not one."""
     try:
         body = res.json()
     except ValueError:
-        return False
-    return isinstance(body, dict) and body.get("error") in _SESSION_REFUSAL_ERRORS
+        return None
+    return body.get("error") if isinstance(body, dict) else None
+
+
+def _session_refusal(res: httpx.Response) -> bool:
+    """A 400 whose ``error`` says the session key's grant is revoked, expired or unknown."""
+    return res.status_code == 400 and _error_code(res) in _SESSION_REFUSAL_ERRORS
 
 
 def _grant_not_found(res: httpx.Response) -> bool:
     """Whether the server says the grant does not exist, as opposed to a 404 for an unknown route."""
-    if res.status_code != 404:
-        return False
-    try:
-        body = res.json()
-    except ValueError:
-        return False
-    return isinstance(body, dict) and body.get("error") == "NOT_FOUND"
+    return res.status_code == 404 and _error_code(res) == "NOT_FOUND"
 
 
 class _SessionApiClient(ParadexApiClient):
@@ -401,8 +402,9 @@ class SessionAccounts:
         _check_grant_environment(env, grant)
         if auth_params and _FORBIDDEN_AUTH_PARAMS.intersection(auth_params):
             raise_value_error(f"SessionAccounts: {sorted(_FORBIDDEN_AUTH_PARAMS)} is set by the server, not the client")
-        if not grant_id:
-            raise_value_error("SessionAccounts: grant_id is required")
+        if not isinstance(grant_id, str) or not _GRANT_ID.match(grant_id):
+            # The server answers a malformed id with 404, which revoke() would read as a revoked grant.
+            raise_value_error(f"SessionAccounts: grant_id must be 0x and 64 lowercase hex digits, got {grant_id!r}")
         self.accounts: list[str] = grant.accounts  # validates the grant
         public_key = KeyPair.from_private_key(int(session_private_key, 16)).public_key
         if public_key != int(grant.session_key, 16):
@@ -502,8 +504,12 @@ class SessionAccounts:
             raise SessionDroppedError(self.dropped_reason) from error
         self.logger.warning(f"SessionAccounts: refused ({error}); grant {self.grant_id} state is {state!r}")
 
-    def revoke(self) -> None:
+    def revoke(self, cancel_orders: bool = True) -> None:
         """Revoke the grant on the server (``DELETE /v2/sessions/{grant_id}``), then drop every account.
+
+        With ``cancel_orders`` (the default) the server also cancels the session's resting orders, TWAPs
+        and untriggered stops on every account. Without it, a session revoking its own grant is a
+        sign-out: they keep working, and this key can no longer cancel them.
 
         The session drops only when the server confirms: success, or 404 for a grant it no longer has.
         Otherwise it stays live and :class:`SessionRevokeError` is raised, so the call can be retried.
@@ -512,7 +518,8 @@ class SessionAccounts:
         client = self._clients[self.accounts[0]]
         client._validate_auth()
         url = f"{client._v2_api_url}/sessions/{self.grant_id}"
-        res = client.client.send(client.client.build_request("DELETE", url))
+        params = {"cancel_orders": "true"} if cancel_orders else None
+        res = client.client.send(client.client.build_request("DELETE", url, params=params))
         if res.status_code in (401, 403) or _session_refusal(res):
             # The session key was refused: if the grant is already revoked or expired, this drops it.
             self._on_refused(SessionRejectedError(res.status_code, res.text))
@@ -609,7 +616,8 @@ class SessionAccounts:
         """
         self._ensure_live()
         self._loop = asyncio.get_running_loop()
-        if self._expiry_task is None or self._expiry_task.done():  # e.g. its loop ended
+        task = self._expiry_task
+        if task is None or task.done() or task.get_loop() is not self._loop:  # e.g. its loop ended
             self._expiry_task = self._loop.create_task(self._drop_at_expiry())
         connected: list[ParadexWebsocketClient] = []
         for address, ws in self._sockets.items():

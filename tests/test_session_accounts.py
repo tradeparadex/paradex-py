@@ -40,7 +40,7 @@ MAIN = "0xa1"
 SUB_1 = "0xb1"
 SUB_2 = "0xb2"
 SESSION_PRIVATE, SESSION_PUBLIC = new_session_key()
-GRANT_ID = "g-1"
+GRANT_ID = "0x" + "ab" * 32
 LIMITS = Limits("25000", "100000", "500000", "5000", "10", ["BTC-USD-PERP"])
 
 CONFIG = SystemConfig(
@@ -488,7 +488,7 @@ def test_unknown_grant_drops_everything():
     server.status_code = 404
     session.api(SUB_2)._token_exp = 0
 
-    with pytest.raises(SessionDroppedError, match="g-1 is unknown"):
+    with pytest.raises(SessionDroppedError, match=f"{GRANT_ID} is unknown"):
         session.submit_order(SUB_2, _order())
     assert not session.is_live
 
@@ -517,8 +517,20 @@ def test_revoke_deletes_the_grant_and_drops_everything():
 
     (request,) = [r for r in server.requests if r.method == "DELETE"]
     assert request.url.path == f"/v2/sessions/{GRANT_ID}"
+    assert request.url.params["cancel_orders"] == "true"  # otherwise a self-revoke leaves orders working
     assert request.headers["Authorization"] == f"Bearer {jwt}"
     assert reasons == ["revoked by this session"]
+    assert not session.is_live
+
+
+def test_revoke_can_keep_orders_working():
+    server, clock = FakeServer(), Clock()
+    session = _session(server, clock)
+
+    session.revoke(cancel_orders=False)
+
+    (request,) = [r for r in server.requests if r.method == "DELETE"]
+    assert "cancel_orders" not in request.url.params
     assert not session.is_live
 
 
@@ -531,7 +543,7 @@ def test_revoked_at_start_drops_everything():
     server.grant_state = "revoked"
     reasons = []
 
-    with pytest.raises(SessionDroppedError, match="g-1 is revoked"):
+    with pytest.raises(SessionDroppedError, match=f"{GRANT_ID} is revoked"):
         _session(server, clock, on_dropped=reasons.append)
 
     assert len(reasons) == 1
@@ -591,10 +603,13 @@ def test_drop_is_idempotent():
     ("overrides", "kwargs", "error"),
     [
         ({"session_key": "0x1234"}, {}, "does not match grant.session_key"),
-        ({"environment": "mainnet"}, {}, "not the 'testnet' environment"),
+        ({"environment": "mainnet"}, {}, "the 'testnet' environment needs 'testnet'"),
         ({"paradex_chain": "PRIVATE_SN_PARACLEAR_MAINNET"}, {}, "grant is for chain"),
         ({}, {"auth_params": {"token_usage": "interactive"}}, "set by the server"),
-        ({}, {"grant_id": ""}, "grant_id is required"),
+        ({}, {"grant_id": ""}, "grant_id must be 0x"),
+        ({}, {"grant_id": "0X" + GRANT_ID[2:]}, "grant_id must be 0x"),
+        ({}, {"grant_id": GRANT_ID[2:]}, "grant_id must be 0x"),
+        ({}, {"grant_id": GRANT_ID[:-1]}, "grant_id must be 0x"),
         ({"scopes": ["withdraw:owner"]}, {}, "reserved and refused"),
         ({"builder": Builder("0xbb", "0.0005"), "limits": Limits("", "", "", "", "", [])}, {}, "maxOrderNotional"),
     ],
@@ -690,6 +705,26 @@ async def test_sockets_drop_at_session_expiry():
     await asyncio.gather(*session._close_tasks)
     assert all(socket.state == State.CLOSED for socket in connector.sockets)
     await session.close()
+
+
+def test_connect_ws_after_a_closed_loop_restarts_the_expiry_timer():
+    server, clock, connector = FakeServer(), Clock(), FakeConnector()
+    grant = _grant(clock)
+    session = _session(server, clock, grant=grant, ws_enabled=True, ws_connector=connector)
+    first = asyncio.new_event_loop()
+    first.run_until_complete(session.connect_ws())
+    first.close()  # unlike asyncio.run, this leaves the expiry timer pending, never done
+    assert not session._expiry_task.done()
+
+    async def second_loop() -> None:
+        clock.now = grant.expires_at - 0.05
+        await session.connect_ws()
+        await asyncio.sleep(0.2)
+        assert session.dropped_reason == "session expired"
+        await asyncio.gather(*session._close_tasks)
+        await session.close()
+
+    asyncio.run(second_loop())
 
 
 def test_connect_ws_on_a_new_loop_restarts_the_expiry_timer():
