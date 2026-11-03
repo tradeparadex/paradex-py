@@ -7,7 +7,6 @@ import pytest
 from starknet_py.hash.utils import verify_message_signature
 
 from paradex_py.message.session import (
-    Builder,
     Ceiling,
     Limits,
     Passkey,
@@ -20,28 +19,10 @@ DATA = json.loads((Path(__file__).parent / "testdata" / "session_vectors.json").
 KEYS = DATA["keys"]
 
 
-def _limits(m: dict) -> Limits:
-    return Limits(
-        m["maxOrderNotional"], m["maxOpenNotional"], m["dailyNotional"], m["maxLoss"], m["maxLeverage"], m["markets"]
-    )
-
-
 def _build(primary_type: str, m: dict):
-    common = {"paradex_chain": m["paradexChain"], "environment": m["environment"], "account": m["account"]}
     if primary_type == "SessionGrant":
-        b = m["builder"]
-        return SessionGrant(
-            **common,
-            session_key=m["sessionKey"],
-            label=m["label"],
-            scopes=m["scopes"],
-            limits=_limits(m["limits"]),
-            builder=Builder(b["account"], b["maxFeeRate"], int(b["expiresAt"])),
-            subaccounts=m["subaccounts"],
-            nonce=m["nonce"],
-            issued_at=int(m["issuedAt"]),
-            expires_at=int(m["expiresAt"]),
-        )
+        return SessionGrant.from_message(m)
+    common = {"paradex_chain": m["paradexChain"], "environment": m["environment"], "account": m["account"]}
     if primary_type == "PasskeyGrant":
         p, c = m["passkey"], m["ceiling"]
         return PasskeyGrant(
@@ -49,7 +30,7 @@ def _build(primary_type: str, m: dict):
             passkey=Passkey(p["credentialId"], p["pubkeyX"], p["pubkeyY"], p["rpId"], p["label"]),
             ceiling=Ceiling(
                 scopes=c["scopes"],
-                limits=_limits(c["limits"]),
+                limits=Limits.from_message(c["limits"]),
                 max_session_ttl=int(c["maxSessionTtl"]),
                 max_concurrent_sessions=int(c["maxConcurrentSessions"]),
                 subaccounts=c["subaccounts"],
@@ -65,7 +46,7 @@ def _build(primary_type: str, m: dict):
         credential_id=m["credentialId"],
         session_key=m["sessionKey"],
         scopes=m["scopes"],
-        limits=_limits(m["limits"]),
+        limits=Limits.from_message(m["limits"]),
         subaccounts=m["subaccounts"],
         nonce=m["nonce"],
         expires_at=int(m["expiresAt"]),
@@ -108,7 +89,6 @@ def test_vectors_cover_every_message_type():
 def test_grant_ids_match_the_server(vector):
     # The server's grant id is the EIP-712 struct hash for an EVM owner, the SNIP-12 hash for a Stark one.
     grant = _build("SessionGrant", vector["message"])
-    assert SessionGrant.from_message(vector["message"]) == grant
     evm_id, stark_id = grant.grant_ids()
     assert evm_id == vector["eip712"]["structHash"]
     assert len(stark_id) == 66  # zero-padded, as the server formats grant ids; the vector's hash is not
