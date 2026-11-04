@@ -6,6 +6,7 @@ import logging
 import time
 import traceback
 from collections.abc import Callable
+from decimal import Decimal, InvalidOperation
 from enum import Enum
 from typing import Any, Protocol
 
@@ -78,6 +79,21 @@ class WebSocketConnector(Protocol):
         ...
 
 
+def _order_book_price_tick(price_tick: Any) -> str:
+    """Spell a price tick the way the order_book channel name expects it.
+
+    A dot separates the parts of a channel name, so the server spells a
+    fractional tick with an underscore (0.1 -> 0_1), and it rejects trailing
+    zeros (10_0, 0_10). Normalize numbers and either spelling to that form.
+    """
+    text = str(price_tick).replace("_", ".")
+    try:
+        tick = Decimal(text).normalize()
+    except InvalidOperation:
+        return str(price_tick)
+    return format(tick, "f").replace(".", "_")
+
+
 class ParadexWebsocketChannel(Enum):
     """Enum class to define the channels for Paradex Websocket API.
 
@@ -93,7 +109,11 @@ class ParadexWebsocketChannel(Enum):
         MARKETS_SUMMARY (str): Public websocket channel for updates of available markets
         MMP (str): Private websocket channel for Market Maker Protection state changes on the account
         ORDERS (str): Private websocket channel to receive order updates
-        ORDER_BOOK (str): Public websocket channel for orderbook snapshot updates at most every 50ms or 100ms, optionally grouped by price tick (production only)
+        ORDER_BOOK (str): Public websocket channel for the orderbook. The default feed_type "snapshot" sends
+            snapshots every refresh_rate (50ms or 100ms, default 100ms), optionally grouped by price_tick
+            (production only; 0.1, "0.1" and "0_1" all mean a 0.1 tick). feed_type "deltas" sends incremental
+            updates and takes no refresh_rate or price_tick. One SBE session carries at most one orderbook
+            feed per market
         POSITIONS (str): Private websocket channel to receive updates when position is changed
         TRADES (str): Public websocket channel to receive updates on trades in particular market
         TRADEBUSTS (str): Private websocket channel to receive fills that are busted by a blockchain
@@ -855,14 +875,24 @@ class ParadexWebsocketClient:
             format_params = params.copy()
             if "feed_type" not in format_params:
                 format_params["feed_type"] = "snapshot"
-            if "refresh_rate" not in format_params:
-                format_params["refresh_rate"] = "100ms"
-            # price_tick is optional - if not provided or empty, omit it
-            if "price_tick" not in format_params or not format_params["price_tick"]:
-                format_params.pop("price_tick", None)
-                base_format = "order_book.{market}.{feed_type}@15@{refresh_rate}"
+            # The deltas feed takes no parameters and the server rejects any
+            # suffix, so refresh_rate and price_tick only apply to snapshots.
+            if format_params["feed_type"] == "deltas":
+                ignored = [k for k in ("refresh_rate", "price_tick") if format_params.get(k)]
+                if ignored:
+                    self.logger.warning(
+                        f"{self.classname}: order_book deltas takes no parameters, ignoring {', '.join(ignored)}"
+                    )
+                base_format = "order_book.{market}.deltas"
             else:
-                base_format = "order_book.{market}.{feed_type}@15@{refresh_rate}@{price_tick}"
+                if "refresh_rate" not in format_params:
+                    format_params["refresh_rate"] = "100ms"
+                # price_tick is optional - if not provided or empty, omit it
+                if "price_tick" not in format_params or not format_params["price_tick"]:
+                    base_format = "order_book.{market}.{feed_type}@15@{refresh_rate}"
+                else:
+                    format_params["price_tick"] = _order_book_price_tick(format_params["price_tick"])
+                    base_format = "order_book.{market}.{feed_type}@15@{refresh_rate}@{price_tick}"
             channel_name = base_format.format(**format_params)
         else:
             channel_name = channel.value.format(**params)
