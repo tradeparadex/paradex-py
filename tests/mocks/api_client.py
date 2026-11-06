@@ -50,6 +50,9 @@ MOCK_ONBOARDING_EIP191 = {
 
 
 class MockApiClient:
+    # init_account below only records the account; it never onboards or authenticates.
+    auto_auth = False
+
     def __init__(self, onboarding_response: dict | None = None):
         # Default to the starknet fixture; callers can override per-test with either
         # MOCK_ONBOARDING_EIP191 or a custom dict (e.g. exists=False variants).

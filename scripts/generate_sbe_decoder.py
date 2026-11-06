@@ -301,6 +301,13 @@ _ENUM_VALUE_PREFIX = {
     "FundingRateSource": "SOURCE_",
 }
 
+# Set choice spelling. SBE choice names are upper case by convention, and the
+# JSON feed matches that for OrderFlags, but REST and JSON spell FillFlag in
+# lower case ("interactive", "rpi", "fastfill"). Sets listed here are lowered
+# so a callback sees the same flags on both transports; the UNKNOWN bit, which
+# has no JSON value, follows the set's case.
+_LOWERCASE_SETS = {"FillFlags"}
+
 # Note on FillType value 3. The schema and both server feeds (JSON and SBE)
 # spell it UNWIND_TRANSFER, renamed server-side in July 2026. The SDK's
 # generated REST model still carries the old TRANSFER spelling because it is
@@ -469,7 +476,8 @@ def generate_codec(schema: dict) -> str:  # noqa: C901
     for set_name, bits in sets.items():
         f"_{''.join(c if c.isupper() or c.isdigit() else '_' if c == '_' else '' for c in set_name).upper().rstrip('_')}_FLAG_NAMES"
         # Build {bit_pos: "FLAG_NAME", ...}
-        parts = [f'{bit}: "{name}"' for bit, name in sorted(bits.items())]
+        case = str.lower if set_name in _LOWERCASE_SETS else str
+        parts = [f'{bit}: "{case(name)}"' for bit, name in sorted(bits.items())]
         lines += [
             f"# ── {set_name} bitset ──────────────────────────────────────────────────────",
             "",

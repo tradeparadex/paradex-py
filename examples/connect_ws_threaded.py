@@ -33,7 +33,7 @@ def main() -> None:
             logger.info("WebSocket connected")
 
             ws_client.subscribe(ParadexWebsocketChannel.MARKETS_SUMMARY)
-            ws_client.subscribe(ParadexWebsocketChannel.BBO)
+            ws_client.subscribe(ParadexWebsocketChannel.BBO, params={"market": "BTC-USD-PERP"})
             logger.info("Subscribed to MARKETS_SUMMARY and BBO")
 
             message_count = 0

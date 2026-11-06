@@ -35,7 +35,10 @@ MARKET = "ETH-USD-PERP"
 
 async def on_order_update(ws_channel: ParadexWebsocketChannel, message: dict) -> None:
     data = message.get("params", {}).get("data", {})
-    logger.info(f"Order update: id={data.get('id')} status={data.get('status')} market={data.get('market')}")
+    # Private channels arrive as SBE or JSON depending on the account, and the
+    # two name the order id differently.
+    order_id = data.get("order_id") if message.get("encoding") == "sbe" else data.get("id")
+    logger.info(f"Order update: id={order_id} status={data.get('status')} market={data.get('market')}")
 
 
 async def main() -> None:

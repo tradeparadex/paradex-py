@@ -1,5 +1,7 @@
 """Integration tests: SBE binary frames through ParadexWebsocketClient."""
 
+import asyncio
+import logging
 import struct
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -47,8 +49,14 @@ def _make_mock_ws(state: State = State.OPEN) -> MagicMock:
 # ── SBE flag default ─────────────────────────────────────────────────────
 
 
-def test_sbe_disabled_by_default():
+def test_sbe_enabled_by_default():
+    # The Paradex endpoints answer a plain JSON connect with HTTP 400.
     ws_client = ParadexWebsocketClient(env=TESTNET)
+    assert ws_client.sbe_enabled is True
+
+
+def test_sbe_opt_out_flag():
+    ws_client = ParadexWebsocketClient(env=TESTNET, sbe_enabled=False)
     assert ws_client.sbe_enabled is False
 
 
@@ -68,9 +76,46 @@ def test_sbe_via_paradex_constructor_reaches_default_client():
     assert paradex.ws_client.sbe_enabled is True
 
 
-def test_sbe_off_via_paradex_constructor():
+def test_sbe_on_by_default_via_paradex_constructor():
     paradex = Paradex(env=TESTNET)
+    assert paradex.ws_client.sbe_enabled is True
+    assert paradex.ws_direct_client.sbe_enabled is True
+
+
+def test_sbe_off_via_paradex_constructor():
+    paradex = Paradex(env=TESTNET, ws_sbe_enabled=False)
     assert paradex.ws_client.sbe_enabled is False
+    assert paradex.ws_direct_client.sbe_enabled is False
+
+
+def test_default_client_does_not_log_validate_messages_note(caplog):
+    """The SBE/validate_messages note is for callers who asked for validation,
+    not for everyone now that SBE is the default."""
+    with caplog.at_level(logging.DEBUG):
+        ParadexWebsocketClient(env=TESTNET, auto_start_reader=False)
+    assert "validate_messages" not in caplog.text
+
+
+def test_validate_messages_with_default_sbe_logs_note(caplog):
+    with caplog.at_level(logging.INFO):
+        ParadexWebsocketClient(env=TESTNET, validate_messages=True, auto_start_reader=False)
+    assert "validate_messages does not apply to SBE frames" in caplog.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kwargs, expected", [({}, True), ({"sbe_enabled": False}, False)])
+async def test_threaded_client_forwards_sbe_flag(kwargs: dict, expected: bool):
+    """The threaded wrapper builds its own async client; the flag has to reach it."""
+    from paradex_py.api.ws_client_threaded import ThreadedParadexWebsocketClient
+
+    client = ThreadedParadexWebsocketClient(env=TESTNET, **kwargs)
+    assert client.sbe_enabled is expected
+    client._stop_event.set()  # leave the loop as soon as it has connected
+    with patch("paradex_py.api.ws_client_threaded.ParadexWebsocketClient") as mock_cls:
+        mock_cls.return_value.connect = AsyncMock()
+        mock_cls.return_value.close = AsyncMock()
+        await client._async_loop()
+    assert mock_cls.call_args.kwargs["sbe_enabled"] is expected
 
 
 # ── URL construction ────────────────────────────────────────────────────
@@ -79,7 +124,7 @@ def test_sbe_off_via_paradex_constructor():
 @pytest.mark.asyncio
 @patch("websockets.connect", new_callable=AsyncMock)
 async def test_sbe_url_params_appended(mock_connect: AsyncMock):
-    """SBE enabled → ?sbeSchemaId=1&sbeSchemaVersion=2 appended to URL."""
+    """SBE enabled → ?sbeSchemaId=1&sbeSchemaVersion=3 appended to URL."""
     mock_ws = _make_mock_ws()
     mock_connect.return_value = mock_ws
 
@@ -88,7 +133,21 @@ async def test_sbe_url_params_appended(mock_connect: AsyncMock):
 
     url_called = mock_connect.call_args.args[0]
     assert "sbeSchemaId=1" in url_called
-    assert "sbeSchemaVersion=2" in url_called
+    assert "sbeSchemaVersion=3" in url_called
+
+
+@pytest.mark.asyncio
+@patch("websockets.connect", new_callable=AsyncMock)
+async def test_default_client_connects_with_sbe_url(mock_connect: AsyncMock):
+    """With no flags at all, connect asks for SBE (a bare URL is a 400)."""
+    mock_connect.return_value = _make_mock_ws()
+
+    ws_client = ParadexWebsocketClient(env=TESTNET, auto_start_reader=False)
+    await ws_client.connect()
+
+    assert mock_connect.call_args.args[0] == (
+        "wss://ws-public.api.testnet.paradex.trade/v1?sbeSchemaId=1&sbeSchemaVersion=3"
+    )
 
 
 def test_negotiated_version_matches_decoder_version():
@@ -96,7 +155,8 @@ def test_negotiated_version_matches_decoder_version():
 
     v0.7.1 shipped the 1:2 decoder while still negotiating 1:1, because every
     environment capped negotiation at 1 and a request above the cap is a 400 at
-    connect. nightly, testnet and prod now serve 1:2, so the split is closed.
+    connect. nightly, testnet and prod serve 1:3 (and refuse 1:4), so the split
+    is closed.
 
     Both directions stay forbidden. Negotiating above the decoder would decode
     frames with a layout it does not know. Negotiating below it is allowed
@@ -108,8 +168,8 @@ def test_negotiated_version_matches_decoder_version():
     from paradex_py.api.sbe import NEGOTIATED_SCHEMA_VERSION
     from paradex_py.api.sbe.codec import _SCHEMA_VERSION
 
-    assert NEGOTIATED_SCHEMA_VERSION == 2
-    assert _SCHEMA_VERSION == 2
+    assert NEGOTIATED_SCHEMA_VERSION == 3
+    assert _SCHEMA_VERSION == 3
     assert NEGOTIATED_SCHEMA_VERSION == _SCHEMA_VERSION
 
 
@@ -414,3 +474,153 @@ async def test_frc_subscribe_honours_an_explicit_refresh_rate():
     )
 
     assert "funding_rate_comparison.ALL@500ms" in client.callbacks
+
+
+# ── Routing must not cross market names ─────────────────────────────────
+
+
+def test_resolve_prefix_stops_at_market_boundary():
+    """Market names nest (spot ETH-USD is a prefix of its options), so an
+    order_book frame for ETH-USD must not reach an option's callback."""
+    ws_client = ParadexWebsocketClient(env=TESTNET, auto_start_reader=False)
+    ws_client.callbacks["order_book.ETH-USD-22OCT26-2000-C.snapshot@15@100ms"] = lambda *_: None
+    assert ws_client._resolve_sbe_channel("order_book.ETH-USD") is None
+
+    # With both subscribed, each frame reaches its own market, whatever the order.
+    ws_client.callbacks["order_book.ETH-USD.snapshot@15@100ms"] = lambda *_: None
+    assert ws_client._resolve_sbe_channel("order_book.ETH-USD") == "order_book.ETH-USD.snapshot@15@100ms"
+    assert (
+        ws_client._resolve_sbe_channel("order_book.ETH-USD-22OCT26-2000-C")
+        == "order_book.ETH-USD-22OCT26-2000-C.snapshot@15@100ms"
+    )
+
+
+# ── message["encoding"] tells a callback which field names it got ───────
+
+
+@pytest.mark.asyncio
+async def test_sbe_message_is_marked_sbe():
+    received = []
+
+    async def on_trade(ws_channel, message):
+        received.append(message)
+
+    ws_client = ParadexWebsocketClient(env=TESTNET, auto_start_reader=False)
+    ws_client.callbacks["trades.BTC-USD-PERP"] = on_trade
+    await ws_client._process_binary_message(_make_trade_frame())
+    assert received[0]["encoding"] == "sbe"
+
+
+@pytest.mark.asyncio
+async def test_json_frame_on_sbe_connection_is_marked_json():
+    """Private channels can still arrive as JSON on an SBE connection."""
+    received = []
+
+    async def on_order(ws_channel, message):
+        received.append(message)
+
+    ws_client = ParadexWebsocketClient(env=TESTNET, auto_start_reader=False)
+    assert ws_client.sbe_enabled is True
+    ws_client.callbacks["orders.ALL"] = on_order
+    frame = '{"jsonrpc":"2.0","method":"subscription","params":{"channel":"orders.ALL","data":{"id":"o-1"}}}'
+    await ws_client._process_message(frame)
+    assert received[0]["encoding"] == "json"
+    assert received[0]["params"]["data"]["id"] == "o-1"
+
+
+@pytest.mark.asyncio
+async def test_validated_json_message_keeps_encoding():
+    """Validation rebuilds the message dict; the marker must survive it."""
+    received = []
+
+    async def on_bbo(ws_channel, message):
+        received.append(message)
+
+    ws_client = ParadexWebsocketClient(env=TESTNET, validate_messages=True, auto_start_reader=False)
+    ws_client.callbacks["bbo.BTC-USD-PERP"] = on_bbo
+    frame = '{"jsonrpc":"2.0","method":"subscription","params":{"channel":"bbo.BTC-USD-PERP","data":{}}}'
+    with patch("paradex_py.api.ws_client.validate_ws_message") as validate:
+        validate.return_value.model_dump.return_value = {
+            "jsonrpc": "2.0",
+            "params": {"channel": "bbo.BTC-USD-PERP", "data": {}},
+        }
+        await ws_client._process_message(frame)
+    validate.assert_called_once()  # JSON frames are validated on an SBE connection
+    assert received[0]["encoding"] == "json"
+
+
+# ── A rejected subscription says why ───────────────────────────────────
+
+
+def test_subscription_error_logs_server_reason(caplog):
+    """The server rejects a second order_book feed for a market on an SBE
+    session; the reason is in error.data, which used to be dropped."""
+    ws_client = ParadexWebsocketClient(env=TESTNET, auto_start_reader=False)
+    reason = "channel 'order_book.BTC-USD-PERP.deltas' cannot share an SBE session"
+    with caplog.at_level(logging.ERROR):
+        ws_client._check_subscribed_channel(
+            {"id": 7, "error": {"code": -32600, "message": "invalid subscribe request", "data": reason}}
+        )
+    assert reason in caplog.text
+
+
+# ── close() cannot hang on a busy feed ─────────────────────────────────
+
+
+def _busy_then_quiet_recv(frames: int):
+    """A recv() that returns at once for `frames` calls, as when frames are
+    buffered, then blocks. Finite so a reader that never yields still ends
+    and a broken build fails instead of hanging the run."""
+    calls = 0
+
+    async def recv():
+        nonlocal calls
+        calls += 1
+        if calls > frames:
+            await asyncio.Event().wait()
+        return _make_trade_frame()
+
+    return recv, lambda: calls
+
+
+@pytest.mark.asyncio
+async def test_reader_yields_between_buffered_frames():
+    """From Python 3.12 wait_for() awaits recv() inline, so a recv() with frames
+    buffered never suspends; the reader must yield or it starves the loop."""
+    ws_client = ParadexWebsocketClient(env=TESTNET, auto_start_reader=False)
+    ws_client.ws = _make_mock_ws()
+    frames = 500
+    ws_client.ws.recv, calls = _busy_then_quiet_recv(frames)
+    reader = asyncio.create_task(ws_client._read_messages())
+    try:
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+        assert calls() < frames, "the reader drained the whole buffer before the loop ran anything else"
+    finally:
+        ws_client._is_closing = True
+        reader.cancel()
+        await asyncio.wait({reader}, timeout=5)
+
+
+@pytest.mark.asyncio
+async def test_reader_stops_once_closing_even_without_cancel():
+    """On Python 3.11 wait_for() can drop a cancel that lands as recv() completes,
+    so the reader must also stop on _is_closing or close() waits on it forever."""
+    ws_client = ParadexWebsocketClient(env=TESTNET, auto_start_reader=False)
+    ws_client.ws = _make_mock_ws()
+    ws_client.ws.recv, _ = _busy_then_quiet_recv(20_000)  # a feed that does not go quiet
+    reader = asyncio.create_task(ws_client._read_messages())
+    await asyncio.sleep(0.01)
+    assert not reader.done()
+
+    ws_client._is_closing = True  # what close() sets, here without the cancel
+    try:
+        # asyncio.wait, not wait_for: wait_for would cancel a stuck reader and
+        # then hang on the very race this test is about.
+        await asyncio.wait({reader}, timeout=2)
+        assert reader.done(), "reader kept running after _is_closing was set"
+    finally:
+        # Starve the reader so a cancel cannot race a ready recv() and lands.
+        ws_client.ws = None
+        reader.cancel()
+        await asyncio.wait({reader}, timeout=5)

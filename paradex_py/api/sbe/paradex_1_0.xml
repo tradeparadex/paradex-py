@@ -2,8 +2,8 @@
 <!--
   Paradex SBE Market Data Schema
   Schema ID : 1
-  Version   : 2  (schema 1:2)
-  Released  : 2026-09-25
+  Version   : 3  (schema 1:3)
+  Released  : 2026-10-15
   Status    : ACTIVE
 
   Version history:
@@ -47,6 +47,16 @@
           them apart. A 1:2 decoder must therefore read blockLength from the
           header rather than assume it, and treat appended var-data that is
           absent at the end of the frame as missing rather than malformed.
+    1:3 — non-breaking addition:
+            * MarketSummaryEvent.settlementTwapEstimate appended last among
+              the fixed fields (Price8NULL), making a 248-byte block. It
+              mirrors the REST/JSON settlement_twap_estimate field: the
+              running duration-weighted average of the underlying over the
+              30-minute pre-expiry settlement window, null outside that
+              window and for markets without an expiry.
+          sinceVersion=3, so a client that negotiated 1:0, 1:1 or 1:2 keeps
+          the 240-byte block it was generated for and never sees the field.
+          Negotiable on nightly, testnet and prod.
 
   Versioning policy:
     - id is incremented on any BREAKING change (field removed, type changed, order changed)
@@ -80,7 +90,7 @@
     - Control acks (subscribed/error) : JSON text frames
 
   Negotiation:
-    WebSocket URL parameter:  ?sbeSchemaId=1&sbeSchemaVersion=2
+    WebSocket URL parameter:  ?sbeSchemaId=1&sbeSchemaVersion=3
     An unsupported schema or version is rejected with HTTP 400 at connect.
     SBE applies to the WebSocket feed only; REST is JSON.
 
@@ -93,7 +103,7 @@
   xmlns:pdx="https://docs.paradex.trade/sbe"
   package="paradex.sbe"
   id="1"
-  version="2"
+  version="3"
   semanticVersion="1.0.0"
   description="Paradex perpetuals DEX — SBE market data and order response schema"
   byteOrder="littleEndian"
@@ -581,6 +591,8 @@
          totalVolume     = total_volume (lifetime USD; saturates at int64
                            max, so 92233720368.54775807 is a lower bound)
          priceChangeRate24h = price_change_rate_24h
+         settlementTwapEstimate = settlement_twap_estimate (1:3; dated
+                           markets, inside the settlement window only)
          Options-only fields (null for perpetual futures):
            markIv/bidIv/askIv/lastIv, delta/gamma/vega,
            futureFundingRate, externalFairPrice,
@@ -654,6 +666,8 @@
     -->
     <field id="37" name="fundingRatePrecise" type="Rate12NULL" sinceVersion="1"
            description="Funding rate at 12dp (funding_rate); prefer over fundingRate"/>
+    <field id="38" name="settlementTwapEstimate" type="Price8NULL" sinceVersion="3"
+           description="Duration-weighted average of the underlying over the 30-min pre-expiry settlement window; null outside that window and for markets without an expiry (settlement_twap_estimate)"/>
     <data  id="28" name="market"             type="varString8"/>
   </sbe:message>
 

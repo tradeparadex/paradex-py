@@ -4,10 +4,10 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING, cast
 
 from eth_account import Account
-from eth_account.messages import SignableMessage, encode_typed_data
+from eth_account.messages import SignableMessage, encode_defunct, encode_typed_data
 from ledgereth.accounts import find_account
 from ledgereth.comms import init_dongle
-from ledgereth.messages import sign_typed_data_draft
+from ledgereth.messages import sign_message, sign_typed_data_draft
 from starknet_crypto_py import get_public_key as rs_get_public_key
 from starknet_crypto_py import pedersen_hash as rs_pedersen_hash
 from starknet_crypto_py import sign as rs_sign
@@ -23,6 +23,7 @@ from starknet_py.utils.typed_data import TypedData
 from paradex_py.utils import raise_value_error
 
 if TYPE_CHECKING:
+    from paradex_py.api.api_client import ParadexApiClient
     from paradex_py.api.models import SystemConfig
 
 SHA256_EC_MAX_DIGEST = 2**256
@@ -52,20 +53,28 @@ def _grind_key(key_seed: int, key_value_limit: int) -> int:
     return key % key_value_limit
 
 
-def _sign_stark_key_message(stark_key_message, l1_private_key: int) -> str:
-    encoded = encode_typed_data(full_message=stark_key_message)
-    signed = Account.sign_message(encoded, l1_private_key)
+def sign_eip712_typed_data(typed_data, eth_private_key: str | int) -> str:
+    """Sign full EIP-712 typed data with a local EVM key; returns the 65-byte ``0x`` r||s||v signature."""
+    encoded = encode_typed_data(full_message=typed_data)
+    signed = Account.sign_message(encoded, eth_private_key)
     sig_hex = signed.signature.hex()
     # Ensure 0x prefix for compatibility with _get_private_key_from_eth_signature
     # which expects [2:66] to skip "0x" and extract the r value
     return sig_hex if sig_hex.startswith("0x") else "0x" + sig_hex
 
 
-def _sign_stark_key_message_ledger(message: SignableMessage, eth_account_address: str) -> str:
+def _find_ledger_account(eth_account_address: str):
+    """Open the Ledger and find the derivation path of `eth_account_address` on it."""
+    # ledgereth caches the open handle, so later calls in this process reuse it rather than reopen the device.
     dongle = init_dongle()
     account = find_account(eth_account_address, dongle, count=10)
     if account is None:
         return raise_value_error(f"Account {eth_account_address} not found on Ledger")
+    return dongle, account
+
+
+def _sign_stark_key_message_ledger(message: SignableMessage, eth_account_address: str) -> str:
+    dongle, account = _find_ledger_account(eth_account_address)
     # header/body is eth_account naming, presumably to be generic
     domain_hash = message.header
     message_hash = message.body
@@ -78,13 +87,26 @@ def _sign_stark_key_message_ledger(message: SignableMessage, eth_account_address
     return signed.signature
 
 
+def sign_eip191_message(message: str, l1_private_key: int | bytes) -> str:
+    """Sign a plaintext message with EIP-191 personal_sign; returns 0x-prefixed hex."""
+    signed = Account.sign_message(encode_defunct(text=message), l1_private_key)
+    sig_hex = signed.signature.hex()
+    return sig_hex if sig_hex.startswith("0x") else "0x" + sig_hex
+
+
+def sign_eip191_message_ledger(message: str, eth_account_address: str) -> str:
+    """Sign a plaintext message with EIP-191 personal_sign on a Ledger; returns 0x-prefixed hex."""
+    dongle, account = _find_ledger_account(eth_account_address)
+    return sign_message(message, sender_path=account.path, dongle=dongle).signature
+
+
 def _get_private_key_from_eth_signature(eth_signature_hex: str) -> int:
     r = eth_signature_hex[2 : 64 + 2]
     return _grind_key(int_from_hex(r), EC_ORDER)
 
 
 def derive_stark_key(l1_private_key: int, stark_key_msg: TypedDataDict) -> int:
-    message_signature = _sign_stark_key_message(stark_key_msg, l1_private_key)
+    message_signature = sign_eip712_typed_data(stark_key_msg, l1_private_key)
     l2_private_key = _get_private_key_from_eth_signature(message_signature)
     return l2_private_key
 
@@ -96,13 +118,45 @@ def derive_stark_key_from_ledger(eth_account_address: str, stark_key_msg: TypedD
     return l2_private_key
 
 
-def derive_l2_address_starknet(config: "SystemConfig", l2_public_key: int) -> int:
-    """Compute the Paraclear L2 account address from the L2 public key.
+def fetch_l2_address(api_client: "ParadexApiClient", params: dict, owner: str) -> tuple[str, bool | None]:
+    """Fetch an account's L2 address, and whether it exists, from ``GET /onboarding``.
 
-    Mirrors the ``/onboarding`` endpoint's server-side derivation for Starknet-keyed
-    accounts: proxy deployment with ``initialize(public_key, 0)`` calldata.
-    Shared by ``Paradex.init_account()`` (primary caller) and
-    ``ParadexAccount.__init__`` (backwards-compat fallback for direct construction).
+    The server returns the stored address of an existing account and the address a
+    new account would be created at, so it is right whichever account class the
+    account was created with. A failed request raises rather than falling back to
+    local derivation, which can silently produce a different account's address.
+
+    Returns:
+        ``(address, exists)``; ``exists`` is ``None`` when the server omits it.
+    """
+    try:
+        info = api_client.fetch_onboarding(params)
+    except Exception as e:
+        message = (
+            f"{owner}: could not fetch the account address from GET /onboarding: {e}. "
+            "Retry; pass server_derive_address=False only if local derivation is right for "
+            "this account (for a Starknet key, only accounts created with the legacy proxy class)."
+        )
+        raise ValueError(message) from e
+    address = info.get("address") if isinstance(info, dict) else None
+    if not isinstance(address, str) or not address:
+        raise_value_error(f"{owner}: GET /onboarding returned no account address: {info!r}")
+    try:
+        int(address, 16)
+    except ValueError:
+        raise_value_error(f"{owner}: GET /onboarding returned an invalid account address: {address!r}")
+    exists = info.get("exists")
+    return address, (bool(exists) if exists is not None else None)
+
+
+def derive_l2_address_starknet(config: "SystemConfig", l2_public_key: int) -> int:
+    """Compute the L2 address of a Starknet-keyed account created with the legacy proxy class.
+
+    Proxy deployment with ``initialize(public_key, 0)`` calldata. Accounts created with
+    the current (direct-deploy) class live at a different address, so this is only right
+    for legacy accounts; :func:`fetch_l2_address` is right for both. Used by
+    ``Paradex.init_account()`` when ``server_derive_address=False`` and by
+    ``ParadexAccount.__init__`` when constructed without an ``l2_address``.
     """
     calldata = [
         int_from_hex(config.paraclear_account_hash),
