@@ -1,3 +1,6 @@
+import asyncio
+import subprocess
+import sys
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -82,3 +85,27 @@ def test_mmp_channel_resolves_from_message_name():
 
     assert ParadexWebsocketChannel.MMP.value == "mmp"
     assert _get_ws_channel_from_name("mmp") == ParadexWebsocketChannel.MMP
+
+
+def test_auto_start_reader_without_running_loop():
+    # Constructed outside a loop, the reader waits for connect(). Probing with
+    # get_event_loop() warns on 3.12-3.13. A fresh interpreter is needed because
+    # pytest-asyncio leaves a loop set after async tests, which hides the warning.
+    code = (
+        "import warnings\n"
+        "from paradex_py.api.ws_client import ParadexWebsocketClient\n"
+        "from paradex_py.environment import TESTNET\n"
+        "warnings.simplefilter('error', DeprecationWarning)\n"
+        "assert ParadexWebsocketClient(env=TESTNET)._reader_task is None\n"
+    )
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=False)  # noqa: S603
+    assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.asyncio
+async def test_auto_start_reader_with_running_loop():
+    client = ParadexWebsocketClient(env=TESTNET)
+    assert client._reader_task is not None
+    client._reader_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await client._reader_task
