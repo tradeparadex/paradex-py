@@ -8,7 +8,7 @@ name = "paradex_py"
 version = "0.8.2"
 description = "Paradex Python SDK"
 readme = "README.md"
-requires-python = ">=3.10,<3.14"
+requires-python = ">=3.10"
 license = { file = "LICENSE" }
 authors = [
     { name = "Paradex", email = "finfo@paradex.trade" },
@@ -19,6 +19,7 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
@@ -28,7 +29,7 @@ dependencies = [
     "eth-account>=0.13.6",
     "eth-keys>=0.6.1",
     "eth-utils>=2.0.0",
-    "starknet-crypto-py>=0.2.0,<0.3.0",
+    "starknet-crypto-py>=0.3.1,<0.4.0",
     "httpx>=0.27.0,<0.28.0",
     "websockets>=15.0,<16.0",
     "ledgereth>=0.10.0",
