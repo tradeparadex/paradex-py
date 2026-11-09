@@ -111,8 +111,10 @@ class ParadexWebsocketChannel(Enum):
         ORDERS (str): Private websocket channel to receive order updates
         ORDER_BOOK (str): Public websocket channel for the orderbook. The default feed_type "snapshot" sends
             snapshots every refresh_rate (50ms or 100ms, default 100ms), optionally grouped by price_tick
-            (production only; 0.1, "0.1" and "0_1" all mean a 0.1 tick). feed_type "deltas" sends incremental
-            updates and takes no refresh_rate or price_tick. One SBE session carries at most one orderbook
+            (production only; 0.1, "0.1" and "0_1" all mean a 0.1 tick). feed_type "interactive" does the same
+            with a refresh_rate of 100ms, 200ms or 400ms (default 100ms). feed_type "deltas" sends incremental
+            updates and "interactive_deltas" is its interactive counterpart; neither takes a refresh_rate or
+            price_tick. Both interactive feeds include RPI orders. One SBE session carries at most one orderbook
             feed per market
         POSITIONS (str): Private websocket channel to receive updates when position is changed
         TRADES (str): Public websocket channel to receive updates on trades in particular market
@@ -828,7 +830,7 @@ class ParadexWebsocketClient:
         channel: ParadexWebsocketChannel,
         callback: Callable,
         params: dict | None = None,
-    ) -> None:
+    ) -> str:
         """Subscribe to a websocket channel with optional parameters.
             Callback function is invoked when a message is received.
 
@@ -836,6 +838,10 @@ class ParadexWebsocketClient:
             channel (ParadexWebsocketChannel): Channel to subscribe
             callback (Callable): Callback function
             params (Optional[dict], optional): Parameters for the channel. Defaults to None.
+
+        Returns:
+            str: The channel name subscribed to, which can differ from the params
+                (a 0.1 price_tick is sent as 0_1). Pass it to unsubscribe_by_name.
 
         Examples:
         >>> from paradex_py import Paradex
@@ -871,15 +877,16 @@ class ParadexWebsocketClient:
             format_params = params.copy()
             if "feed_type" not in format_params:
                 format_params["feed_type"] = "snapshot"
-            # The deltas feed takes no parameters and the server rejects any
+            # The delta feeds take no parameters and the server rejects any
             # suffix, so refresh_rate and price_tick only apply to snapshots.
-            if format_params["feed_type"] == "deltas":
+            if format_params["feed_type"] in ("deltas", "interactive_deltas"):
                 ignored = [k for k in ("refresh_rate", "price_tick") if format_params.get(k)]
                 if ignored:
                     self.logger.warning(
-                        f"{self.classname}: order_book deltas takes no parameters, ignoring {', '.join(ignored)}"
+                        f"{self.classname}: order_book {format_params['feed_type']} takes no parameters, "
+                        f"ignoring {', '.join(ignored)}"
                     )
-                base_format = "order_book.{market}.deltas"
+                base_format = "order_book.{market}.{feed_type}"
             else:
                 if "refresh_rate" not in format_params:
                     format_params["refresh_rate"] = "100ms"
@@ -895,6 +902,7 @@ class ParadexWebsocketClient:
         self.callbacks[channel_name] = callback
         self.logger.info(f"{self.classname}: Subscribe channel:{channel_name} params:{params} callback:{callback}")
         await self._subscribe_to_channel_by_name(channel_name)
+        return channel_name
 
     async def subscribe_by_name(
         self,
