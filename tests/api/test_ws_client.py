@@ -1,6 +1,9 @@
 import asyncio
+import json
+import logging
 import subprocess
 import sys
+from decimal import Decimal
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -8,7 +11,7 @@ from websockets import State
 
 from paradex_py import Paradex
 from paradex_py.account.account import ParadexAccount
-from paradex_py.api.ws_client import ParadexWebsocketClient
+from paradex_py.api.ws_client import ParadexWebsocketChannel, ParadexWebsocketClient
 from paradex_py.environment import TESTNET
 
 MOCK_L1_PRIVATE_KEY = "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
@@ -85,6 +88,121 @@ def test_mmp_channel_resolves_from_message_name():
 
     assert ParadexWebsocketChannel.MMP.value == "mmp"
     assert _get_ws_channel_from_name("mmp") == ParadexWebsocketChannel.MMP
+
+
+async def _subscribed_order_book_name(params: dict) -> str:
+    client = ParadexWebsocketClient(env=TESTNET)
+    client._subscribe_to_channel_by_name = AsyncMock()
+
+    async def _cb(_channel, _message):
+        pass
+
+    await client.subscribe(ParadexWebsocketChannel.ORDER_BOOK, callback=_cb, params=params)
+    client._subscribe_to_channel_by_name.assert_awaited_once()
+    name = client._subscribe_to_channel_by_name.await_args.args[0]
+    assert name in client.callbacks
+    return name
+
+
+@pytest.mark.asyncio
+async def test_order_book_subscribe_defaults_to_snapshot():
+    name = await _subscribed_order_book_name({"market": "BTC-USD-PERP"})
+    assert name == "order_book.BTC-USD-PERP.snapshot@15@100ms"
+
+
+@pytest.mark.asyncio
+async def test_order_book_subscribe_snapshot_with_price_tick():
+    name = await _subscribed_order_book_name({"market": "BTC-USD-PERP", "refresh_rate": "50ms", "price_tick": "10"})
+    assert name == "order_book.BTC-USD-PERP.snapshot@15@50ms@10"
+
+
+@pytest.mark.parametrize(
+    ("price_tick", "suffix"),
+    [
+        ("0.1", "0_1"),
+        (0.1, "0_1"),
+        ("0_1", "0_1"),
+        (Decimal("0.10"), "0_1"),
+        (10.0, "10"),
+        (10, "10"),
+        ("1", "1"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_order_book_subscribe_spells_price_tick_as_the_server_expects(price_tick, suffix):
+    """A dot would split the channel name, so the server rejects @0.1 and
+    expects @0_1; it also rejects trailing zeros such as @10_0 or @0_10."""
+    name = await _subscribed_order_book_name({"market": "BTC-USD-PERP", "price_tick": price_tick})
+    assert name == f"order_book.BTC-USD-PERP.snapshot@15@100ms@{suffix}"
+
+
+@pytest.mark.parametrize("refresh_rate", ["100ms", "200ms", "400ms"])
+@pytest.mark.asyncio
+async def test_order_book_subscribe_interactive_snapshot(refresh_rate):
+    name = await _subscribed_order_book_name(
+        {"market": "BTC-USD-PERP", "feed_type": "interactive", "refresh_rate": refresh_rate, "price_tick": "0.1"}
+    )
+    assert name == f"order_book.BTC-USD-PERP.interactive@15@{refresh_rate}@0_1"
+
+
+@pytest.mark.parametrize("feed_type", ["deltas", "interactive_deltas"])
+@pytest.mark.asyncio
+async def test_order_book_subscribe_delta_feeds_take_no_parameters(feed_type):
+    """The server rejects any suffix on a delta channel, so snapshot-only
+    params must be dropped rather than appended."""
+    name = await _subscribed_order_book_name(
+        {"market": "BTC-USD-PERP", "feed_type": feed_type, "refresh_rate": "50ms", "price_tick": "0.1"}
+    )
+    assert name == f"order_book.BTC-USD-PERP.{feed_type}"
+
+
+@pytest.mark.parametrize("feed_type", ["deltas", "interactive_deltas"])
+@pytest.mark.asyncio
+async def test_order_book_subscribe_delta_feeds_warn_about_ignored_parameters(feed_type, caplog):
+    with caplog.at_level(logging.WARNING):
+        await _subscribed_order_book_name({"market": "BTC-USD-PERP", "feed_type": feed_type, "price_tick": "0.1"})
+    assert f"order_book {feed_type} takes no parameters, ignoring price_tick" in caplog.text
+
+
+@pytest.mark.parametrize("feed_type", ["deltas", "interactive_deltas"])
+@pytest.mark.asyncio
+async def test_order_book_subscribe_delta_feeds_without_extra_parameters_do_not_warn(feed_type, caplog):
+    with caplog.at_level(logging.WARNING):
+        await _subscribed_order_book_name({"market": "BTC-USD-PERP", "feed_type": feed_type})
+    assert "ignoring" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_subscribe_returns_the_name_to_unsubscribe_with():
+    """The name can differ from the params (0.1 is sent as @0_1), and
+    unsubscribe_by_name needs the exact name."""
+    client = ParadexWebsocketClient(env=TESTNET)
+    client._subscribe_to_channel_by_name = AsyncMock()
+    client._send = AsyncMock()
+
+    async def _cb(_channel, _message):
+        pass
+
+    name = await client.subscribe(
+        ParadexWebsocketChannel.ORDER_BOOK, callback=_cb, params={"market": "BTC-USD-PERP", "price_tick": 0.1}
+    )
+    assert name == "order_book.BTC-USD-PERP.snapshot@15@100ms@0_1"
+
+    await client.unsubscribe_by_name(name)
+    assert name not in client.callbacks
+    assert json.loads(client._send.await_args.args[0])["params"]["channel"] == name
+
+
+@pytest.mark.asyncio
+async def test_subscribe_returns_the_name_for_other_channels():
+    client = ParadexWebsocketClient(env=TESTNET)
+    client._subscribe_to_channel_by_name = AsyncMock()
+
+    async def _cb(_channel, _message):
+        pass
+
+    name = await client.subscribe(ParadexWebsocketChannel.BBO, callback=_cb, params={"market": "BTC-USD-PERP"})
+    assert name == "bbo.BTC-USD-PERP"
 
 
 def test_auto_start_reader_without_running_loop():
