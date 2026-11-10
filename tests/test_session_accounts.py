@@ -86,6 +86,9 @@ class FakeServer:
         self.auth_threads: list[int] = []
         self.fail_connect_after: int | None = None
         self.after_login: Callable[[], None] | None = None
+        self.owned_subaccounts = [SUB_1, SUB_2]
+        self.listing_status = 200
+        self.listing_body: object | None = None
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
@@ -110,7 +113,18 @@ class FakeServer:
             return httpx.Response(201, json={"id": "order-1"})
         if path.startswith("/v2/sessions"):
             return self._sessions(request)
+        if path == "/v2/onboarding/subaccounts":
+            return self._subaccounts(request)
         return httpx.Response(204)
+
+    def _subaccounts(self, request: httpx.Request) -> httpx.Response:
+        assert "Authorization" not in request.headers  # listed before the owner holds a JWT
+        if self.listing_status != 200:
+            return httpx.Response(self.listing_status, json={"message": "Not Found"})
+        if self.listing_body is not None:
+            return httpx.Response(200, json=self.listing_body)
+        results = [{"address": address, "index": i} for i, address in enumerate(self.owned_subaccounts)]
+        return httpx.Response(200, json={"results": results})
 
     def _sessions(self, request: httpx.Request) -> httpx.Response:
         path = request.url.path
@@ -922,12 +936,17 @@ def test_register_session_signs_through_the_owner_hook():
     result = register_session(TESTNET, grant, signer, http_client=HttpClient(http_client=server.client()))
 
     assert result["grant_id"] == REGISTERED_ID
-    (request,) = server.requests
+    listing, request = server.requests
+    assert (
+        str(listing.url) == f"https://api.testnet.paradex.trade/v2/onboarding/subaccounts?eth_address={owner.address}"
+    )
     assert str(request.url) == "https://api.testnet.paradex.trade/v2/sessions"
+    assert "PARADEX-PRIVY-ACCESS-TOKEN" not in request.headers
     body = json.loads(request.content)
     assert body["grant"] == grant.to_message()
     assert body["signature_type"] == "eip712"
     assert body["signature_chain_id"] == 42161
+    assert not {"referral_code", "marketing_code", "utm"} & body.keys()
     signable = encode_typed_data(full_message=grant.eip712_typed_data(42161))
     assert EthAccount.recover_message(signable, signature=body["signature"]) == owner.address
 
@@ -970,7 +989,97 @@ def test_register_session_surfaces_server_refusal():
     signer = LocalOwnerSigner(EthAccount.create().key.hex())
     client = HttpClient(http_client=httpx.Client(transport=httpx.MockTransport(handler)))
     with pytest.raises(ValueError, match="INVALID_GRANT"):
-        register_session(TESTNET, _grant(Clock()), signer, http_client=client)
+        register_session(TESTNET, _grant(Clock(), subaccounts=[]), signer, http_client=client)
+
+
+class _CountingSigner:
+    """An external signer with no address, returning a canned signature."""
+
+    signature_chain_id = 1
+
+    def __init__(self, signature: str = "0x" + "00" * 65):
+        self.signature = signature
+        self.calls = 0
+
+    def sign_typed_data(self, typed_data):
+        self.calls += 1
+        return self.signature
+
+
+def test_register_session_sends_the_new_account_fields():
+    """A first grant that opens an account carries the onboarding fields and the Privy header, unsigned."""
+    server, clock = FakeServer(), Clock()
+    grant = _grant(clock, subaccounts=[])
+    register_session(
+        TESTNET,
+        grant,
+        _CountingSigner(),
+        http_client=HttpClient(http_client=server.client()),
+        referral_code="cryptofox8",
+        marketing_code="abcd:code1",
+        utm={"source": "google", "campaign": "launch"},
+        privy_access_token="privy-token",  # noqa: S106
+    )
+
+    (request,) = server.requests
+    assert request.headers["PARADEX-PRIVY-ACCESS-TOKEN"] == "privy-token"
+    body = json.loads(request.content)
+    assert body["referral_code"] == "cryptofox8"
+    assert body["marketing_code"] == "abcd:code1"
+    assert body["utm"] == {"source": "google", "campaign": "launch"}
+    assert body["grant"] == grant.to_message()  # none of them is part of what the owner signs
+
+
+def test_register_session_refuses_a_contract_wallet_signature():
+    server, clock = FakeServer(), Clock()
+    signer = _CountingSigner("0x" + "11" * 66)
+    with pytest.raises(ValueError, match="contract wallets"):
+        register_session(
+            TESTNET, _grant(clock, subaccounts=[]), signer, http_client=HttpClient(http_client=server.client())
+        )
+    assert not server.by_path("/v2/sessions")
+
+
+def test_register_session_refuses_unlisted_subaccounts_before_signing():
+    """The server answers ACCOUNT_NOT_ELIGIBLE for a sub-account that is not the wallet's own EVM child."""
+    server, clock = FakeServer(), Clock()
+    server.owned_subaccounts = [SUB_1]
+    signer = _CountingSigner()
+    with pytest.raises(ValueError, match="0xb2"):
+        register_session(
+            TESTNET,
+            _grant(clock),
+            signer,
+            http_client=HttpClient(http_client=server.client()),
+            owner_address="0x" + "aa" * 20,
+        )
+    assert signer.calls == 0
+    assert not server.by_path("/v2/sessions")
+
+
+def test_register_session_accepts_listed_subaccounts_in_any_hex_form():
+    server, clock = FakeServer(), Clock()
+    server.owned_subaccounts = ["0x00b1", "0xB2"]
+    register_session(
+        TESTNET,
+        _grant(clock),
+        _CountingSigner(),
+        http_client=HttpClient(http_client=server.client()),
+        owner_address="0xa",
+    )
+    assert len(server.by_path("/v2/sessions")) == 1
+
+
+@pytest.mark.parametrize("kwargs", [{}, {"owner_address": "0xa", "check_subaccounts": False}])
+def test_register_session_skips_the_subaccount_check(kwargs):
+    """Without the owner's address (an external signer), or when turned off, nothing is listed."""
+    server, clock = FakeServer(), Clock()
+    server.owned_subaccounts = []
+    register_session(
+        TESTNET, _grant(clock), _CountingSigner(), http_client=HttpClient(http_client=server.client()), **kwargs
+    )
+    assert not server.by_path("/v2/onboarding/subaccounts")
+    assert len(server.by_path("/v2/sessions")) == 1
 
 
 def test_new_session_key_is_a_matching_pair():
@@ -1202,3 +1311,87 @@ def test_client_options_reach_every_account():
 
     assert {r.url.host for r in server.by_path("/v1/auth/")} == {"api.example.test"}
     assert all(client.retry_strategy is strategy for client in session._clients.values())
+
+
+@pytest.mark.parametrize("status", [404, 429, 503])
+def test_register_session_registers_when_the_listing_fails(status):
+    """The server re-checks sub-accounts, so an unreadable listing must not block the registration."""
+    server, clock = FakeServer(), Clock()
+    server.listing_status = status
+    register_session(
+        TESTNET,
+        _grant(clock),
+        _CountingSigner(),
+        http_client=HttpClient(http_client=server.client()),
+        owner_address="0xa",
+    )
+    assert len(server.by_path("/v2/sessions")) == 1
+
+
+def test_register_session_redacts_the_privy_token_from_request_hooks():
+    seen = []
+
+    class Hook:
+        def on_request(self, method, url, headers):
+            seen.append(headers)
+
+        def on_response(self, *args):
+            pass
+
+    server, clock = FakeServer(), Clock()
+    client = HttpClient(http_client=server.client(), request_hook=Hook())
+    register_session(
+        TESTNET,
+        _grant(clock, subaccounts=[]),
+        _CountingSigner(),
+        http_client=client,
+        privy_access_token="privy-token",  # noqa: S106
+    )
+    assert seen[-1]["PARADEX-PRIVY-ACCESS-TOKEN"] == "[REDACTED]"
+    assert server.requests[-1].headers["PARADEX-PRIVY-ACCESS-TOKEN"] == "privy-token"
+
+
+@pytest.mark.parametrize("body", [{}, {"results": None}, []])
+def test_register_session_registers_when_the_listing_is_unreadable(body):
+    server, clock = FakeServer(), Clock()
+    server.listing_body = body
+    register_session(
+        TESTNET,
+        _grant(clock),
+        _CountingSigner(),
+        http_client=HttpClient(http_client=server.client()),
+        owner_address="0xa",
+    )
+    assert len(server.by_path("/v2/sessions")) == 1
+
+
+def test_register_session_ignores_malformed_listing_entries():
+    """A listed entry without a hex address covers nothing, so the sub-account is still refused."""
+    server, clock = FakeServer(), Clock()
+    server.listing_body = {"results": [{"address": SUB_1}, {"address": "not-hex"}, {"index": 3}, "0xb2"]}
+    signer = _CountingSigner()
+    with pytest.raises(ValueError, match="0xb2"):
+        register_session(
+            TESTNET, _grant(clock), signer, http_client=HttpClient(http_client=server.client()), owner_address="0xa"
+        )
+    assert signer.calls == 0
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [{"subaccounts": []}, {}, {"builder": Builder("0xb0", "0.001", 10**9), "limits": LIMITS, "subaccounts": []}],
+    ids=["first-party", "with-subaccounts", "with-builder"],
+)
+def test_register_session_leaves_onboarding_fields_to_the_server(overrides):
+    """The server checks these fields only when the grant opens an account, so a stale one still registers."""
+    server, clock = FakeServer(), Clock()
+    register_session(
+        TESTNET,
+        _grant(clock, **overrides),
+        _CountingSigner(),
+        http_client=HttpClient(http_client=server.client()),
+        marketing_code="abcd",
+        utm={"source": "x"},
+        check_subaccounts=False,
+    )
+    assert len(server.by_path("/v2/sessions")) == 1

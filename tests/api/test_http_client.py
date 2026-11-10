@@ -59,6 +59,28 @@ class TestHttpClient:
             self.http_client.request(url="https://api.example.com/test", http_method=HttpMethod.GET)
 
     @patch("httpx.Client.request")
+    def test_request_rate_limit_error_keeps_the_server_code(self, mock_request):
+        """A 429 that names its cause, such as a spent onboarding budget, keeps the code."""
+        mock_response = Mock()
+        mock_response.status_code = 429
+        mock_response.text = '{"error": "ONBOARDING_RATE_LIMITED", "message": "too many"}'
+        mock_request.return_value = mock_response
+
+        with pytest.raises(ValueError, match=r"^Rate limit exceeded: ONBOARDING_RATE_LIMITED$"):
+            self.http_client.request(url="https://api.example.com/test", http_method=HttpMethod.GET)
+
+    @pytest.mark.parametrize("text", ["<html>busy</html>", "[]", '{"error": ""}', '{"error": 7}'])
+    @patch("httpx.Client.request")
+    def test_request_rate_limit_error_without_a_code(self, mock_request, text):
+        mock_response = Mock()
+        mock_response.status_code = 429
+        mock_response.text = text
+        mock_request.return_value = mock_response
+
+        with pytest.raises(ValueError, match=r"^Rate limit exceeded$"):
+            self.http_client.request(url="https://api.example.com/test", http_method=HttpMethod.GET)
+
+    @patch("httpx.Client.request")
     def test_request_api_error(self, mock_request):
         """Test API error handling for status codes >= 300."""
         mock_response = Mock()

@@ -182,3 +182,32 @@ class TestParadexApiClient:
                 params=None,
                 headers=None,
             )
+
+
+class TestEvmSubaccounts:
+    def setup_method(self):
+        self.api_client = ParadexApiClient(env=TESTNET)
+        self.api_client._validate_auth = Mock()
+
+    def test_fetch_evm_subaccounts_is_public(self):
+        with patch.object(self.api_client, "get") as mock_get:
+            mock_get.return_value = {"results": [{"address": "0xb1", "index": 0}]}
+
+            result = self.api_client.fetch_evm_subaccounts("0x" + "aa" * 20)
+
+        assert result["results"][0]["address"] == "0xb1"
+        mock_get.assert_called_once_with(
+            api_url="https://api.testnet.paradex.trade/v2",
+            path="onboarding/subaccounts",
+            params={"eth_address": "0x" + "aa" * 20},
+        )
+        self.api_client._validate_auth.assert_not_called()
+
+    def test_create_evm_subaccount_needs_the_owner_login(self):
+        with patch.object(self.api_client, "post") as mock_post:
+            mock_post.return_value = {"address": "0xb2", "index": 1}
+
+            assert self.api_client.create_evm_subaccount() == {"address": "0xb2", "index": 1}
+
+        mock_post.assert_called_once_with(api_url="https://api.testnet.paradex.trade/v2", path="account/subaccounts")
+        self.api_client._validate_auth.assert_called_once()

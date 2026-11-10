@@ -101,7 +101,7 @@ An account owner signs one `SessionGrant` that lets a scoped, expiring Stark ses
 anchor account and any listed sub-accounts. A session can never withdraw. `register_session` takes
 an EVM (EIP-712) owner signature; `SessionGrant` also renders SNIP-12 typed data for Stark-key owners,
 but the SDK does not register those yet. Paradex enables sessions per account: until it does,
-`register_session` raises `SESSIONS_DISABLED`. `SessionAccounts` then keeps a JWT (at most 15 minutes, never past the session's expiry),
+`register_session` raises `SESSIONS_DISABLED` (only once the owner's signature verifies). `SessionAccounts` then keeps a JWT (at most 15 minutes, never past the session's expiry),
 a REST client and a websocket per account, routes calls by account, and drops every account at once
 when the session expires or is revoked. `session.revoke()` also cancels the session's resting orders,
 TWAPs and untriggered stops; `revoke(cancel_orders=False)` leaves them working, and the revoked key
@@ -119,8 +119,35 @@ When you show a grant to the owner before they sign, describe its risk in plain 
 `Limits.loss_wording()` gives "Cannot withdraw; can lose up to <maxLoss> USD by trading", or, when
 `maxLoss` is `"none"`, "Cannot withdraw; trading losses are not capped by this session".
 
-For now, RFQ endpoints refuse session tokens with HTTP 403, even when the grant includes `trade:rfq`.
-A 403 is a refused action, never a revocation signal, so it does not drop the session.
+A wallet with no Paradex account can open one with its first grant, so one signature both onboards
+and starts the session. Name the account the wallet would onboard to
+(`fetch_onboarding({"account_signer_type": "eip191", "eth_address": wallet})["address"]`) and list no
+sub-accounts. Only an EOA can do this, and the account is deployed when it is first funded.
+`register_session` takes the onboarding fields `referral_code`, `marketing_code` and `utm`, which the
+owner does not sign, and a `privy_access_token`; they are used only when the grant opens an account.
+Such a request can also be refused with the onboarding errors, such as
+`INSUFFICIENT_MIN_CHAIN_BALANCE`, `PARENT_ADDRESS_ALREADY_ONBOARDED`, or HTTP 429 `ONBOARDING_RATE_LIMITED`
+(raised as `Rate limit exceeded: ONBOARDING_RATE_LIMITED`).
+
+A grant can list the owner wallet's own EVM sub-accounts: `fetch_evm_subaccounts(eth_address)` lists
+them without a login, and the owner creates one with `create_evm_subaccount()` from its own `ParadexEvm`
+login. Paradex enables EVM sub-accounts per account. Before the owner signs, `register_session` refuses
+any listed sub-account that is not among them, which the server would refuse with
+`ACCOUNT_NOT_ELIGIBLE`. It needs the owner's address for that: `LocalOwnerSigner` has one; for another
+signer, pass `owner_address`. Without the address, or when the listing cannot be read, the check is
+skipped and the server refuses such a grant after the owner signs.
+
+RFQ create, execute and drafts accept a session only when its grant includes `trade:rfq`, caps nothing
+(`Limits()`), approves no builder, and Paradex has enabled RFQ sessions for the account. Otherwise they
+answer HTTP 403 `REQUEST_NOT_ALLOWED`. An account not yet deployed on chain gets 400 `NOT_ONBOARDED`
+from every RFQ route. A 403 is a refused action, never a revocation signal, so it does not drop the
+session.
+
+A session can deposit into its own account: `POST /v1/deposit-addresses`, and Layerswap swaps into
+Paradex with `use_deposit_address` (no `source_address`). A swap out of Paradex gets HTTP 403.
+
+A passkey registered for the Paradex app (no builder) may grant `trade`, `trade:rfq` and
+`account:settings`; a builder's passkey grants `trade` only.
 
 ```python
 from paradex_py import SessionAccounts

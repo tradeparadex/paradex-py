@@ -1,3 +1,4 @@
+import json
 import logging
 import time
 from enum import Enum
@@ -109,11 +110,25 @@ class HttpClient:
             request_kwargs["timeout"] = request_timeout
         return request_kwargs
 
+    @staticmethod
+    def _error_code(res: httpx.Response) -> str | None:
+        """The ``error`` code in a response body, or None when the body has none.
+
+        Tells one 429 from another, such as an onboarding budget spent from a request rate limit.
+        """
+        try:
+            body = json.loads(res.text)
+        except Exception:
+            return None
+        code = body.get("error") if isinstance(body, dict) else None
+        return code if isinstance(code, str) and code else None
+
     def _handle_response(self, res: httpx.Response, url: str, http_method: HttpMethod) -> Any:
         """Handle HTTP response and return parsed data."""
         # Handle errors
         if res.status_code == 429:
-            return raise_value_error("Rate limit exceeded")
+            code = self._error_code(res)
+            return raise_value_error(f"Rate limit exceeded: {code}" if code else "Rate limit exceeded")
         if res.status_code >= 300:
             try:
                 error = ApiErrorSchema().loads(res.text)
@@ -206,7 +221,7 @@ class HttpClient:
             return {}
 
         safe_headers = headers.copy()
-        sensitive_keys = ["authorization", "x-api-key", "jwt", "token"]
+        sensitive_keys = ["authorization", "x-api-key", "jwt", "token", "paradex-privy-access-token"]
 
         for key in safe_headers:
             if key.lower() in sensitive_keys:

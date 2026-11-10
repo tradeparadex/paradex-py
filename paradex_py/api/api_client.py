@@ -245,6 +245,41 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         """
         return self.get(api_url=self.api_url, path="onboarding", params=params)
 
+    def fetch_evm_subaccounts(self, eth_address: str) -> dict:
+        """List the sub-accounts of the EVM-owned (EIP-191) main account of a wallet.
+
+        .. warning::
+            Experimental: this SDK API may still change.
+
+        ``GET /v2/onboarding/subaccounts``. Public endpoint, no authentication required, so a client
+        can list these sub-accounts in a session grant before it holds a JWT. Sub-accounts the owner
+        archived are left out, and a wallet with no Paradex account has none.
+
+        Args:
+            eth_address: The owner wallet's Ethereum address.
+
+        Returns:
+            dict with ``results``: a list of ``{"address", "index"}``, lowest index first.
+        """
+        return self.get(api_url=self._v2_api_url, path="onboarding/subaccounts", params={"eth_address": eth_address})
+
+    def create_evm_subaccount(self) -> dict:
+        """Create the next sub-account of the logged-in EVM-owned (EIP-191) main account.
+
+        .. warning::
+            Experimental: this SDK API may still change. Paradex enables EVM sub-accounts per
+            account; until it does, the server answers 403 ``REQUEST_NOT_ALLOWED``.
+
+        ``POST /v2/account/subaccounts``. Needs the owner's own login (``ParadexEvm``'s SIWE JWT); a
+        session or subkey JWT is refused. The server picks the index and derives the address. A
+        session that should trade the new sub-account needs a new grant listing it.
+
+        Returns:
+            dict with the new sub-account's ``address`` and ``index``.
+        """
+        self._validate_auth()
+        return self.post(api_url=self._v2_api_url, path="account/subaccounts")
+
     def onboarding(self):
         if self.account is None:
             raise ValueError("Account not initialized")
