@@ -197,6 +197,7 @@ def register_session(
     client = http_client or HttpClient()
     base = api_base_url or f"https://api.{env}.paradex.trade/v1"
     v2_base = base.replace("/v1", "/v2")
+    _check_onboarding_fields(marketing_code, utm)
     try:
         if check_subaccounts and grant.subaccounts:
             address = owner_address or getattr(owner_signer, "address", None)
@@ -236,16 +237,37 @@ def register_session(
             client.client.close()
 
 
+def _check_onboarding_fields(marketing_code: str | None, utm: dict[str, str] | None) -> None:
+    """Refuse the onboarding fields the server refuses, before the owner signs."""
+    if marketing_code:
+        parts = marketing_code.split(":")
+        if len(parts) != 2 or not all(parts):
+            raise_value_error(f"register_session: marketing_code must be 'campaign:code', got {marketing_code!r}")
+    if utm and not (utm.get("source") and utm.get("campaign")):
+        raise_value_error("register_session: utm must have both source and campaign")
+
+
 def _check_subaccounts_listed(client: HttpClient, v2_base: str, owner_address: str, grant: SessionGrant) -> None:
-    """Refuse sub-accounts that are not the owner wallet's own EVM sub-accounts, before it signs."""
-    listed = client.request(
-        url=f"{v2_base}/onboarding/subaccounts",
-        http_method=HttpMethod.GET,
-        params={"eth_address": owner_address},
-        headers=client.client.headers,
-    )
+    """Refuse sub-accounts that are not the owner wallet's own EVM sub-accounts, before it signs.
+
+    The server checks every listed sub-account again, so when the listing cannot be read the check is
+    skipped rather than blocking the registration.
+    """
+    try:
+        listed = client.request(
+            url=f"{v2_base}/onboarding/subaccounts",
+            http_method=HttpMethod.GET,
+            params={"eth_address": owner_address},
+            headers=client.client.headers,
+        )
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"register_session: sub-account listing unavailable, not checked: {e}")
+        return
     results = listed.get("results") if isinstance(listed, dict) else None
-    owned = {int(entry["address"], 16) for entry in results or [] if isinstance(entry, dict) and "address" in entry}
+    if not isinstance(results, list):
+        logging.getLogger(__name__).warning("register_session: sub-account listing unreadable, not checked")
+        return
+    owned = {int(entry["address"], 16) for entry in results if isinstance(entry, dict) and "address" in entry}
     unknown = [address for address in grant.to_message()["subaccounts"] if int(address, 16) not in owned]
     if unknown:
         raise_value_error(

@@ -87,6 +87,7 @@ class FakeServer:
         self.fail_connect_after: int | None = None
         self.after_login: Callable[[], None] | None = None
         self.owned_subaccounts = [SUB_1, SUB_2]
+        self.listing_status = 200
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
@@ -112,10 +113,15 @@ class FakeServer:
         if path.startswith("/v2/sessions"):
             return self._sessions(request)
         if path == "/v2/onboarding/subaccounts":
-            assert "Authorization" not in request.headers  # listed before the owner holds a JWT
-            results = [{"address": address, "index": i} for i, address in enumerate(self.owned_subaccounts)]
-            return httpx.Response(200, json={"results": results})
+            return self._subaccounts(request)
         return httpx.Response(204)
+
+    def _subaccounts(self, request: httpx.Request) -> httpx.Response:
+        assert "Authorization" not in request.headers  # listed before the owner holds a JWT
+        if self.listing_status != 200:
+            return httpx.Response(self.listing_status, json={"message": "Not Found"})
+        results = [{"address": address, "index": i} for i, address in enumerate(self.owned_subaccounts)]
+        return httpx.Response(200, json={"results": results})
 
     def _sessions(self, request: httpx.Request) -> httpx.Response:
         path = request.url.path
@@ -1302,3 +1308,65 @@ def test_client_options_reach_every_account():
 
     assert {r.url.host for r in server.by_path("/v1/auth/")} == {"api.example.test"}
     assert all(client.retry_strategy is strategy for client in session._clients.values())
+
+
+@pytest.mark.parametrize("status", [404, 429, 503])
+def test_register_session_registers_when_the_listing_fails(status):
+    """The server re-checks sub-accounts, so an unreadable listing must not block the registration."""
+    server, clock = FakeServer(), Clock()
+    server.listing_status = status
+    register_session(
+        TESTNET,
+        _grant(clock),
+        _CountingSigner(),
+        http_client=HttpClient(http_client=server.client()),
+        owner_address="0xa",
+    )
+    assert len(server.by_path("/v2/sessions")) == 1
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "error"),
+    [
+        ({"marketing_code": "abcd"}, "campaign:code"),
+        ({"marketing_code": "abcd:"}, "campaign:code"),
+        ({"marketing_code": "a:b:c"}, "campaign:code"),
+        ({"utm": {"source": "google"}}, "source and campaign"),
+    ],
+)
+def test_register_session_refuses_bad_onboarding_fields_before_signing(kwargs, error):
+    server, clock = FakeServer(), Clock()
+    signer = _CountingSigner()
+    with pytest.raises(ValueError, match=error):
+        register_session(
+            TESTNET,
+            _grant(clock, subaccounts=[]),
+            signer,
+            http_client=HttpClient(http_client=server.client()),
+            **kwargs,
+        )
+    assert signer.calls == 0
+    assert not server.requests
+
+
+def test_register_session_redacts_the_privy_token_from_request_hooks():
+    seen = []
+
+    class Hook:
+        def on_request(self, method, url, headers):
+            seen.append(headers)
+
+        def on_response(self, *args):
+            pass
+
+    server, clock = FakeServer(), Clock()
+    client = HttpClient(http_client=server.client(), request_hook=Hook())
+    register_session(
+        TESTNET,
+        _grant(clock, subaccounts=[]),
+        _CountingSigner(),
+        http_client=client,
+        privy_access_token="privy-token",  # noqa: S106
+    )
+    assert seen[-1]["PARADEX-PRIVY-ACCESS-TOKEN"] == "[REDACTED]"
+    assert server.requests[-1].headers["PARADEX-PRIVY-ACCESS-TOKEN"] == "privy-token"
