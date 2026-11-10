@@ -1328,30 +1328,6 @@ def test_register_session_registers_when_the_listing_fails(status):
     assert len(server.by_path("/v2/sessions")) == 1
 
 
-@pytest.mark.parametrize(
-    ("kwargs", "error"),
-    [
-        ({"marketing_code": "abcd"}, "campaign:code"),
-        ({"marketing_code": "abcd:"}, "campaign:code"),
-        ({"marketing_code": "a:b:c"}, "campaign:code"),
-        ({"utm": {"source": "google"}}, "source and campaign"),
-    ],
-)
-def test_register_session_refuses_bad_onboarding_fields_before_signing(kwargs, error):
-    server, clock = FakeServer(), Clock()
-    signer = _CountingSigner()
-    with pytest.raises(ValueError, match=error):
-        register_session(
-            TESTNET,
-            _grant(clock, subaccounts=[]),
-            signer,
-            http_client=HttpClient(http_client=server.client()),
-            **kwargs,
-        )
-    assert signer.calls == 0
-    assert not server.requests
-
-
 def test_register_session_redacts_the_privy_token_from_request_hooks():
     seen = []
 
@@ -1403,11 +1379,11 @@ def test_register_session_ignores_malformed_listing_entries():
 
 @pytest.mark.parametrize(
     "overrides",
-    [{}, {"builder": Builder("0xb0", "0.001", 10**9), "limits": LIMITS, "subaccounts": []}],
-    ids=["with-subaccounts", "with-builder"],
+    [{"subaccounts": []}, {}, {"builder": Builder("0xb0", "0.001", 10**9), "limits": LIMITS, "subaccounts": []}],
+    ids=["first-party", "with-subaccounts", "with-builder"],
 )
-def test_register_session_leaves_onboarding_fields_to_the_server_when_no_account_can_open(overrides):
-    """The server reads these fields only for a grant that opens an account; others must still register."""
+def test_register_session_leaves_onboarding_fields_to_the_server(overrides):
+    """The server checks these fields only when the grant opens an account, so a stale one still registers."""
     server, clock = FakeServer(), Clock()
     register_session(
         TESTNET,

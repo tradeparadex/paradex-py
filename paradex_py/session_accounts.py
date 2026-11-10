@@ -167,7 +167,7 @@ def register_session(
     is deployed when it is first funded. Such a request is checked as onboarding is, so it can also be
     refused with the onboarding errors (``INSUFFICIENT_MIN_CHAIN_BALANCE``, ``INVALID_MARKETING_CODE``,
     ``ETHEREUM_ADDRESS_BLOCKED``, ``PARENT_ADDRESS_ALREADY_ONBOARDED``, or HTTP 429
-    ``ONBOARDING_RATE_LIMITED``). ``SESSIONS_DISABLED`` comes only after the signature verifies.
+    ``ONBOARDING_RATE_LIMITED``, raised as ``Rate limit exceeded: ONBOARDING_RATE_LIMITED``). ``SESSIONS_DISABLED`` comes only after the signature verifies.
 
     Args:
         env: Environment.
@@ -179,8 +179,7 @@ def register_session(
             and for a grant that approves a builder.
         marketing_code: Marketing code (``campaign:code``) for an account this grant opens, as above.
         utm: UTM parameters (``source``, ``campaign`` and optionally ``type``) for an account this grant
-            opens, as above. On a grant that could open an account (no builder, no sub-accounts), a
-            malformed ``marketing_code`` or ``utm`` is refused before the owner signs.
+            opens, as above.
         privy_access_token: A Privy access token for the signing wallet; sent as the
             ``PARADEX-PRIVY-ACCESS-TOKEN`` header and used only when the grant opens an account.
         owner_address: The owner wallet's address, for the sub-account check. Defaults to
@@ -199,9 +198,6 @@ def register_session(
     client = http_client or HttpClient()
     base = api_base_url or f"https://api.{env}.paradex.trade/v1"
     v2_base = base.replace("/v1", "/v2")
-    if not grant.builder.is_set and not grant.subaccounts:
-        # Only such a grant can open an account, the one case the server reads these fields.
-        _check_onboarding_fields(marketing_code, utm)
     try:
         if check_subaccounts and grant.subaccounts:
             address = owner_address or getattr(owner_signer, "address", None)
@@ -239,16 +235,6 @@ def register_session(
     finally:
         if http_client is None:
             client.client.close()
-
-
-def _check_onboarding_fields(marketing_code: str | None, utm: dict[str, str] | None) -> None:
-    """Refuse the onboarding fields the server refuses, before the owner signs."""
-    if marketing_code:
-        parts = marketing_code.split(":")
-        if len(parts) != 2 or not all(parts):
-            raise_value_error(f"register_session: marketing_code must be 'campaign:code', got {marketing_code!r}")
-    if utm and not (utm.get("source") and utm.get("campaign")):
-        raise_value_error("register_session: utm must have both source and campaign")
 
 
 def _listed_address(entry: Any) -> int | None:
