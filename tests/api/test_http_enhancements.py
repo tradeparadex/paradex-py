@@ -193,6 +193,7 @@ class TestHttpClientEnhancements:
             "X-API-Key": "secret-key",
             "JWT": "jwt-token",
             "Token": "auth-token",
+            "PARADEX-PRIVY-ACCESS-TOKEN": "privy-token",
             "Content-Type": "application/json",
         }
 
@@ -202,6 +203,7 @@ class TestHttpClientEnhancements:
         assert redacted["X-API-Key"] == "[REDACTED]"
         assert redacted["JWT"] == "[REDACTED]"
         assert redacted["Token"] == "[REDACTED]"  # noqa: S105
+        assert redacted["PARADEX-PRIVY-ACCESS-TOKEN"] == "[REDACTED]"
         assert redacted["Content-Type"] == "application/json"  # Not redacted
 
     def test_header_redaction_case_insensitive(self):

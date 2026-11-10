@@ -179,14 +179,16 @@ def register_session(
             and for a grant that approves a builder.
         marketing_code: Marketing code (``campaign:code``) for an account this grant opens, as above.
         utm: UTM parameters (``source``, ``campaign`` and optionally ``type``) for an account this grant
-            opens, as above.
+            opens, as above. On a grant that could open an account (no builder, no sub-accounts), a
+            malformed ``marketing_code`` or ``utm`` is refused before the owner signs.
         privy_access_token: A Privy access token for the signing wallet; sent as the
             ``PARADEX-PRIVY-ACCESS-TOKEN`` header and used only when the grant opens an account.
         owner_address: The owner wallet's address, for the sub-account check. Defaults to
             ``owner_signer.address`` when the signer has one (``LocalOwnerSigner`` does).
         check_subaccounts: Before the owner signs, refuse sub-accounts the server would refuse with
             ``ACCOUNT_NOT_ELIGIBLE``: a grant may list only the wallet's own EVM sub-accounts, as
-            ``fetch_evm_subaccounts`` lists them. Skipped when the owner's address is not known.
+            ``fetch_evm_subaccounts`` lists them. Skipped when the owner's address is not known or the
+            listing cannot be read; the server still refuses such a grant after the owner signs.
 
     Returns:
         The server's response: ``grant_id``, ``expires_at`` (milliseconds) and the ``accounts`` covered.
@@ -197,7 +199,9 @@ def register_session(
     client = http_client or HttpClient()
     base = api_base_url or f"https://api.{env}.paradex.trade/v1"
     v2_base = base.replace("/v1", "/v2")
-    _check_onboarding_fields(marketing_code, utm)
+    if not grant.builder.is_set and not grant.subaccounts:
+        # Only such a grant can open an account, the one case the server reads these fields.
+        _check_onboarding_fields(marketing_code, utm)
     try:
         if check_subaccounts and grant.subaccounts:
             address = owner_address or getattr(owner_signer, "address", None)

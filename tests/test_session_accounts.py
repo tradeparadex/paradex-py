@@ -1399,3 +1399,23 @@ def test_register_session_ignores_malformed_listing_entries():
             TESTNET, _grant(clock), signer, http_client=HttpClient(http_client=server.client()), owner_address="0xa"
         )
     assert signer.calls == 0
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [{}, {"builder": Builder("0xb0", "0.001", 10**9), "limits": LIMITS, "subaccounts": []}],
+    ids=["with-subaccounts", "with-builder"],
+)
+def test_register_session_leaves_onboarding_fields_to_the_server_when_no_account_can_open(overrides):
+    """The server reads these fields only for a grant that opens an account; others must still register."""
+    server, clock = FakeServer(), Clock()
+    register_session(
+        TESTNET,
+        _grant(clock, **overrides),
+        _CountingSigner(),
+        http_client=HttpClient(http_client=server.client()),
+        marketing_code="abcd",
+        utm={"source": "x"},
+        check_subaccounts=False,
+    )
+    assert len(server.by_path("/v2/sessions")) == 1

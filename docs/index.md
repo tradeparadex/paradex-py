@@ -125,6 +125,8 @@ and starts the session. Name the account the wallet would onboard to
 sub-accounts. Only an EOA can do this, and the account is deployed when it is first funded.
 `register_session` takes the onboarding fields `referral_code`, `marketing_code` and `utm`, which the
 owner does not sign, and a `privy_access_token`; they are used only when the grant opens an account.
+On a grant that could open one (no builder, no sub-accounts), a `marketing_code` that is not
+`campaign:code`, or a `utm` without both `source` and `campaign`, is refused before the owner signs.
 Such a request can also be refused with the onboarding errors, such as
 `INSUFFICIENT_MIN_CHAIN_BALANCE`, `PARENT_ADDRESS_ALREADY_ONBOARDED`, or HTTP 429 `ONBOARDING_RATE_LIMITED`.
 
@@ -133,7 +135,8 @@ them without a login, and the owner creates one with `create_evm_subaccount()` f
 login. Paradex enables EVM sub-accounts per account. Before the owner signs, `register_session` refuses
 any listed sub-account that is not among them, which the server would refuse with
 `ACCOUNT_NOT_ELIGIBLE`. It needs the owner's address for that: `LocalOwnerSigner` has one; for another
-signer, pass `owner_address`.
+signer, pass `owner_address`. Without the address, or when the listing cannot be read, the check is
+skipped and the server refuses such a grant after the owner signs.
 
 RFQ create, execute and drafts accept a session only when its grant includes `trade:rfq`, caps nothing
 (`Limits()`), approves no builder, and Paradex has enabled RFQ sessions for the account. Otherwise they
