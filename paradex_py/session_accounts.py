@@ -67,6 +67,10 @@ _SESSION_REFUSAL_ERRORS = frozenset({"SESSION_REVOKED", "SESSION_EXPIRED", "INVA
 # /auth attempts while the grant is not known to be gone, and the first backoff between them.
 _AUTH_ATTEMPTS = 3
 _AUTH_BACKOFF_SECONDS = 0.5
+# An EOA's EIP-712 signature: 0x and 65 bytes of hex. The server refuses longer ones (contract wallets).
+_EOA_SIGNATURE_HEX_LENGTH = 2 + 2 * 65
+# Header carrying a Privy access token for the wallet whose first grant opens its account.
+PRIVY_ACCESS_TOKEN_HEADER = "PARADEX-PRIVY-ACCESS-TOKEN"  # noqa: S105 -- a header name, not a secret
 # Query parameters a session must not set itself: token usage is decided by the server.
 _FORBIDDEN_AUTH_PARAMS = frozenset({"token_usage"})
 _FORBIDDEN_ORDER_FIELDS = frozenset({"on_behalf_of_account", "on_behalf_of"})
@@ -144,11 +148,26 @@ def register_session(
     owner_signer: OwnerSigner,
     http_client: HttpClient | None = None,
     api_base_url: str | None = None,
+    *,
+    referral_code: str | None = None,
+    marketing_code: str | None = None,
+    utm: dict[str, str] | None = None,
+    privy_access_token: str | None = None,
+    owner_address: str | None = None,
+    check_subaccounts: bool = True,
 ) -> dict:
     """Have an EVM owner sign ``grant`` (EIP-712) and register it with ``POST /v2/sessions``.
 
     .. warning::
         Experimental: this SDK API may still change.
+
+    A wallet with no Paradex account can open one with its first grant: name the account the wallet
+    would onboard to (``ParadexApiClient.fetch_onboarding({"account_signer_type": "eip191",
+    "eth_address": wallet})["address"]``) and list no sub-accounts. Only an EOA can do this; the account
+    is deployed when it is first funded. Such a request is checked as onboarding is, so it can also be
+    refused with the onboarding errors (``INSUFFICIENT_MIN_CHAIN_BALANCE``, ``INVALID_MARKETING_CODE``,
+    ``ETHEREUM_ADDRESS_BLOCKED``, ``PARENT_ADDRESS_ALREADY_ONBOARDED``, or HTTP 429
+    ``ONBOARDING_RATE_LIMITED``). ``SESSIONS_DISABLED`` comes only after the signature verifies.
 
     Args:
         env: Environment.
@@ -156,6 +175,18 @@ def register_session(
         owner_signer: Signs the EIP-712 grant; the owner's key never reaches the SDK.
         http_client: Optional HTTP client.
         api_base_url: Optional ``/v1`` base URL override; ``/v2`` is derived from it.
+        referral_code: Referral code for an account this grant opens. Not signed; ignored otherwise,
+            and for a grant that approves a builder.
+        marketing_code: Marketing code (``campaign:code``) for an account this grant opens, as above.
+        utm: UTM parameters (``source``, ``campaign`` and optionally ``type``) for an account this grant
+            opens, as above.
+        privy_access_token: A Privy access token for the signing wallet; sent as the
+            ``PARADEX-PRIVY-ACCESS-TOKEN`` header and used only when the grant opens an account.
+        owner_address: The owner wallet's address, for the sub-account check. Defaults to
+            ``owner_signer.address`` when the signer has one (``LocalOwnerSigner`` does).
+        check_subaccounts: Before the owner signs, refuse sub-accounts the server would refuse with
+            ``ACCOUNT_NOT_ELIGIBLE``: a grant may list only the wallet's own EVM sub-accounts, as
+            ``fetch_evm_subaccounts`` lists them. Skipped when the owner's address is not known.
 
     Returns:
         The server's response: ``grant_id``, ``expires_at`` (milliseconds) and the ``accounts`` covered.
@@ -163,26 +194,64 @@ def register_session(
     """
     _validate_env(env, "register_session")
     _check_grant_environment(env, grant)
-    chain_id = owner_signer.signature_chain_id
-    typed_data = grant.eip712_typed_data(chain_id)
-    signature = owner_signer.sign_typed_data(typed_data)
     client = http_client or HttpClient()
     base = api_base_url or f"https://api.{env}.paradex.trade/v1"
+    v2_base = base.replace("/v1", "/v2")
     try:
+        if check_subaccounts and grant.subaccounts:
+            address = owner_address or getattr(owner_signer, "address", None)
+            if address:
+                _check_subaccounts_listed(client, v2_base, address, grant)
+        chain_id = owner_signer.signature_chain_id
+        typed_data = grant.eip712_typed_data(chain_id)
+        signature = owner_signer.sign_typed_data(typed_data)
+        if isinstance(signature, str) and len(signature) > _EOA_SIGNATURE_HEX_LENGTH:
+            raise_value_error(
+                "register_session: the signature is longer than an EOA's 65 bytes; contract wallets cannot"
+                " sign session grants"
+            )
+        payload: dict[str, Any] = {
+            "grant": typed_data["message"],
+            "signature": signature,
+            "signature_type": "eip712",
+            "signature_chain_id": chain_id,
+        }
+        if referral_code:
+            payload["referral_code"] = referral_code
+        if marketing_code:
+            payload["marketing_code"] = marketing_code
+        if utm:
+            payload["utm"] = dict(utm)
+        headers = dict(client.client.headers)
+        if privy_access_token:
+            headers[PRIVY_ACCESS_TOKEN_HEADER] = privy_access_token
         return client.request(
-            url=f"{base.replace('/v1', '/v2')}/sessions",
+            url=f"{v2_base}/sessions",
             http_method=HttpMethod.POST,
-            payload={
-                "grant": typed_data["message"],
-                "signature": signature,
-                "signature_type": "eip712",
-                "signature_chain_id": chain_id,
-            },
-            headers=client.client.headers,
+            payload=payload,
+            headers=headers,
         )
     finally:
         if http_client is None:
             client.client.close()
+
+
+def _check_subaccounts_listed(client: HttpClient, v2_base: str, owner_address: str, grant: SessionGrant) -> None:
+    """Refuse sub-accounts that are not the owner wallet's own EVM sub-accounts, before it signs."""
+    listed = client.request(
+        url=f"{v2_base}/onboarding/subaccounts",
+        http_method=HttpMethod.GET,
+        params={"eth_address": owner_address},
+        headers=client.client.headers,
+    )
+    results = listed.get("results") if isinstance(listed, dict) else None
+    owned = {int(entry["address"], 16) for entry in results or [] if isinstance(entry, dict) and "address" in entry}
+    unknown = [address for address in grant.to_message()["subaccounts"] if int(address, 16) not in owned]
+    if unknown:
+        raise_value_error(
+            f"register_session: {unknown} are not sub-accounts of {owner_address}'s account; a grant may list"
+            " only the owner wallet's own EVM sub-accounts (see fetch_evm_subaccounts)"
+        )
 
 
 def _check_grant_environment(env: Environment, grant: SessionGrant) -> None:

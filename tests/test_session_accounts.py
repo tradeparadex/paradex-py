@@ -86,6 +86,7 @@ class FakeServer:
         self.auth_threads: list[int] = []
         self.fail_connect_after: int | None = None
         self.after_login: Callable[[], None] | None = None
+        self.owned_subaccounts = [SUB_1, SUB_2]
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
@@ -110,6 +111,10 @@ class FakeServer:
             return httpx.Response(201, json={"id": "order-1"})
         if path.startswith("/v2/sessions"):
             return self._sessions(request)
+        if path == "/v2/onboarding/subaccounts":
+            assert "Authorization" not in request.headers  # listed before the owner holds a JWT
+            results = [{"address": address, "index": i} for i, address in enumerate(self.owned_subaccounts)]
+            return httpx.Response(200, json={"results": results})
         return httpx.Response(204)
 
     def _sessions(self, request: httpx.Request) -> httpx.Response:
@@ -922,12 +927,17 @@ def test_register_session_signs_through_the_owner_hook():
     result = register_session(TESTNET, grant, signer, http_client=HttpClient(http_client=server.client()))
 
     assert result["grant_id"] == REGISTERED_ID
-    (request,) = server.requests
+    listing, request = server.requests
+    assert (
+        str(listing.url) == f"https://api.testnet.paradex.trade/v2/onboarding/subaccounts?eth_address={owner.address}"
+    )
     assert str(request.url) == "https://api.testnet.paradex.trade/v2/sessions"
+    assert "PARADEX-PRIVY-ACCESS-TOKEN" not in request.headers
     body = json.loads(request.content)
     assert body["grant"] == grant.to_message()
     assert body["signature_type"] == "eip712"
     assert body["signature_chain_id"] == 42161
+    assert not {"referral_code", "marketing_code", "utm"} & body.keys()
     signable = encode_typed_data(full_message=grant.eip712_typed_data(42161))
     assert EthAccount.recover_message(signable, signature=body["signature"]) == owner.address
 
@@ -970,7 +980,97 @@ def test_register_session_surfaces_server_refusal():
     signer = LocalOwnerSigner(EthAccount.create().key.hex())
     client = HttpClient(http_client=httpx.Client(transport=httpx.MockTransport(handler)))
     with pytest.raises(ValueError, match="INVALID_GRANT"):
-        register_session(TESTNET, _grant(Clock()), signer, http_client=client)
+        register_session(TESTNET, _grant(Clock(), subaccounts=[]), signer, http_client=client)
+
+
+class _CountingSigner:
+    """An external signer with no address, returning a canned signature."""
+
+    signature_chain_id = 1
+
+    def __init__(self, signature: str = "0x" + "00" * 65):
+        self.signature = signature
+        self.calls = 0
+
+    def sign_typed_data(self, typed_data):
+        self.calls += 1
+        return self.signature
+
+
+def test_register_session_sends_the_new_account_fields():
+    """A first grant that opens an account carries the onboarding fields and the Privy header, unsigned."""
+    server, clock = FakeServer(), Clock()
+    grant = _grant(clock, subaccounts=[])
+    register_session(
+        TESTNET,
+        grant,
+        _CountingSigner(),
+        http_client=HttpClient(http_client=server.client()),
+        referral_code="cryptofox8",
+        marketing_code="abcd:code1",
+        utm={"source": "google", "campaign": "launch"},
+        privy_access_token="privy-token",  # noqa: S106
+    )
+
+    (request,) = server.requests
+    assert request.headers["PARADEX-PRIVY-ACCESS-TOKEN"] == "privy-token"
+    body = json.loads(request.content)
+    assert body["referral_code"] == "cryptofox8"
+    assert body["marketing_code"] == "abcd:code1"
+    assert body["utm"] == {"source": "google", "campaign": "launch"}
+    assert body["grant"] == grant.to_message()  # none of them is part of what the owner signs
+
+
+def test_register_session_refuses_a_contract_wallet_signature():
+    server, clock = FakeServer(), Clock()
+    signer = _CountingSigner("0x" + "11" * 66)
+    with pytest.raises(ValueError, match="contract wallets"):
+        register_session(
+            TESTNET, _grant(clock, subaccounts=[]), signer, http_client=HttpClient(http_client=server.client())
+        )
+    assert not server.by_path("/v2/sessions")
+
+
+def test_register_session_refuses_unlisted_subaccounts_before_signing():
+    """The server answers ACCOUNT_NOT_ELIGIBLE for a sub-account that is not the wallet's own EVM child."""
+    server, clock = FakeServer(), Clock()
+    server.owned_subaccounts = [SUB_1]
+    signer = _CountingSigner()
+    with pytest.raises(ValueError, match="0xb2"):
+        register_session(
+            TESTNET,
+            _grant(clock),
+            signer,
+            http_client=HttpClient(http_client=server.client()),
+            owner_address="0x" + "aa" * 20,
+        )
+    assert signer.calls == 0
+    assert not server.by_path("/v2/sessions")
+
+
+def test_register_session_accepts_listed_subaccounts_in_any_hex_form():
+    server, clock = FakeServer(), Clock()
+    server.owned_subaccounts = ["0x00b1", "0xB2"]
+    register_session(
+        TESTNET,
+        _grant(clock),
+        _CountingSigner(),
+        http_client=HttpClient(http_client=server.client()),
+        owner_address="0xa",
+    )
+    assert len(server.by_path("/v2/sessions")) == 1
+
+
+@pytest.mark.parametrize("kwargs", [{}, {"owner_address": "0xa", "check_subaccounts": False}])
+def test_register_session_skips_the_subaccount_check(kwargs):
+    """Without the owner's address (an external signer), or when turned off, nothing is listed."""
+    server, clock = FakeServer(), Clock()
+    server.owned_subaccounts = []
+    register_session(
+        TESTNET, _grant(clock), _CountingSigner(), http_client=HttpClient(http_client=server.client()), **kwargs
+    )
+    assert not server.by_path("/v2/onboarding/subaccounts")
+    assert len(server.by_path("/v2/sessions")) == 1
 
 
 def test_new_session_key_is_a_matching_pair():

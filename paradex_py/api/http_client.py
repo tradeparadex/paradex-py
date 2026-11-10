@@ -206,7 +206,7 @@ class HttpClient:
             return {}
 
         safe_headers = headers.copy()
-        sensitive_keys = ["authorization", "x-api-key", "jwt", "token"]
+        sensitive_keys = ["authorization", "x-api-key", "jwt", "token", "paradex-privy-access-token"]
 
         for key in safe_headers:
             if key.lower() in sensitive_keys:
