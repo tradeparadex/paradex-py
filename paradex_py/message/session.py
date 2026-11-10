@@ -63,6 +63,7 @@ __all__ = [
     "DEFAULT_LIMIT_CAPS",
     "DOMAIN_NAME",
     "DOMAIN_VERSION",
+    "FIRST_PARTY_PASSKEY_SCOPES",
     "GRANTABLE_SCOPES",
     "NO_LIMIT",
     "REFUSED_SCOPES",
@@ -113,8 +114,11 @@ DEFAULT_LIMIT_CAPS: Mapping[str, str] = MappingProxyType({})
 _UINT_MAX = 2**53 - 1
 _LABEL_MAX = 64
 _BASE64URL = re.compile(r"^[A-Za-z0-9_-]+$")
-# What the server allows a passkey to grant the sessions it opens.
+# What the server allows a builder's passkey to grant the sessions it opens.
 PASSKEY_SCOPES = frozenset({"trade"})
+# What the server allows a Paradex app (first-party) passkey to grant: what the app's own session asks
+# for. trade:block stays with the owner.
+FIRST_PARTY_PASSKEY_SCOPES = frozenset({"trade", "trade:rfq", "account:settings"})
 PASSKEY_MAX_SESSION_SECONDS = 7 * 24 * 3600
 PASSKEY_MAX_CONCURRENT_SESSIONS = 5
 # A grant's issuedAt is stamped this far in the past, so a client clock running ahead of the server's
@@ -703,15 +707,18 @@ class Ceiling:
     subaccounts: Sequence[str] = ()
     include_future_subaccounts: bool = False
 
-    def to_message(self, account: str, *, numeric_max_loss: bool = False) -> dict[str, Any]:
+    def to_message(self, account: str, *, numeric_max_loss: bool = False, first_party: bool = False) -> dict[str, Any]:
+        """Render the ceiling; ``first_party`` for a Paradex app passkey, which may carry more scopes."""
         ttl = _uint(self.max_session_ttl, "maxSessionTtl")
         if not 0 < ttl <= PASSKEY_MAX_SESSION_SECONDS:
             raise_value_error(f"ceiling.maxSessionTtl must be 1..{PASSKEY_MAX_SESSION_SECONDS} seconds")
         if not 0 < _uint(self.max_concurrent_sessions, "maxConcurrentSessions") <= PASSKEY_MAX_CONCURRENT_SESSIONS:
             raise_value_error(f"ceiling.maxConcurrentSessions must be 1..{PASSKEY_MAX_CONCURRENT_SESSIONS}")
         scopes = _scopes(self.scopes)
-        if not set(scopes) <= PASSKEY_SCOPES:
-            raise_value_error(f"a passkey may grant only {sorted(PASSKEY_SCOPES)}, got {scopes}")
+        allowed = FIRST_PARTY_PASSKEY_SCOPES if first_party else PASSKEY_SCOPES
+        if not set(scopes) <= allowed:
+            party = "a first-party" if first_party else "a builder"
+            raise_value_error(f"{party} passkey may grant only {sorted(allowed)}, got {scopes}")
         if not isinstance(self.include_future_subaccounts, bool):
             raise_value_error(f"includeFutureSubaccounts must be a bool, got {self.include_future_subaccounts!r}")
         return {
@@ -751,7 +758,8 @@ class PasskeyGrant(_TypedMessage):
     def to_message(self) -> dict[str, Any]:
         account = _hex(self.account, "account")
         builder_account = _hex(self.builder_account, "builderAccount")
-        if self.ceiling.include_future_subaccounts and int(builder_account, 16) != 0:
+        is_builder = int(builder_account, 16) != 0
+        if self.ceiling.include_future_subaccounts and is_builder:
             raise_value_error("includeFutureSubaccounts is allowed only on first-party passkeys (builderAccount 0x0)")
         _window(self.issued_at, self.expires_at)
         return {
@@ -759,8 +767,8 @@ class PasskeyGrant(_TypedMessage):
             "environment": _environment(self.environment),
             "account": account,
             "passkey": self.passkey.to_message(),
-            # A builder passkey must cap losses.
-            "ceiling": self.ceiling.to_message(account, numeric_max_loss=int(builder_account, 16) != 0),
+            # A builder passkey must cap losses and grants fewer scopes.
+            "ceiling": self.ceiling.to_message(account, numeric_max_loss=is_builder, first_party=not is_builder),
             "builderAccount": builder_account,
             "nonce": _nonce(self.nonce),
             "issuedAt": self.issued_at,

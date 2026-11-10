@@ -369,7 +369,15 @@ def test_bad_signature_chain_refused(chain_id):
         ({"passkey": Passkey("Y3JlZA", PUB_X, PUB_Y, "Paradex.Trade")}, "rpId must be a lowercase domain"),
         ({"ceiling": Ceiling(["trade"], LIMITS, 7 * 86400 + 1, 5)}, "maxSessionTtl"),
         ({"ceiling": Ceiling(["trade"], LIMITS, 86400, 6)}, "maxConcurrentSessions"),
-        ({"ceiling": Ceiling(["trade", "trade:rfq"], LIMITS, 86400, 5)}, "a passkey may grant only"),
+        ({"ceiling": Ceiling(["trade", "trade:block"], LIMITS, 86400, 5)}, "a first-party passkey may grant only"),
+        (
+            {"builder_account": "0xb1", "ceiling": Ceiling(["trade", "trade:rfq"], LIMITS, 86400, 5)},
+            "a builder passkey may grant only",
+        ),
+        (
+            {"builder_account": "0xb1", "ceiling": Ceiling(["account:settings"], LIMITS, 86400, 5)},
+            "a builder passkey may grant only",
+        ),
         ({"ceiling": Ceiling(["trade"], LIMITS, 86400, 5, [], "false")}, "includeFutureSubaccounts must be a bool"),
         ({"passkey": Passkey("c", "0xaa", PUB_Y, "paradex.trade")}, "pubkeyX"),
         ({"passkey": Passkey("c", PUB_X, "0x" + "CD" * 32, "paradex.trade")}, "pubkeyY"),
@@ -379,6 +387,27 @@ def test_bad_signature_chain_refused(chain_id):
 def test_passkey_grant_refusals(overrides, error):
     with pytest.raises(ValueError, match=error):
         _passkey_grant(**overrides).to_message()
+
+
+def test_first_party_passkey_ceiling_carries_the_app_scopes():
+    ceiling = Ceiling(["trade", "trade:rfq", "account:settings"], LIMITS, 7 * 86400, 5, ["0x99"], True)
+    message = _passkey_grant(ceiling=ceiling).to_message()
+    assert message["ceiling"]["scopes"] == ["trade", "trade:rfq", "account:settings"]
+
+
+def test_mint_may_use_the_app_scopes_under_a_first_party_ceiling():
+    grant = _ceiling_grant(LIMITS, scopes=["trade", "trade:rfq", "account:settings"])
+    _mint(scopes=["trade:rfq", "account:settings"], limits=LIMITS, subaccounts=[], expires_at=2000).check_within(
+        grant, now=1500
+    )
+
+
+def test_ceiling_alone_renders_with_the_builder_scopes():
+    """``Ceiling.to_message`` keeps the narrower builder set unless told it is first-party."""
+    ceiling = Ceiling(["trade", "trade:rfq"], LIMITS, 86400, 5)
+    with pytest.raises(ValueError, match="a builder passkey may grant only"):
+        ceiling.to_message("0x1234")
+    assert ceiling.to_message("0x1234", first_party=True)["scopes"] == ["trade", "trade:rfq"]
 
 
 def test_builder_passkey_without_future_subaccounts_is_accepted():
