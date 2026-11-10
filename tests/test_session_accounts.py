@@ -88,6 +88,7 @@ class FakeServer:
         self.after_login: Callable[[], None] | None = None
         self.owned_subaccounts = [SUB_1, SUB_2]
         self.listing_status = 200
+        self.listing_body: object | None = None
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
@@ -120,6 +121,8 @@ class FakeServer:
         assert "Authorization" not in request.headers  # listed before the owner holds a JWT
         if self.listing_status != 200:
             return httpx.Response(self.listing_status, json={"message": "Not Found"})
+        if self.listing_body is not None:
+            return httpx.Response(200, json=self.listing_body)
         results = [{"address": address, "index": i} for i, address in enumerate(self.owned_subaccounts)]
         return httpx.Response(200, json={"results": results})
 
@@ -1370,3 +1373,29 @@ def test_register_session_redacts_the_privy_token_from_request_hooks():
     )
     assert seen[-1]["PARADEX-PRIVY-ACCESS-TOKEN"] == "[REDACTED]"
     assert server.requests[-1].headers["PARADEX-PRIVY-ACCESS-TOKEN"] == "privy-token"
+
+
+@pytest.mark.parametrize("body", [{}, {"results": None}, []])
+def test_register_session_registers_when_the_listing_is_unreadable(body):
+    server, clock = FakeServer(), Clock()
+    server.listing_body = body
+    register_session(
+        TESTNET,
+        _grant(clock),
+        _CountingSigner(),
+        http_client=HttpClient(http_client=server.client()),
+        owner_address="0xa",
+    )
+    assert len(server.by_path("/v2/sessions")) == 1
+
+
+def test_register_session_ignores_malformed_listing_entries():
+    """A listed entry without a hex address covers nothing, so the sub-account is still refused."""
+    server, clock = FakeServer(), Clock()
+    server.listing_body = {"results": [{"address": SUB_1}, {"address": "not-hex"}, {"index": 3}, "0xb2"]}
+    signer = _CountingSigner()
+    with pytest.raises(ValueError, match="0xb2"):
+        register_session(
+            TESTNET, _grant(clock), signer, http_client=HttpClient(http_client=server.client()), owner_address="0xa"
+        )
+    assert signer.calls == 0

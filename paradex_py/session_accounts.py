@@ -247,6 +247,15 @@ def _check_onboarding_fields(marketing_code: str | None, utm: dict[str, str] | N
         raise_value_error("register_session: utm must have both source and campaign")
 
 
+def _listed_address(entry: Any) -> int | None:
+    """A listed sub-account's address as an int, or None for an entry that does not hold one."""
+    address = entry.get("address") if isinstance(entry, dict) else None
+    try:
+        return int(address, 16) if isinstance(address, str) else None
+    except ValueError:
+        return None
+
+
 def _check_subaccounts_listed(client: HttpClient, v2_base: str, owner_address: str, grant: SessionGrant) -> None:
     """Refuse sub-accounts that are not the owner wallet's own EVM sub-accounts, before it signs.
 
@@ -267,7 +276,7 @@ def _check_subaccounts_listed(client: HttpClient, v2_base: str, owner_address: s
     if not isinstance(results, list):
         logging.getLogger(__name__).warning("register_session: sub-account listing unreadable, not checked")
         return
-    owned = {int(entry["address"], 16) for entry in results if isinstance(entry, dict) and "address" in entry}
+    owned = {address for entry in results if (address := _listed_address(entry)) is not None}
     unknown = [address for address in grant.to_message()["subaccounts"] if int(address, 16) not in owned]
     if unknown:
         raise_value_error(
