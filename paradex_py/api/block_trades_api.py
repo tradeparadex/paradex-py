@@ -1,6 +1,6 @@
-from typing import Annotated, Any, Protocol
+from typing import Any, Protocol
 
-from pydantic import Field, TypeAdapter
+from pydantic import TypeAdapter
 
 from paradex_py.api.generated.requests import (
     BlockExecuteRequest,
@@ -11,33 +11,8 @@ from paradex_py.api.generated.responses import (
     ApiError,
     APIResults,
     BlockTradeDetailFullResponse,
-    BlockTradeSignature,
     PaginatedAPIResults,
-    SignatureType,
 )
-
-
-class _BlockTradeSignatureResponse(BlockTradeSignature):
-    """A block trade signature as the server returns it, of any signature type.
-
-    A counterparty may sign with a type this SDK does not list in ``SignatureType``, such as an
-    EVM account's ``EIP712``. The generated enum would refuse the whole block for that one field,
-    so a type it does not know is kept as the plain string the server sent.
-    """
-
-    signature_type: Annotated[  # type: ignore[assignment]
-        SignatureType | str,
-        Field(description="Type of cryptographic signature used", examples=["STARKNET"], union_mode="left_to_right"),
-    ]
-
-
-class _BlockTradeDetailResponse(BlockTradeDetailFullResponse):
-    """``BlockTradeDetailFullResponse`` whose signatures may be of any signature type."""
-
-    signatures: Annotated[  # type: ignore[assignment]
-        dict[str, _BlockTradeSignatureResponse] | None,
-        Field(description="Current signatures on this block (for signature verification)"),
-    ] = None
 
 
 def _without_absent_orders(response: dict) -> dict:
@@ -118,9 +93,9 @@ class BlockTradesMixin:
             raise ValueError(f"API Error {error.error}: {error.message}")
 
         try:
-            # Use TypeAdapter to validate list of block trade details
+            # Use TypeAdapter to validate list of BlockTradeDetailFullResponse objects
             if response.get("results"):
-                adapter = TypeAdapter(list[_BlockTradeDetailResponse])
+                adapter = TypeAdapter(list[BlockTradeDetailFullResponse])
                 typed_results = adapter.validate_python(response["results"])
 
                 return PaginatedAPIResults(
@@ -163,7 +138,7 @@ class BlockTradesMixin:
             raise ValueError(f"API Error {error.error}: {error.message}")
 
         try:
-            return _BlockTradeDetailResponse.model_validate(_without_absent_orders(response))
+            return BlockTradeDetailFullResponse.model_validate(_without_absent_orders(response))
         except Exception:
             # Reducing a block to its id hides whatever was rejected, and the
             # block then signs as an empty merkle tree and fails far from the
