@@ -5,11 +5,13 @@ import pytest
 from pydantic import ValidationError
 
 from paradex_py.api.api_client import ParadexApiClient
+from paradex_py.api.block_trades_api import BlockTradeDetailResponse
 from paradex_py.api.generated.requests import (
     BlockExecuteRequest,
     BlockOfferRequest,
     BlockTradeRequest,
 )
+from paradex_py.api.generated.responses import BlockTradeDetailFullResponse, BlockTradeStatus, SignatureType
 from paradex_py.environment import TESTNET
 
 
@@ -527,3 +529,89 @@ class TestBlockTradeResponseParsing:
 
             with pytest.raises(ValidationError):
                 self.api_client.get_block_trade("0xabc")
+
+    @staticmethod
+    def _signature(signature_type: str) -> dict:
+        return {
+            "nonce": "1",
+            "signature_data": "[1,2]",
+            "signature_expiration": 2,
+            "signature_timestamp": 1,
+            "signature_type": signature_type,
+            "signer_account": "0x1",
+        }
+
+    def test_signatures_of_any_type_parse_on_read(self):
+        """An EVM counterparty signs with EIP712; the block must still parse with its trades."""
+        detail = self._detail("REDUCE_ONLY")
+        detail["signatures"] = {
+            "0x1": self._signature("STARKNET"),
+            "0x2": self._signature("EIP712"),
+            "0x3": self._signature("SOME_FUTURE_TYPE"),
+        }
+
+        with patch.object(self.api_client, "get") as mock_get:
+            mock_get.return_value = detail
+
+            block = self.api_client.get_block_trade("0xabc")
+
+        assert block.trades is not None
+        assert block.signatures["0x1"].signature_type is SignatureType.starknet
+        assert block.signatures["0x2"].signature_type == "EIP712"
+        assert block.signatures["0x3"].signature_type == "SOME_FUTURE_TYPE"
+        assert block.model_dump(mode="json")["signatures"]["0x2"]["signature_type"] == "EIP712"
+
+    def test_signatures_of_any_type_keep_trades_on_write(self):
+        """A write path must not reduce an EIP712-signed block to its id."""
+        detail = self._detail("REDUCE_ONLY")
+        detail["signatures"] = {"0x2": self._signature("EIP712")}
+
+        with patch.object(self.api_client, "post") as mock_post:
+            mock_post.return_value = detail
+
+            block = self.api_client.execute_block_trade("0xabc", Mock(**{"model_dump.return_value": {}}))
+
+        assert block.trades is not None
+        assert block.signatures["0x2"].signature_type == "EIP712"
+
+    def test_signatures_of_any_type_parse_in_lists(self):
+        """A listed block signed with EIP712 keeps its typed fields."""
+        detail = self._detail("REDUCE_ONLY")
+        detail["signatures"] = {"0x2": self._signature("EIP712")}
+
+        with patch.object(self.api_client, "get") as mock_get:
+            mock_get.return_value = {"results": [detail]}
+
+            results = self.api_client.list_block_trades().results
+
+        assert results[0]["signatures"]["0x2"]["signature_type"] == "EIP712"
+        assert results[0]["status"] is BlockTradeStatus.block_trade_status_created  # typed, not the raw fallback
+
+    def test_listed_blocks_revalidate_with_the_public_model(self):
+        """A listed or dumped block parses again with BlockTradeDetailResponse, not the generated model."""
+        detail = self._detail("REDUCE_ONLY")
+        detail["signatures"] = {"0x2": self._signature("EIP712")}
+
+        with patch.object(self.api_client, "get") as mock_get:
+            mock_get.return_value = {"results": [detail]}
+
+            listed = self.api_client.list_block_trades().results[0]
+
+        block = BlockTradeDetailResponse.model_validate(listed)
+        assert block.signatures["0x2"].signature_type == "EIP712"
+        with pytest.raises(ValidationError):
+            BlockTradeDetailFullResponse.model_validate(listed)
+
+    def test_every_block_trade_method_returns_the_public_model(self):
+        """Parsed and fallback responses share one type, still a BlockTradeDetailFullResponse."""
+        with patch.object(self.api_client, "get") as mock_get:
+            mock_get.return_value = self._detail("REDUCE_ONLY")
+            parsed = self.api_client.get_block_trade("0xabc")
+        with patch.object(self.api_client, "post") as mock_post:
+            mock_post.return_value = {"id": "0xabc", "trades": "not a dict"}
+            fallback = self.api_client.execute_block_trade("0xabc", Mock(**{"model_dump.return_value": {}}))
+
+        for block in (parsed, fallback):
+            assert type(block) is BlockTradeDetailResponse
+            assert isinstance(block, BlockTradeDetailFullResponse)
+        assert fallback.block_id == "0xabc"
