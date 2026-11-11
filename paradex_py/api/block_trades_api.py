@@ -17,12 +17,13 @@ from paradex_py.api.generated.responses import (
 )
 
 
-class _BlockTradeSignatureResponse(BlockTradeSignature):
+class BlockTradeSignatureResponse(BlockTradeSignature):
     """A block trade signature as the server returns it, of any signature type.
 
     A counterparty may sign with a type this SDK does not list in ``SignatureType``, such as an
     EVM account's ``EIP712``. The generated enum would refuse the whole block for that one field,
-    so a type it does not know is kept as the plain string the server sent.
+    so a type it does not know is kept as the plain string the server sent. Check for a string before
+    reading ``signature_type.value``.
     """
 
     signature_type: Annotated[  # type: ignore[assignment]
@@ -31,11 +32,16 @@ class _BlockTradeSignatureResponse(BlockTradeSignature):
     ]
 
 
-class _BlockTradeDetailResponse(BlockTradeDetailFullResponse):
-    """``BlockTradeDetailFullResponse`` whose signatures may be of any signature type."""
+class BlockTradeDetailResponse(BlockTradeDetailFullResponse):
+    """A block trade as the block trade methods return it: ``BlockTradeDetailFullResponse`` whose
+    signatures may be of any signature type.
+
+    Re-validate a stored or listed block (``list_block_trades`` results, a ``model_dump``) with this
+    model: ``BlockTradeDetailFullResponse`` refuses a signature type ``SignatureType`` does not list.
+    """
 
     signatures: Annotated[  # type: ignore[assignment]
-        dict[str, _BlockTradeSignatureResponse] | None,
+        dict[str, BlockTradeSignatureResponse] | None,
         Field(description="Current signatures on this block (for signature verification)"),
     ] = None
 
@@ -120,7 +126,7 @@ class BlockTradesMixin:
         try:
             # Use TypeAdapter to validate list of block trade details
             if response.get("results"):
-                adapter = TypeAdapter(list[_BlockTradeDetailResponse])
+                adapter = TypeAdapter(list[BlockTradeDetailResponse])
                 typed_results = adapter.validate_python(response["results"])
 
                 return PaginatedAPIResults(
@@ -143,7 +149,7 @@ class BlockTradesMixin:
 
     def _parse_block_trade_response(
         self, response: dict, *, raise_on_failure: bool = False
-    ) -> BlockTradeDetailFullResponse:
+    ) -> BlockTradeDetailResponse:
         """Parse single block trade response to typed model.
 
         Args:
@@ -163,7 +169,7 @@ class BlockTradesMixin:
             raise ValueError(f"API Error {error.error}: {error.message}")
 
         try:
-            return _BlockTradeDetailResponse.model_validate(_without_absent_orders(response))
+            return BlockTradeDetailResponse.model_validate(_without_absent_orders(response))
         except Exception:
             # Reducing a block to its id hides whatever was rejected, and the
             # block then signs as an empty merkle tree and fails far from the
@@ -171,7 +177,7 @@ class BlockTradesMixin:
             if raise_on_failure and isinstance(response, dict) and response.get("trades"):
                 raise
             block_id = response.get("id") or response.get("block_id") if isinstance(response, dict) else None
-            return BlockTradeDetailFullResponse.model_validate({"block_id": block_id})
+            return BlockTradeDetailResponse.model_validate({"block_id": block_id})
 
     def _parse_offers_response(self, response: dict) -> APIResults:
         """Parse offers list response to typed model."""
@@ -201,7 +207,8 @@ class BlockTradesMixin:
             market: Market symbol filter (e.g., BTC-USD-PERP)
 
         Returns:
-            Paginated list with block trade details and navigation metadata.
+            Paginated list with block trade details and navigation metadata. Each result is a
+            ``BlockTradeDetailResponse`` dumped to a dict; re-validate it with that model.
         """
         params = {}
         if status:
@@ -212,7 +219,7 @@ class BlockTradesMixin:
         response = self._get_authorized(path="block-trades", params=params)
         return self._parse_block_trade_list_response(response)
 
-    def create_block_trade(self, block_trade: BlockTradeRequest) -> BlockTradeDetailFullResponse:
+    def create_block_trade(self, block_trade: BlockTradeRequest) -> BlockTradeDetailResponse:
         """Create a parent block trade for multi-party execution.
 
         Block trades coordinate execution across multiple parties.
@@ -232,7 +239,7 @@ class BlockTradesMixin:
         response = self._post_authorized(path="block-trades", payload=payload, **self._signature_headers())
         return self._parse_block_trade_response(response)
 
-    def get_block_trade(self, block_trade_id: str) -> BlockTradeDetailFullResponse:
+    def get_block_trade(self, block_trade_id: str) -> BlockTradeDetailResponse:
         """Retrieve a specific block trade by ID with full details.
 
         Returns complete block trade information including status, trade details,
@@ -267,7 +274,7 @@ class BlockTradesMixin:
 
     def execute_block_trade(
         self, block_trade_id: str, execution_request: BlockExecuteRequest
-    ) -> BlockTradeDetailFullResponse:
+    ) -> BlockTradeDetailResponse:
         """Execute a block trade with selected offers.
 
         Executes a parent block trade by selecting specific offers from required signers.
@@ -302,7 +309,7 @@ class BlockTradesMixin:
         else:
             raise ValueError("block_trade_id must be a non-empty string")
 
-    def create_block_trade_offer(self, block_trade_id: str, offer: BlockOfferRequest) -> BlockTradeDetailFullResponse:
+    def create_block_trade_offer(self, block_trade_id: str, offer: BlockOfferRequest) -> BlockTradeDetailResponse:
         """Create a sub-block offer for an existing block trade.
 
         Required signers submit their order details and pricing for
@@ -321,7 +328,7 @@ class BlockTradesMixin:
         )
         return self._parse_block_trade_response(response)
 
-    def get_block_trade_offer(self, block_trade_id: str, offer_id: str) -> BlockTradeDetailFullResponse:
+    def get_block_trade_offer(self, block_trade_id: str, offer_id: str) -> BlockTradeDetailResponse:
         """Get a specific offer by ID for a block trade.
 
         Retrieves detailed information about an offer submitted for a parent block trade.
@@ -353,7 +360,7 @@ class BlockTradesMixin:
 
     def execute_block_trade_offer(
         self, block_trade_id: str, offer_id: str, execution_request: BlockExecuteRequest
-    ) -> BlockTradeDetailFullResponse:
+    ) -> BlockTradeDetailResponse:
         """Execute a specific offer independently of the parent block trade.
 
         Executes an individual offer without waiting for full block trade execution.
