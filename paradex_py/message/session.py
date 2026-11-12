@@ -414,7 +414,7 @@ class Limits:
     markets: Sequence[str] = (ALL_MARKETS,)
     caps: Mapping[str, str] = field(default_factory=lambda: DEFAULT_LIMIT_CAPS, compare=False, repr=False)
 
-    def to_message(self, *, numeric_max_loss: bool = False) -> dict[str, Any]:
+    def to_message(self) -> dict[str, Any]:
         message: dict[str, Any] = {
             "maxOrderNotional": _limit(self.max_order_notional, "maxOrderNotional"),
             "maxOpenNotional": _limit(self.max_open_notional, "maxOpenNotional"),
@@ -423,8 +423,6 @@ class Limits:
             "maxLeverage": _limit(self.max_leverage, "maxLeverage"),
             "markets": _markets(self.markets),
         }
-        if numeric_max_loss and message["maxLoss"] == NO_LIMIT:
-            raise_value_error("limits.maxLoss must be a number on builder grants, not 'none'")
         for name, cap in self.caps.items():
             if name not in _LIMIT_NAMES:
                 raise_value_error(f"limit cap names an unknown limit {name!r}")
@@ -465,8 +463,7 @@ class Builder:
     """The builder a grant approves, with its maximum fee rate. ``account="0x0"`` means none.
 
     ``expires_at=0`` makes the approval follow the session's own expiry. A grant that approves a builder
-    must give ``limits.maxLoss`` as a number, and the server refuses builder grants until it enforces
-    ``maxLoss``.
+    follows the same limit rules as any other grant.
     """
 
     account: str = NO_BUILDER
@@ -625,8 +622,7 @@ class SessionGrant(_TypedMessage):
             "sessionKey": _hex(self.session_key, "sessionKey"),
             "label": _label(self.label, "label"),
             "scopes": scopes,
-            # A builder grant must cap losses.
-            "limits": self.limits.to_message(numeric_max_loss=self.builder.is_set),
+            "limits": self.limits.to_message(),
             "builder": self.builder.to_message(),
             "subaccounts": _subaccounts(account, self.subaccounts),
             "nonce": _nonce(self.nonce),
@@ -707,7 +703,7 @@ class Ceiling:
     subaccounts: Sequence[str] = ()
     include_future_subaccounts: bool = False
 
-    def to_message(self, account: str, *, numeric_max_loss: bool = False, first_party: bool = False) -> dict[str, Any]:
+    def to_message(self, account: str, *, first_party: bool = False) -> dict[str, Any]:
         """Render the ceiling; ``first_party`` for a Paradex app passkey, which may carry more scopes."""
         ttl = _uint(self.max_session_ttl, "maxSessionTtl")
         if not 0 < ttl <= PASSKEY_MAX_SESSION_SECONDS:
@@ -723,7 +719,7 @@ class Ceiling:
             raise_value_error(f"includeFutureSubaccounts must be a bool, got {self.include_future_subaccounts!r}")
         return {
             "scopes": scopes,
-            "limits": self.limits.to_message(numeric_max_loss=numeric_max_loss),
+            "limits": self.limits.to_message(),
             "subaccounts": _subaccounts(account, self.subaccounts),
             "includeFutureSubaccounts": self.include_future_subaccounts,
             "maxSessionTtl": _uint(self.max_session_ttl, "maxSessionTtl"),
@@ -737,8 +733,7 @@ class PasskeyGrant(_TypedMessage):
 
     ``builder_account="0x0"`` binds the passkey to the Paradex app; any other address binds it to that
     builder. ``include_future_subaccounts`` is allowed only for the Paradex app's own passkeys. A builder
-    passkey must give ``maxLoss`` as a number, and the server refuses builder passkeys until it enforces
-    ``maxLoss``.
+    passkey follows the same limit rules as a first-party one.
     """
 
     paradex_chain: str
@@ -767,8 +762,8 @@ class PasskeyGrant(_TypedMessage):
             "environment": _environment(self.environment),
             "account": account,
             "passkey": self.passkey.to_message(),
-            # A builder passkey must cap losses and grants fewer scopes.
-            "ceiling": self.ceiling.to_message(account, numeric_max_loss=is_builder, first_party=not is_builder),
+            # A builder passkey grants fewer scopes.
+            "ceiling": self.ceiling.to_message(account, first_party=not is_builder),
             "builderAccount": builder_account,
             "nonce": _nonce(self.nonce),
             "issuedAt": self.issued_at,
