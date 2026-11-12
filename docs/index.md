@@ -104,8 +104,9 @@ but the SDK does not register those yet. Paradex enables sessions per account: u
 `register_session` raises `SESSIONS_DISABLED` (only once the owner's signature verifies). `SessionAccounts` then keeps a JWT (at most 15 minutes, never past the session's expiry),
 a REST client and a websocket per account, routes calls by account, and drops every account at once
 when the session expires or is revoked. `session.revoke()` also cancels the session's resting orders,
-TWAPs and untriggered stops; `revoke(cancel_orders=False)` leaves them working, and the revoked key
-can no longer cancel them.
+TWAPs and untriggered stops. With `revoke(cancel_orders=False)`, a grant with no builder signs out and
+its orders keep working, and the revoked key can no longer cancel them; a builder grant still has its
+TWAPs and untriggered stops cancelled and keeps only its resting orders.
 
 Every grant states each limit: a positive decimal, or `"none"` for no cap from this session.
 `markets` lists symbols or patterns, or is `["*"]` for every permitted market. Empty values are

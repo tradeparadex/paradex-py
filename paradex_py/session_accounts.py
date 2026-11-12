@@ -608,8 +608,9 @@ class SessionAccounts:
         """Revoke the grant on the server (``DELETE /v2/sessions/{grant_id}``), then drop every account.
 
         With ``cancel_orders`` (the default) the server also cancels the session's resting orders, TWAPs
-        and untriggered stops on every account. Without it, a session revoking its own grant is a
-        sign-out: they keep working, and this key can no longer cancel them.
+        and untriggered stops on every account. Without it, a grant with no builder signs out: its
+        resting orders, TWAPs and stops keep working, and this key can no longer cancel them. A builder
+        grant still has its TWAPs and untriggered stops cancelled, and keeps only its resting orders.
 
         The session drops only when the server confirms: success, or 404 for a grant it no longer has.
         Otherwise it stays live and :class:`SessionRevokeError` is raised, so the call can be retried.
