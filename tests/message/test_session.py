@@ -349,9 +349,13 @@ def test_first_party_grants_may_leave_limits_uncapped():
     }
 
 
-def test_builder_grants_may_leave_limits_other_than_max_loss_uncapped():
-    limits = dataclasses.replace(LIMITS, max_order_notional="none", max_leverage="none", markets=["*"])
-    assert _grant(limits=limits).to_message()["limits"]["maxLeverage"] == "none"
+def test_builder_grants_may_leave_every_limit_uncapped():
+    grant = _grant(limits=Limits())
+    message = grant.to_message()
+    assert message["builder"]["account"] == "0xb1"
+    assert message["limits"] == Limits().to_message()
+    assert SessionGrant.from_message(message).to_message() == message
+    assert grant.eip712_typed_data(ARBITRUM)["message"]["limits"]["maxLoss"] == "none"
 
 
 def test_loss_wording():
@@ -764,14 +768,20 @@ def test_limits_default_to_no_caps():
     assert grant.limits == Limits()
 
 
-def test_builder_grants_and_passkeys_need_a_numeric_max_loss():
-    with pytest.raises(ValueError, match="maxLoss must be a number on builder grants"):
-        _grant(limits=Limits()).to_message()
-    with pytest.raises(ValueError, match="maxLoss must be a number on builder grants"):
-        _passkey_grant(ceiling=Ceiling(["trade"], Limits(), 86400, 5), builder_account="0xb1").to_message()
+def test_builder_grants_and_passkeys_follow_the_normal_limit_rules():
+    assert _grant(limits=Limits()).to_message()["limits"]["maxLoss"] == "none"
     assert _grant(limits=Limits(max_loss="5000")).to_message()["limits"]["maxLoss"] == "5000"
+    builder = _passkey_grant(ceiling=Ceiling(["trade"], Limits(), 86400, 5), builder_account="0xb1").to_message()
+    assert builder["ceiling"]["limits"]["maxLoss"] == "none"
     first_party = _passkey_grant(ceiling=Ceiling(["trade"], Limits(), 86400, 5)).to_message()
-    assert first_party["ceiling"]["limits"]["maxLoss"] == "none"
+    assert first_party["ceiling"]["limits"] == builder["ceiling"]["limits"]
+
+
+def test_a_mint_under_an_uncapped_builder_passkey_is_within_it():
+    grant = _passkey_grant(
+        ceiling=Ceiling(["trade"], Limits(), 86400, 5), builder_account="0xb1", issued_at=1000, expires_at=10**6
+    )
+    _mint(limits=Limits(), subaccounts=[], expires_at=2000).check_within(grant, now=1500)
 
 
 def test_builder_approval_may_end_with_its_grant():
