@@ -10,6 +10,9 @@ never withdraw. Three messages share one set of field semantics:
 - ``SessionMint``: what a passkey signs (as the WebAuthn challenge) to open one
   session within that ceiling.
 
+``BuilderApproval`` uses the same domain and field forms: an EVM owner approves
+a builder's fee on its own, with no session. It is signed with EIP-712 only.
+
 Each has two encodings with the same field names and order:
 
 - EIP-712 for EVM (EIP-191) owners. The domain is
@@ -60,14 +63,17 @@ from paradex_py.utils import raise_value_error
 
 __all__ = [
     "ALL_MARKETS",
+    "BUILDER_APPROVAL_MAX_SECONDS",
     "DEFAULT_LIMIT_CAPS",
     "DOMAIN_NAME",
     "DOMAIN_VERSION",
     "FIRST_PARTY_PASSKEY_SCOPES",
     "GRANTABLE_SCOPES",
+    "MAX_BUILDER_FEE_RATE",
     "NO_LIMIT",
     "REFUSED_SCOPES",
     "Builder",
+    "BuilderApproval",
     "Ceiling",
     "Limits",
     "Passkey",
@@ -99,6 +105,11 @@ SHORT_LIVED_SCOPE_MAX_SECONDS = 7 * DAY_SECONDS
 # The longest any session lives (IP-pinned API sessions); browser sessions are capped lower by the server.
 SESSION_MAX_SECONDS = 180 * DAY_SECONDS
 NO_BUILDER = "0x0"
+# A standalone builder approval lives at most this long after it is issued.
+BUILDER_APPROVAL_MAX_SECONDS = 180 * DAY_SECONDS
+# The highest maxFeeRate the server accepts on a builder approval, and the most decimal places it may have.
+MAX_BUILDER_FEE_RATE = "0.0025"
+_BUILDER_FEE_RATE_PLACES = 8
 
 _NONCE_BITS = 128
 _SHORTSTRING_MAX = 31
@@ -350,6 +361,15 @@ _SESSION_GRANT = (
     ("nonce", "string", "felt"),
     ("issuedAt", "uint64", "timestamp"),
     ("expiresAt", "uint64", "timestamp"),
+)
+_BUILDER_APPROVAL = (
+    ("paradexChain", "string", "shortstring"),
+    ("environment", "string", "shortstring"),
+    ("account", "string", "ContractAddress"),
+    ("builder", "Builder", "Builder"),
+    ("subaccounts", "string[]", "ContractAddress*"),
+    ("nonce", "string", "felt"),
+    ("issuedAt", "uint64", "timestamp"),
 )
 _PASSKEY = (
     ("credentialId", "string", "string"),
@@ -666,6 +686,97 @@ class SessionGrant(_TypedMessage):
         """Every account the session covers: the anchor first, then the listed sub-accounts."""
         message = self.to_message()
         return [message["account"], *message["subaccounts"]]
+
+
+@dataclass(frozen=True)
+class BuilderApproval(_TypedMessage):
+    """An EVM owner's standalone approval of a builder's fee, outside any session grant.
+
+    Register it with :func:`paradex_py.session_accounts.register_builder_approval`. It is signed with
+    EIP-712 only; the server refuses Stark-key owners.
+
+    Args:
+        paradex_chain: Paradex chain id string, e.g. ``"PRIVATE_SN_PARACLEAR_MAINNET"``.
+        environment: ``"mainnet"`` or ``"testnet"`` (see :func:`grant_environment`).
+        account: The anchor account; its owner signs the approval.
+        builder: The builder and its fee cap. ``expires_at`` is required and at most
+            :data:`BUILDER_APPROVAL_MAX_SECONDS` after ``issued_at``. ``max_fee_rate`` is above 0, has at
+            most 8 decimal places and is at most :data:`MAX_BUILDER_FEE_RATE`.
+        subaccounts: Sub-accounts the approval also covers. Empty means the anchor only.
+        nonce: 128-bit random ``0x`` hex (see :func:`new_nonce`).
+        issued_at: Seconds since the epoch, by the server's clock. The server refuses an ``issuedAt``
+            in its future, so take it from the server (see :meth:`new`), not the local clock.
+    """
+
+    paradex_chain: str
+    environment: str
+    account: str
+    builder: Builder
+    issued_at: int
+    subaccounts: Sequence[str] = ()
+    nonce: str = field(default_factory=new_nonce)
+
+    _PRIMARY = "BuilderApproval"
+    _SPEC = _BUILDER_APPROVAL
+    _STRUCTS = {"Builder": _BUILDER}  # noqa: RUF012
+
+    @classmethod
+    def new(cls, *, server_time: int, ttl_seconds: int, **kwargs: Any) -> BuilderApproval:
+        """Build an approval issued at ``server_time`` (seconds), expiring ``ttl_seconds`` later.
+
+        ``kwargs`` carries the other fields; ``builder`` gives the account and fee rate, and its
+        ``expires_at`` is set here. ``issuedAt`` is stamped a minute before ``server_time``.
+        """
+        issued_at = _uint(server_time, "server_time") - _ISSUED_AT_BACKDATE_SECONDS
+        builder = kwargs.pop("builder")
+        builder = Builder(builder.account, builder.max_fee_rate, issued_at + _uint(ttl_seconds, "ttl_seconds"))
+        return cls(issued_at=issued_at, builder=builder, **kwargs)
+
+    def to_message(self) -> dict[str, Any]:
+        """Validate and render the message, refusing what the server would refuse."""
+        account = _hex(self.account, "account")
+        builder = self.builder.to_message()
+        if builder["account"] == NO_BUILDER:
+            raise_value_error("a builder approval names a builder")
+        if builder["account"] == account:
+            raise_value_error("builder.account must not be the approving account")
+        rate = Decimal(builder["maxFeeRate"])
+        if rate <= 0 or rate > Decimal(MAX_BUILDER_FEE_RATE):
+            raise_value_error(f"builder.maxFeeRate must be above 0 and at most {MAX_BUILDER_FEE_RATE}")
+        _, _, places = builder["maxFeeRate"].partition(".")
+        if len(places) > _BUILDER_FEE_RATE_PLACES:
+            raise_value_error(f"builder.maxFeeRate has more than {_BUILDER_FEE_RATE_PLACES} decimal places")
+        if builder["expiresAt"] == 0:
+            raise_value_error("builder.expiresAt is required on a builder approval")
+        _window(self.issued_at, builder["expiresAt"])
+        if builder["expiresAt"] - self.issued_at > BUILDER_APPROVAL_MAX_SECONDS:
+            raise_value_error(f"a builder approval lives at most {BUILDER_APPROVAL_MAX_SECONDS // DAY_SECONDS} days")
+        return {
+            "paradexChain": _shortstring(self.paradex_chain, "paradexChain"),
+            "environment": _environment(self.environment),
+            "account": account,
+            "builder": builder,
+            "subaccounts": _subaccounts(account, self.subaccounts),
+            "nonce": _nonce(self.nonce),
+            "issuedAt": self.issued_at,
+        }
+
+    @classmethod
+    def from_message(cls, message: Mapping[str, Any]) -> BuilderApproval:
+        """Rebuild an approval from :meth:`to_message` output."""
+        return cls(
+            paradex_chain=message["paradexChain"],
+            environment=message["environment"],
+            account=message["account"],
+            builder=Builder.from_message(message["builder"]),
+            subaccounts=list(message["subaccounts"]),
+            nonce=message["nonce"],
+            issued_at=int(message["issuedAt"]),
+        )
+
+    def sign_snip12(self, stark_private_key: str | int) -> list[str]:
+        """Not supported: the server accepts builder approvals signed with EIP-712 only."""
+        raise_value_error("builder approvals are signed with EIP-712 only")
 
 
 @dataclass(frozen=True)

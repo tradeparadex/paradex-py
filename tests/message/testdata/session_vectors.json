@@ -14,7 +14,8 @@
         "An enforced mint limit under a numeric ceiling is a number at or below it; under a \"none\" ceiling it may be anything valid. An unenforced one is \"none\" under any ceiling. Each mint market must be listed by the ceiling, matched by a ceiling pattern, or covered by a [\"*\"] ceiling; a mint pattern is covered only by the same pattern.",
         "SessionMint's WebAuthn challenge is the 32-byte SNIP-12 message hash, base64url-encoded without padding (mintChallenge).",
         "EIP-712 signatures are 65-byte r||s||v with v in {27, 28} and low s. Stark signatures are [r, s] over the SNIP-12 message hash.",
-        "The keys below are public test keys: never use them for anything else."
+        "The keys below are public test keys: never use them for anything else.",
+        "BuilderApproval approves a builder without a session; only EIP-191 owners sign one. builder.expiresAt is required (non-zero), maxFeeRate is above zero with at most 8 decimal places, and issuedAt may not be ahead of server time (take it from /v1/system/time): an approval is not single-use, so its issuedAt is what a revoke is compared with."
     ],
     "keys": {
         "evmPrivateKey": "0x4c0883a69102937d6231471b5dbb6204fe5129617082792ae468d01a3f362318",
@@ -3311,6 +3312,406 @@
                 "messageHash": "0x4ab94c1d735558eacb3ae5bb715d623860f83fab5b07265b719cf007e557a79"
             },
             "mintChallenge": "BKuUwdc1VY6ss65btxXWI4YPg_q1sHJltxnPAH5Venk"
+        },
+        {
+            "name": "builder-approval",
+            "primaryType": "BuilderApproval",
+            "signer": "eip191",
+            "message": {
+                "paradexChain": "PRIVATE_SN_PARACLEAR_MAINNET",
+                "environment": "mainnet",
+                "account": "0x62cfa432ed8abe082192a9687dd569194596096f2ebd3d498df34c1ff2f14f",
+                "builder": {
+                    "account": "0x1b2c3d4e5f60718293a4b5c6d7e8f9012345678a9b0c1d2e3f405162738495",
+                    "maxFeeRate": "0.0005",
+                    "expiresAt": 1775001600
+                },
+                "subaccounts": [],
+                "nonce": "0x88888888888888888888888888888888",
+                "issuedAt": 1767225600
+            },
+            "eip712": {
+                "signatureChainId": 42161,
+                "typedData": {
+                    "domain": {
+                        "chainId": 42161,
+                        "name": "Paradex Session",
+                        "version": "1"
+                    },
+                    "message": {
+                        "account": "0x62cfa432ed8abe082192a9687dd569194596096f2ebd3d498df34c1ff2f14f",
+                        "builder": {
+                            "account": "0x1b2c3d4e5f60718293a4b5c6d7e8f9012345678a9b0c1d2e3f405162738495",
+                            "expiresAt": 1775001600,
+                            "maxFeeRate": "0.0005"
+                        },
+                        "environment": "mainnet",
+                        "issuedAt": 1767225600,
+                        "nonce": "0x88888888888888888888888888888888",
+                        "paradexChain": "PRIVATE_SN_PARACLEAR_MAINNET",
+                        "subaccounts": []
+                    },
+                    "primaryType": "BuilderApproval",
+                    "types": {
+                        "Builder": [
+                            {
+                                "name": "account",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxFeeRate",
+                                "type": "string"
+                            },
+                            {
+                                "name": "expiresAt",
+                                "type": "uint64"
+                            }
+                        ],
+                        "BuilderApproval": [
+                            {
+                                "name": "paradexChain",
+                                "type": "string"
+                            },
+                            {
+                                "name": "environment",
+                                "type": "string"
+                            },
+                            {
+                                "name": "account",
+                                "type": "string"
+                            },
+                            {
+                                "name": "builder",
+                                "type": "Builder"
+                            },
+                            {
+                                "name": "subaccounts",
+                                "type": "string[]"
+                            },
+                            {
+                                "name": "nonce",
+                                "type": "string"
+                            },
+                            {
+                                "name": "issuedAt",
+                                "type": "uint64"
+                            }
+                        ],
+                        "EIP712Domain": [
+                            {
+                                "name": "name",
+                                "type": "string"
+                            },
+                            {
+                                "name": "version",
+                                "type": "string"
+                            },
+                            {
+                                "name": "chainId",
+                                "type": "uint256"
+                            }
+                        ]
+                    }
+                },
+                "domainSeparator": "0x3a79312ff3885a46e192b86aebb36fbd075e4e3a8a330439b9b9f60f4349480f",
+                "structHash": "0xaad90014f3dc3b853ec6ebb1e0caa0a49f42c4bb6b93aa141cf083d3b30834b0",
+                "digest": "0x8f1e84e61cf9f993cdbf4b48ac4e33bd036ca0d2b8fb0b55fc43aa32cc247d43",
+                "signature": "0x58e7067ca301c8ae976c9bb7d0bf08e32e2425c351d7cbb6d64499513af54a90523404834ee0f1a8ffd0cc7fd37d9ebcfb620d972df1f33b5cd8de13fc592c061c"
+            },
+            "snip12": {
+                "typedData": {
+                    "domain": {
+                        "chainId": "PRIVATE_SN_PARACLEAR_MAINNET",
+                        "name": "Paradex Session",
+                        "revision": "1",
+                        "version": "1"
+                    },
+                    "message": {
+                        "account": "0x62cfa432ed8abe082192a9687dd569194596096f2ebd3d498df34c1ff2f14f",
+                        "builder": {
+                            "account": "0x1b2c3d4e5f60718293a4b5c6d7e8f9012345678a9b0c1d2e3f405162738495",
+                            "expiresAt": "1775001600",
+                            "maxFeeRate": "0.0005"
+                        },
+                        "environment": "mainnet",
+                        "issuedAt": "1767225600",
+                        "nonce": "0x88888888888888888888888888888888",
+                        "paradexChain": "PRIVATE_SN_PARACLEAR_MAINNET",
+                        "subaccounts": []
+                    },
+                    "primaryType": "BuilderApproval",
+                    "types": {
+                        "Builder": [
+                            {
+                                "name": "account",
+                                "type": "ContractAddress"
+                            },
+                            {
+                                "name": "maxFeeRate",
+                                "type": "string"
+                            },
+                            {
+                                "name": "expiresAt",
+                                "type": "timestamp"
+                            }
+                        ],
+                        "BuilderApproval": [
+                            {
+                                "name": "paradexChain",
+                                "type": "shortstring"
+                            },
+                            {
+                                "name": "environment",
+                                "type": "shortstring"
+                            },
+                            {
+                                "name": "account",
+                                "type": "ContractAddress"
+                            },
+                            {
+                                "name": "builder",
+                                "type": "Builder"
+                            },
+                            {
+                                "name": "subaccounts",
+                                "type": "ContractAddress*"
+                            },
+                            {
+                                "name": "nonce",
+                                "type": "felt"
+                            },
+                            {
+                                "name": "issuedAt",
+                                "type": "timestamp"
+                            }
+                        ],
+                        "StarknetDomain": [
+                            {
+                                "name": "name",
+                                "type": "shortstring"
+                            },
+                            {
+                                "name": "version",
+                                "type": "shortstring"
+                            },
+                            {
+                                "name": "chainId",
+                                "type": "shortstring"
+                            },
+                            {
+                                "name": "revision",
+                                "type": "shortstring"
+                            }
+                        ]
+                    }
+                },
+                "domainHash": "0x754ed8f2b3555aa6168733b3b1ffffd1f17bd7693fe5778295acd4ce43b5b50",
+                "structHash": "0x4ed59bafff9f7f5e87c7a8ddbe04a63430fb7a7e7c618ae3c39197ca0014650",
+                "messageHash": "0x343fd45ae07b8066ae025fbb4adc969f31769fb27f61dc2d3f578e65040ab6f"
+            }
+        },
+        {
+            "name": "builder-approval-subaccount",
+            "primaryType": "BuilderApproval",
+            "signer": "eip191",
+            "message": {
+                "paradexChain": "PRIVATE_SN_PARACLEAR_MAINNET",
+                "environment": "mainnet",
+                "account": "0x62cfa432ed8abe082192a9687dd569194596096f2ebd3d498df34c1ff2f14f",
+                "builder": {
+                    "account": "0x1b2c3d4e5f60718293a4b5c6d7e8f9012345678a9b0c1d2e3f405162738495",
+                    "maxFeeRate": "0.00025",
+                    "expiresAt": 1782777600
+                },
+                "subaccounts": [
+                    "0x12f4e6a8b0c2d4e6f8091b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f6"
+                ],
+                "nonce": "0x99999999999999999999999999999999",
+                "issuedAt": 1767225600
+            },
+            "eip712": {
+                "signatureChainId": 1,
+                "typedData": {
+                    "domain": {
+                        "chainId": 1,
+                        "name": "Paradex Session",
+                        "version": "1"
+                    },
+                    "message": {
+                        "account": "0x62cfa432ed8abe082192a9687dd569194596096f2ebd3d498df34c1ff2f14f",
+                        "builder": {
+                            "account": "0x1b2c3d4e5f60718293a4b5c6d7e8f9012345678a9b0c1d2e3f405162738495",
+                            "expiresAt": 1782777600,
+                            "maxFeeRate": "0.00025"
+                        },
+                        "environment": "mainnet",
+                        "issuedAt": 1767225600,
+                        "nonce": "0x99999999999999999999999999999999",
+                        "paradexChain": "PRIVATE_SN_PARACLEAR_MAINNET",
+                        "subaccounts": [
+                            "0x12f4e6a8b0c2d4e6f8091b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f6"
+                        ]
+                    },
+                    "primaryType": "BuilderApproval",
+                    "types": {
+                        "Builder": [
+                            {
+                                "name": "account",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxFeeRate",
+                                "type": "string"
+                            },
+                            {
+                                "name": "expiresAt",
+                                "type": "uint64"
+                            }
+                        ],
+                        "BuilderApproval": [
+                            {
+                                "name": "paradexChain",
+                                "type": "string"
+                            },
+                            {
+                                "name": "environment",
+                                "type": "string"
+                            },
+                            {
+                                "name": "account",
+                                "type": "string"
+                            },
+                            {
+                                "name": "builder",
+                                "type": "Builder"
+                            },
+                            {
+                                "name": "subaccounts",
+                                "type": "string[]"
+                            },
+                            {
+                                "name": "nonce",
+                                "type": "string"
+                            },
+                            {
+                                "name": "issuedAt",
+                                "type": "uint64"
+                            }
+                        ],
+                        "EIP712Domain": [
+                            {
+                                "name": "name",
+                                "type": "string"
+                            },
+                            {
+                                "name": "version",
+                                "type": "string"
+                            },
+                            {
+                                "name": "chainId",
+                                "type": "uint256"
+                            }
+                        ]
+                    }
+                },
+                "domainSeparator": "0x829c2852d73f9458839f9c1e8d096d73c457b487e19241fa0d514ddace4a0a5d",
+                "structHash": "0x3e4f9aa58b98ddd078ae508fd3f965222a715ce9df77039a296ff05f5a123d1e",
+                "digest": "0xb3bf8379811ec70d3dd5eed80ace3f9748652d3cd0fbb51eadec59f1bcc7ff1b",
+                "signature": "0x7730964156c71000ff46a8ad1a68a782949c61fd42fd4c14242bcb1358db800b05d282edec83270da93bb0f8d991f568ae8f7dde07f0feebf46427f475368b5a1c"
+            },
+            "snip12": {
+                "typedData": {
+                    "domain": {
+                        "chainId": "PRIVATE_SN_PARACLEAR_MAINNET",
+                        "name": "Paradex Session",
+                        "revision": "1",
+                        "version": "1"
+                    },
+                    "message": {
+                        "account": "0x62cfa432ed8abe082192a9687dd569194596096f2ebd3d498df34c1ff2f14f",
+                        "builder": {
+                            "account": "0x1b2c3d4e5f60718293a4b5c6d7e8f9012345678a9b0c1d2e3f405162738495",
+                            "expiresAt": "1782777600",
+                            "maxFeeRate": "0.00025"
+                        },
+                        "environment": "mainnet",
+                        "issuedAt": "1767225600",
+                        "nonce": "0x99999999999999999999999999999999",
+                        "paradexChain": "PRIVATE_SN_PARACLEAR_MAINNET",
+                        "subaccounts": [
+                            "0x12f4e6a8b0c2d4e6f8091b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f6"
+                        ]
+                    },
+                    "primaryType": "BuilderApproval",
+                    "types": {
+                        "Builder": [
+                            {
+                                "name": "account",
+                                "type": "ContractAddress"
+                            },
+                            {
+                                "name": "maxFeeRate",
+                                "type": "string"
+                            },
+                            {
+                                "name": "expiresAt",
+                                "type": "timestamp"
+                            }
+                        ],
+                        "BuilderApproval": [
+                            {
+                                "name": "paradexChain",
+                                "type": "shortstring"
+                            },
+                            {
+                                "name": "environment",
+                                "type": "shortstring"
+                            },
+                            {
+                                "name": "account",
+                                "type": "ContractAddress"
+                            },
+                            {
+                                "name": "builder",
+                                "type": "Builder"
+                            },
+                            {
+                                "name": "subaccounts",
+                                "type": "ContractAddress*"
+                            },
+                            {
+                                "name": "nonce",
+                                "type": "felt"
+                            },
+                            {
+                                "name": "issuedAt",
+                                "type": "timestamp"
+                            }
+                        ],
+                        "StarknetDomain": [
+                            {
+                                "name": "name",
+                                "type": "shortstring"
+                            },
+                            {
+                                "name": "version",
+                                "type": "shortstring"
+                            },
+                            {
+                                "name": "chainId",
+                                "type": "shortstring"
+                            },
+                            {
+                                "name": "revision",
+                                "type": "shortstring"
+                            }
+                        ]
+                    }
+                },
+                "domainHash": "0x754ed8f2b3555aa6168733b3b1ffffd1f17bd7693fe5778295acd4ce43b5b50",
+                "structHash": "0x7d9ec8353dcb5b5cfa8fb8846b8d5135d17412511dc75ca19898f612b0800be",
+                "messageHash": "0x6d443e1253d411c1b33c12a69f8b9b5e3d3fa9de7f414e445d7ce284f25016b"
+            }
         }
     ]
 }
