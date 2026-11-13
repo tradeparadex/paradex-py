@@ -1,3 +1,4 @@
+import time
 import types
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -25,11 +26,24 @@ from paradex_py.message.siwe import (
 )
 from paradex_py.utils import raise_value_error
 
-# JSON-RPC error a full node proxy returns when it does not accept the
-# account's JWT for RPC calls. The proxy refuses before forwarding, so the
-# call never reached the node and is safe to resend.
+# JSON-RPC errors a full node proxy returns when it does not accept the
+# account's JWT for an RPC call: JWT auth for RPC is off, the token is not the
+# owner's (a subkey or session token), or the account is not deployed yet. The
+# proxy refuses before forwarding, so the call never reached the node and is
+# safe to resend.
 _RPC_JWT_REFUSED_CODE = -32000
-_RPC_JWT_REFUSED_MESSAGE = "invalid token usage"
+_RPC_JWT_REFUSED_MESSAGES = frozenset(
+    {
+        "invalid token usage",
+        "session tokens cannot read owner data",
+        "token pubkey is not a secp256k1 key",
+        "token pubkey is not the account owner",
+        "account owner is not an Eip191 signer",
+    }
+)
+# After a refusal, RPC calls skip the JWT for this long, then try it again: the
+# refusal can clear, for example once the account is deployed.
+RPC_JWT_RETRY_AFTER_SECONDS = 60.0
 
 
 def _is_rpc_jwt_refusal(body: Any) -> bool:
@@ -40,7 +54,7 @@ def _is_rpc_jwt_refusal(body: Any) -> bool:
         if (
             isinstance(error, dict)
             and error.get("code") == _RPC_JWT_REFUSED_CODE
-            and error.get("message") == _RPC_JWT_REFUSED_MESSAGE
+            and error.get("message") in _RPC_JWT_REFUSED_MESSAGES
         ):
             return True
     return False
@@ -127,9 +141,9 @@ class EvmAccount:
         # SignerSignature via secp256k1/EIP-191 on-chain.
         self.l2_chain_id = int_from_bytes(config.starknet_chain_id.encode())
         self.jwt_token: str | None = None
-        # Cleared for good once the full node refuses the JWT; see
-        # _apply_fullnode_jwt_patch.
-        self._send_jwt_to_rpc = True
+        # Monotonic time before which RPC calls skip the JWT, set when the
+        # full node refuses it; see _apply_fullnode_jwt_patch.
+        self._rpc_jwt_skip_until = 0.0
         self.starknet = self._build_starknet_account()
         self._apply_fullnode_jwt_patch(self.starknet.client)
 
@@ -137,10 +151,10 @@ class EvmAccount:
         """Attach the account's JWT to fullnode RPC requests.
 
         An EVM account authenticates with the ``Authorization: Bearer <jwt>``
-        token obtained during SIWE auth and sends it on each RPC call. A full
-        node that does not accept that token for RPC answers "invalid token
-        usage"; the call is then resent once without it, and this account sends
-        no JWT on later RPC calls.
+        token obtained during SIWE auth and sends it on each RPC call. When the
+        full node refuses that token (see ``_RPC_JWT_REFUSED_MESSAGES``), the
+        call is resent once without it, and this account's RPC calls skip the
+        JWT for ``RPC_JWT_RETRY_AFTER_SECONDS`` before trying it again.
         """
         current_self = self
 
@@ -167,10 +181,11 @@ class EvmAccount:
                 await self.handle_request_error(response)
                 return await response.json()
 
-            jwt = current_self.jwt_token if current_self._send_jwt_to_rpc else None
+            skip_jwt = time.monotonic() < current_self._rpc_jwt_skip_until
+            jwt = None if skip_jwt else current_self.jwt_token
             body = await send(jwt)
             if jwt and _is_rpc_jwt_refusal(body):
-                current_self._send_jwt_to_rpc = False
+                current_self._rpc_jwt_skip_until = time.monotonic() + RPC_JWT_RETRY_AFTER_SECONDS
                 body = await send(None)
             return body
 
