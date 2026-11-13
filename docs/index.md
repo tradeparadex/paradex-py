@@ -111,8 +111,8 @@ TWAPs and untriggered stops cancelled and keeps only its resting orders.
 Every grant states each limit: a positive decimal, or `"none"` for no cap from this session.
 `markets` lists symbols or patterns, or is `["*"]` for every permitted market. Empty values are
 refused before signing. `Limits()`, the default, states no caps: every limit `"none"` and markets
-`["*"]`. While the server enforces no session limits, that is the only form it accepts, and it also
-refuses grants that approve a builder. A grant that approves a builder can't include `trade:block` or
+`["*"]`. While the server enforces no session limits, that is the only form it accepts, for grants
+that approve a builder too. A grant that approves a builder can't include `trade:block` or
 `account:settings`. `Limits.caps` can refuse limits
 above your own ceilings before signing; there are none by default, and the server enforces its own.
 
@@ -192,6 +192,38 @@ await session.connect_ws()
       show_root_heading: true
 
 ::: paradex_py.message.session.SessionGrant
+    handler: python
+    options:
+      show_source: false
+      show_root_heading: true
+
+### Builder approvals
+
+An EVM owner can approve a builder's fee without opening a session: `BuilderApproval` names the
+builder, its `max_fee_rate` (above 0, at most 8 decimal places and at most `0.0025`) and a required
+`expires_at` at most 180 days out, and `register_builder_approval` has the owner sign it with
+EIP-712 and sends it to `POST /v2/builders/approvals`, which needs no JWT. The server refuses an
+`issuedAt` in its future, so take it from the server's clock. The owner revokes the approval with
+`DELETE /v2/builders/approvals/{builder_account}`.
+
+```python
+from paradex_py.api.api_client import ParadexApiClient
+from paradex_py.message.session import Builder, BuilderApproval
+from paradex_py.session_accounts import LocalOwnerSigner, register_builder_approval
+
+server_time = int(ParadexApiClient(env="testnet").fetch_system_time()["server_time"]) // 1000
+approval = BuilderApproval.new(
+    server_time=server_time,
+    ttl_seconds=30 * 24 * 3600,
+    paradex_chain="PRIVATE_SN_PARACLEAR_TESTNET",
+    environment="testnet",
+    account="0x<main-account>",
+    builder=Builder("0x<builder-account>", "0.0005"),
+)
+register_builder_approval("testnet", approval, LocalOwnerSigner("0x<owner-eth-key>"))
+```
+
+::: paradex_py.message.session.BuilderApproval
     handler: python
     options:
       show_source: false

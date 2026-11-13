@@ -39,7 +39,7 @@ from paradex_py.api.api_client import ParadexApiClient
 from paradex_py.api.http_client import HttpClient, HttpMethod
 from paradex_py.api.ws_client import ParadexWebsocketClient
 from paradex_py.environment import Environment, _validate_env
-from paradex_py.message.session import SessionGrant, grant_environment, sign_eip712_typed_data
+from paradex_py.message.session import BuilderApproval, SessionGrant, grant_environment, sign_eip712_typed_data
 from paradex_py.utils import raise_value_error
 
 if TYPE_CHECKING:
@@ -55,6 +55,7 @@ __all__ = [
     "SessionRevokeError",
     "SessionWebsocketError",
     "new_session_key",
+    "register_builder_approval",
     "register_session",
 ]
 
@@ -237,6 +238,74 @@ def register_session(
             client.client.close()
 
 
+def register_builder_approval(
+    env: Environment,
+    approval: BuilderApproval,
+    owner_signer: OwnerSigner,
+    http_client: HttpClient | None = None,
+    api_base_url: str | None = None,
+) -> dict:
+    """Have an EVM owner sign ``approval`` (EIP-712) and register it with ``POST /v2/builders/approvals``.
+
+    .. warning::
+        Experimental: this SDK API may still change.
+
+    The approval lets the builder charge the owner's accounts up to ``maxFeeRate`` until
+    ``expiresAt``, with no session. The request needs no JWT. Take ``issuedAt`` from the server's
+    clock, since the server refuses one in its future::
+
+        server_time = ParadexApiClient(env).fetch_system_time()["server_time"]
+        approval = BuilderApproval.new(
+            server_time=int(server_time) // 1000,
+            ttl_seconds=30 * 24 * 3600,
+            paradex_chain=config.starknet_chain_id,
+            environment=grant_environment(env),
+            account=account_address,
+            builder=Builder("0x<builder account>", "0.0005"),
+        )
+        register_builder_approval(env, approval, LocalOwnerSigner(eth_private_key))
+
+    Revoke it with ``DELETE /v2/builders/approvals/{builder_account}``.
+
+    Args:
+        env: Environment.
+        approval: The approval to register. Its ``environment`` must match ``env``.
+        owner_signer: Signs the EIP-712 approval; the owner's key never reaches the SDK.
+        http_client: Optional HTTP client.
+        api_base_url: Optional ``/v1`` base URL override; ``/v2`` is derived from it.
+
+    Returns:
+        The server's response.
+    """
+    _validate_env(env, "register_builder_approval")
+    _check_grant_environment(env, approval)
+    client = http_client or HttpClient()
+    base = api_base_url or f"https://api.{env}.paradex.trade/v1"
+    try:
+        chain_id = owner_signer.signature_chain_id
+        typed_data = approval.eip712_typed_data(chain_id)
+        signature = owner_signer.sign_typed_data(typed_data)
+        if isinstance(signature, str) and len(signature) > _EOA_SIGNATURE_HEX_LENGTH:
+            raise_value_error(
+                "register_builder_approval: the signature is longer than an EOA's 65 bytes; contract wallets"
+                " cannot sign builder approvals"
+            )
+        return client.request(
+            url=f"{base.replace('/v1', '/v2')}/builders/approvals",
+            http_method=HttpMethod.POST,
+            payload={
+                "approval": typed_data["message"],
+                "signature": signature,
+                "signature_type": "eip712",
+                "signature_chain_id": chain_id,
+            },
+            headers=client.client.headers,
+        )
+    finally:
+        if http_client is None:
+            client.client.close()
+
+
 def _listed_address(entry: Any) -> int | None:
     """A listed sub-account's address as an int, or None for an entry that does not hold one."""
     address = entry.get("address") if isinstance(entry, dict) else None
@@ -275,7 +344,7 @@ def _check_subaccounts_listed(client: HttpClient, v2_base: str, owner_address: s
         )
 
 
-def _check_grant_environment(env: Environment, grant: SessionGrant) -> None:
+def _check_grant_environment(env: Environment, grant: SessionGrant | BuilderApproval) -> None:
     expected = grant_environment(env)
     if grant.environment != expected:
         raise_value_error(f"grant environment is {grant.environment!r}; the {env!r} environment needs {expected!r}")

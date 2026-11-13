@@ -23,7 +23,7 @@ from paradex_py.common.order import Order, OrderSide, OrderType
 from paradex_py.environment import TESTNET
 from paradex_py.message.auth import build_auth_message
 from paradex_py.message.order import build_order_message
-from paradex_py.message.session import Builder, Limits, SessionGrant
+from paradex_py.message.session import Builder, BuilderApproval, Limits, SessionGrant
 from paradex_py.session_accounts import (
     SESSION_AUTH_MAX_SECONDS,
     LocalOwnerSigner,
@@ -32,6 +32,7 @@ from paradex_py.session_accounts import (
     SessionRejectedError,
     SessionRevokeError,
     new_session_key,
+    register_builder_approval,
     register_session,
 )
 
@@ -990,6 +991,66 @@ def test_register_session_surfaces_server_refusal():
     client = HttpClient(http_client=httpx.Client(transport=httpx.MockTransport(handler)))
     with pytest.raises(ValueError, match="INVALID_GRANT"):
         register_session(TESTNET, _grant(Clock(), subaccounts=[]), signer, http_client=client)
+
+
+def _builder_approval(**overrides) -> BuilderApproval:
+    fields = {
+        "paradex_chain": CHAIN,
+        "environment": "testnet",
+        "account": MAIN,
+        "builder": Builder("0xb1", "0.0005", 1_700_086_400),
+        "issued_at": 1_700_000_000,
+    }
+    fields.update(overrides)
+    return BuilderApproval(**fields)
+
+
+def test_register_builder_approval_posts_the_signed_approval():
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(201, json={"builder_account": "0xb1"})
+
+    owner = EthAccount.create()
+    signer = LocalOwnerSigner(owner.key.hex(), signature_chain_id=42161)
+    approval = _builder_approval()
+    client = HttpClient(http_client=httpx.Client(transport=httpx.MockTransport(handler)))
+
+    assert register_builder_approval(TESTNET, approval, signer, http_client=client) == {"builder_account": "0xb1"}
+
+    (request,) = seen
+    assert request.method == "POST"
+    assert str(request.url) == "https://api.testnet.paradex.trade/v2/builders/approvals"
+    assert "Authorization" not in request.headers
+    body = json.loads(request.content)
+    assert body.keys() == {"approval", "signature", "signature_type", "signature_chain_id"}
+    assert body["approval"] == approval.to_message()
+    assert body["signature_type"] == "eip712"
+    assert body["signature_chain_id"] == 42161
+    signable = encode_typed_data(full_message=approval.eip712_typed_data(42161))
+    assert EthAccount.recover_message(signable, signature=body["signature"]) == owner.address
+
+
+def test_register_builder_approval_refuses_before_signing():
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(201, json={})
+
+    client = HttpClient(http_client=httpx.Client(transport=httpx.MockTransport(handler)))
+    signer = _CountingSigner()
+    with pytest.raises(ValueError, match="environment"):
+        register_builder_approval("prod", _builder_approval(), signer, http_client=client)
+    with pytest.raises(ValueError, match=r"at most 0\.0025"):
+        register_builder_approval(
+            TESTNET, _builder_approval(builder=Builder("0xb1", "0.003", 1_700_000_001)), signer, http_client=client
+        )
+    with pytest.raises(ValueError, match="65 bytes"):
+        register_builder_approval(TESTNET, _builder_approval(), _CountingSigner("0x" + "00" * 66), http_client=client)
+    assert signer.calls == 0
+    assert not seen
 
 
 class _CountingSigner:
