@@ -1005,19 +1005,25 @@ def _builder_approval(**overrides) -> BuilderApproval:
     return BuilderApproval(**fields)
 
 
+APPROVAL_RESPONSE = {
+    "accounts": [MAIN],
+    "approval": {"builder": {"account": "0xb1"}, "max_fee_rate": "0.0005", "expires_at": 1_700_086_400_000},
+}
+
+
 def test_register_builder_approval_posts_the_signed_approval():
     seen: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         seen.append(request)
-        return httpx.Response(201, json={"builder_account": "0xb1"})
+        return httpx.Response(200, json=APPROVAL_RESPONSE)
 
     owner = EthAccount.create()
     signer = LocalOwnerSigner(owner.key.hex(), signature_chain_id=42161)
     approval = _builder_approval()
     client = HttpClient(http_client=httpx.Client(transport=httpx.MockTransport(handler)))
 
-    assert register_builder_approval(TESTNET, approval, signer, http_client=client) == {"builder_account": "0xb1"}
+    assert register_builder_approval(TESTNET, approval, signer, http_client=client) == APPROVAL_RESPONSE
 
     (request,) = seen
     assert request.method == "POST"
@@ -1440,7 +1446,7 @@ def test_register_session_ignores_malformed_listing_entries():
 
 @pytest.mark.parametrize(
     "overrides",
-    [{"subaccounts": []}, {}, {"builder": Builder("0xb0", "0.001", 10**9), "limits": LIMITS, "subaccounts": []}],
+    [{"subaccounts": []}, {}, {"builder": Builder("0xb0", "0.001", 0), "limits": LIMITS, "subaccounts": []}],
     ids=["first-party", "with-subaccounts", "with-builder"],
 )
 def test_register_session_leaves_onboarding_fields_to_the_server(overrides):
@@ -1456,3 +1462,23 @@ def test_register_session_leaves_onboarding_fields_to_the_server(overrides):
         check_subaccounts=False,
     )
     assert len(server.by_path("/v2/sessions")) == 1
+
+
+def test_register_builder_approval_refuses_a_foreign_subaccount_before_signing():
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        if request.url.path.endswith("/onboarding/subaccounts"):
+            return httpx.Response(200, json={"results": [{"address": "0x77", "index": 0}]})
+        return httpx.Response(200, json=APPROVAL_RESPONSE)
+
+    owner = EthAccount.create()
+    signer = LocalOwnerSigner(owner.key.hex())
+    client = HttpClient(http_client=httpx.Client(transport=httpx.MockTransport(handler)))
+    with pytest.raises(ValueError, match=r"register_builder_approval: .* are not sub-accounts"):
+        register_builder_approval(TESTNET, _builder_approval(subaccounts=["0x99"]), signer, http_client=client)
+    assert [r.url.path for r in seen] == ["/v2/onboarding/subaccounts"]
+
+    register_builder_approval(TESTNET, _builder_approval(subaccounts=["0x77"]), signer, http_client=client)
+    assert seen[-1].url.path == "/v2/builders/approvals"
