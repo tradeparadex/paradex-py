@@ -154,7 +154,7 @@ class EvmAccount:
         token obtained during SIWE auth and sends it on each RPC call. When the
         full node refuses that token (see ``_RPC_JWT_REFUSED_MESSAGES``), the
         call is resent once without it, and this account's RPC calls skip the
-        JWT for ``RPC_JWT_RETRY_AFTER_SECONDS`` before trying it again.
+        JWT until ``RPC_JWT_RETRY_AFTER_SECONDS`` pass or the token is refreshed.
         """
         current_self = self
 
@@ -267,4 +267,9 @@ class EvmAccount:
         }
 
     def set_jwt_token(self, jwt_token: str) -> None:
+        # A new token is tried on RPC calls again, even inside a skip window:
+        # the refusal may have cleared (the account is now deployed, or the
+        # full node now accepts JWTs for RPC).
+        if jwt_token != self.jwt_token:
+            self._rpc_jwt_skip_until = 0.0
         self.jwt_token = jwt_token

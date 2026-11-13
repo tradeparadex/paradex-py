@@ -131,6 +131,33 @@ async def test_skips_the_jwt_after_a_refusal_then_tries_it_again():
 
 
 @pytest.mark.asyncio
+async def test_a_refreshed_jwt_is_sent_again_and_accepted():
+    account = _account()
+    session = _session(UNDEPLOYED, NONCE, NONCE, NONCE)
+
+    with patch.object(evm_account.time, "monotonic", return_value=1000.0):
+        assert await _call(account, session) == NONCE
+        await _call(account, session)
+        account.set_jwt_token("header.payload.refreshed")
+        assert await _call(account, session) == NONCE
+
+    assert _auth_headers(session) == [BEARER, None, None, "Bearer header.payload.refreshed"]
+
+
+@pytest.mark.asyncio
+async def test_setting_the_same_jwt_keeps_the_skip():
+    account = _account()
+    session = _session(UNDEPLOYED, NONCE, NONCE)
+
+    with patch.object(evm_account.time, "monotonic", return_value=1000.0):
+        await _call(account, session)
+        account.set_jwt_token(TOKEN)
+        await _call(account, session)
+
+    assert _auth_headers(session) == [BEARER, None, None]
+
+
+@pytest.mark.asyncio
 async def test_the_skip_is_per_account():
     refused, other = _account(), _account()
     session = _session(AUTH_OFF, NONCE, NONCE)
