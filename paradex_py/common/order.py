@@ -1,11 +1,48 @@
+import re
 from decimal import Decimal
 from enum import Enum
 from typing import Any
 
+from starknet_py.constants import FIELD_PRIME
+
 from paradex_py.api.generated.responses import OrderFlag
-from paradex_py.utils import time_now_milli_secs
+from paradex_py.utils import raise_value_error, time_now_milli_secs
 
 decimal_zero = Decimal(0)
+
+# Builder fee rates are signed at the same 8-decimal scale as sizes and prices.
+_CHAIN_DECIMALS = 8
+# The address spelling the server accepts for a builder.
+_ADDRESS = re.compile(r"^0x[0-9a-fA-F]{1,64}$")
+
+
+def chain_builder_fee_rate(rate: Decimal) -> str:
+    """Scale a builder fee rate to its signed integer ("0.0005" -> "50000").
+
+    The rate is a fraction of the fill's notional, so it must be above 0 with at most 8
+    decimal places; a finer rate would be truncated and sign a different fee than requested.
+    """
+    if not isinstance(rate, Decimal) or not rate.is_finite() or rate <= 0:
+        raise_value_error(f"builder_fee_rate must be a Decimal above 0, got {rate!r}")
+    scaled = rate.scaleb(_CHAIN_DECIMALS)
+    if scaled != scaled.to_integral_value():
+        raise_value_error(f"builder_fee_rate allows at most {_CHAIN_DECIMALS} decimal places, got {rate}")
+    return str(int(scaled))
+
+
+def validate_builder(builder: str | None, builder_fee_rate: Decimal | None) -> str | None:
+    """Check a builder and its fee rate are given together, with a valid address and rate.
+
+    Returns the builder in canonical ``0x`` form, or ``None`` for no builder.
+    """
+    if not builder and builder_fee_rate is None:
+        return None
+    if not builder or builder_fee_rate is None:
+        raise_value_error("builder and builder_fee_rate must be set together")
+    if not isinstance(builder, str) or not _ADDRESS.match(builder) or not 0 < int(builder, 16) < FIELD_PRIME:
+        raise_value_error(f"builder must be a non-zero 0x hex account address, got {builder!r}")
+    chain_builder_fee_rate(builder_fee_rate)
+    return hex(int(builder, 16))
 
 
 class OrderAction(Enum):
@@ -89,7 +126,22 @@ class Order:
         trigger_price: Decimal | None = None,
         order_id: str | None = None,
         mmp: bool = False,  # Opt into Market Maker Protection; LIMIT orders on dated options and perps only
+        builder: str | None = None,
+        builder_fee_rate: Decimal | None = None,
     ) -> None:
+        """An order to sign and send.
+
+        ``builder`` (the builder's account address) and ``builder_fee_rate`` (a fraction of
+        each fill's notional, ``Decimal("0.0005")`` = 5 bps, at most 8 decimal places) attribute
+        the order to a builder, which charges that fee in USDC on every fill. Set both or
+        neither. An order naming a builder is signed as ``BuilderOrder`` instead of ``Order``.
+        The account must have approved the builder at a rate at least this high, for example
+        through a session grant carrying a :class:`~paradex_py.message.session.Builder`.
+        A builder is set when the order is created, so a modify (``order_id``) takes none.
+        """
+        builder = validate_builder(builder, builder_fee_rate)
+        if builder and order_id:
+            raise_value_error("builder is set when an order is created; a modify (order_id) takes none")
         ts = time_now_milli_secs()
         self.id = order_id
         self.account: str = ""
@@ -114,6 +166,8 @@ class Order:
         self.recv_window = recv_window
         self.stp = stp
         self.trigger_price = trigger_price
+        self.builder = builder
+        self.builder_fee_rate = builder_fee_rate
 
     def __repr__(self) -> str:
         ord_status = self.status.value
@@ -126,6 +180,7 @@ class Order:
         msg += f"recv_window={self.recv_window}" if self.recv_window else ""
         msg += f";id={self.id}" if self.id else ""
         msg += f";client_id={self.client_id}" if self.client_id else ""
+        msg += f";builder={self.builder}@{self.builder_fee_rate}" if self.builder else ""
         msg += f";last_action:{self.last_action}" if self.last_action != OrderAction.NAN else ""
         msg += f";signed with:{self.signature}@{self.signature_timestamp}"
         return msg
@@ -162,6 +217,9 @@ class Order:
             flags.append(OrderFlag.flags_mmp.value)
         if flags:
             order_dict["flags"] = flags
+        if self.builder and self.builder_fee_rate is not None:
+            order_dict["builder"] = self.builder
+            order_dict["builder_fee_rate"] = format(self.builder_fee_rate.normalize(), "f")
 
         # For modify order
         if self.id:
@@ -175,6 +233,12 @@ class Order:
 
     def chain_size(self) -> str:
         return str(int(self.size.scaleb(8)))
+
+    def chain_builder_fee_rate(self) -> str:
+        """The builder fee rate as signed in ``BuilderOrder`` ("0.0005" -> "50000")."""
+        if self.builder_fee_rate is None:
+            raise_value_error("order names no builder")
+        return chain_builder_fee_rate(self.builder_fee_rate)
 
     def is_limit_type(self) -> bool:
         return self.order_type in [
