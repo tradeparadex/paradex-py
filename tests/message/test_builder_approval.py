@@ -81,6 +81,19 @@ def test_refuses_what_the_server_refuses(builder, error):
         _approval(builder=builder).to_message()
 
 
+def test_new_refuses_a_ttl_the_backdate_would_expire():
+    for ttl in (30, 60):
+        with pytest.raises(ValueError, match="already be expired"):
+            BuilderApproval.new(
+                server_time=ISSUED,
+                ttl_seconds=ttl,
+                paradex_chain="PRIVATE_SN_PARACLEAR_MAINNET",
+                environment="mainnet",
+                account="0x62cf",
+                builder=Builder(BUILDER, "0.0005"),
+            )
+
+
 def test_accepts_the_limits():
     _approval(builder=Builder(BUILDER, "0.0025", ISSUED + BUILDER_APPROVAL_MAX_SECONDS)).to_message()
     _approval(builder=Builder(BUILDER, "0.00000001", ISSUED + 1)).to_message()

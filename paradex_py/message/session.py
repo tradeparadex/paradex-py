@@ -482,8 +482,9 @@ def _markets(markets: Sequence[str]) -> list[str]:
 class Builder:
     """The builder a grant approves, with its maximum fee rate. ``account="0x0"`` means none.
 
-    ``expires_at=0`` makes the approval follow the session's own expiry. A grant that approves a builder
-    follows the same limit rules as any other grant.
+    ``expires_at=0`` makes the approval follow the session's own expiry. A set builder's ``max_fee_rate``
+    is above 0, has at most 8 decimal places and is at most :data:`MAX_BUILDER_FEE_RATE`. A grant that
+    approves a builder follows the same limit rules as any other grant.
     """
 
     account: str = NO_BUILDER
@@ -500,8 +501,17 @@ class Builder:
             "maxFeeRate": _decimal(self.max_fee_rate, "builder.maxFeeRate"),
             "expiresAt": _uint(self.expires_at, "builder.expiresAt"),
         }
-        if message["account"] == NO_BUILDER and (message["maxFeeRate"] != "0" or message["expiresAt"] != 0):
-            raise_value_error('a grant without a builder uses builder {account: "0x0", maxFeeRate: "0", expiresAt: 0}')
+        if message["account"] == NO_BUILDER:
+            if message["maxFeeRate"] != "0" or message["expiresAt"] != 0:
+                raise_value_error(
+                    'a grant without a builder uses builder {account: "0x0", maxFeeRate: "0", expiresAt: 0}'
+                )
+            return message
+        rate = Decimal(message["maxFeeRate"])
+        if rate <= 0 or rate > Decimal(MAX_BUILDER_FEE_RATE):
+            raise_value_error(f"builder.maxFeeRate must be above 0 and at most {MAX_BUILDER_FEE_RATE}")
+        if len(message["maxFeeRate"].partition(".")[2]) > _BUILDER_FEE_RATE_PLACES:
+            raise_value_error(f"builder.maxFeeRate has more than {_BUILDER_FEE_RATE_PLACES} decimal places")
         return message
 
     @classmethod
@@ -635,6 +645,8 @@ class SessionGrant(_TypedMessage):
             raise_value_error("builder grants may not carry trade:block or account:settings")
         if self.builder.is_set and self.builder.expires_at and self.builder.expires_at > self.expires_at:
             raise_value_error("builder.expiresAt must not outlive the session")
+        if self.builder.is_set and self.builder.expires_at and self.builder.expires_at <= self.issued_at:
+            raise_value_error("builder.expiresAt must be after issuedAt")
         return {
             "paradexChain": _shortstring(self.paradex_chain, "paradexChain"),
             "environment": _environment(self.environment),
@@ -728,8 +740,13 @@ class BuilderApproval(_TypedMessage):
         ``expires_at`` is set here. ``issuedAt`` is stamped a minute before ``server_time``.
         """
         issued_at = _uint(server_time, "server_time") - _ISSUED_AT_BACKDATE_SECONDS
+        expires_at = issued_at + _uint(ttl_seconds, "ttl_seconds")
+        if expires_at <= server_time:
+            raise_value_error(
+                f"ttl_seconds must be over {_ISSUED_AT_BACKDATE_SECONDS}: the approval would already be expired"
+            )
         builder = kwargs.pop("builder")
-        builder = Builder(builder.account, builder.max_fee_rate, issued_at + _uint(ttl_seconds, "ttl_seconds"))
+        builder = Builder(builder.account, builder.max_fee_rate, expires_at)
         return cls(issued_at=issued_at, builder=builder, **kwargs)
 
     def to_message(self) -> dict[str, Any]:
@@ -740,12 +757,6 @@ class BuilderApproval(_TypedMessage):
             raise_value_error("a builder approval names a builder")
         if builder["account"] == account:
             raise_value_error("builder.account must not be the approving account")
-        rate = Decimal(builder["maxFeeRate"])
-        if rate <= 0 or rate > Decimal(MAX_BUILDER_FEE_RATE):
-            raise_value_error(f"builder.maxFeeRate must be above 0 and at most {MAX_BUILDER_FEE_RATE}")
-        _, _, places = builder["maxFeeRate"].partition(".")
-        if len(places) > _BUILDER_FEE_RATE_PLACES:
-            raise_value_error(f"builder.maxFeeRate has more than {_BUILDER_FEE_RATE_PLACES} decimal places")
         if builder["expiresAt"] == 0:
             raise_value_error("builder.expiresAt is required on a builder approval")
         _window(self.issued_at, builder["expiresAt"])

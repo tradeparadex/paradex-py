@@ -637,6 +637,26 @@ def test_limits_default_to_no_caps():
     assert grant.limits == Limits()
 
 
+@pytest.mark.parametrize(
+    ("rate", "error"),
+    [
+        ("0", "above 0"),
+        ("0.00251", r"at most 0\.0025"),
+        ("0.5", r"at most 0\.0025"),
+        ("0.000000001", "more than 8 decimal places"),
+    ],
+)
+def test_builder_grants_refuse_fee_rates_the_server_refuses(rate, error):
+    with pytest.raises(ValueError, match=error):
+        _grant(builder=Builder("0xb1", rate, 0)).to_message()
+
+
+def test_a_builder_expiry_must_be_after_issued_at():
+    with pytest.raises(ValueError, match=r"builder\.expiresAt must be after issuedAt"):
+        _grant(builder=Builder("0xb1", "0.0005", 1700000000)).to_message()
+    assert _grant(builder=Builder("0xb1", "0.0025", 1700000001)).to_message()["builder"]["maxFeeRate"] == "0.0025"
+
+
 def test_builder_grants_and_passkeys_follow_the_normal_limit_rules():
     assert _grant(limits=Limits()).to_message()["limits"]["maxLoss"] == "none"
     assert _grant(limits=Limits(max_loss="5000")).to_message()["limits"]["maxLoss"] == "5000"

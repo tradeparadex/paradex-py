@@ -244,6 +244,9 @@ def register_builder_approval(
     owner_signer: OwnerSigner,
     http_client: HttpClient | None = None,
     api_base_url: str | None = None,
+    *,
+    owner_address: str | None = None,
+    check_subaccounts: bool = True,
 ) -> dict:
     """Have an EVM owner sign ``approval`` (EIP-712) and register it with ``POST /v2/builders/approvals``.
 
@@ -273,15 +276,24 @@ def register_builder_approval(
         owner_signer: Signs the EIP-712 approval; the owner's key never reaches the SDK.
         http_client: Optional HTTP client.
         api_base_url: Optional ``/v1`` base URL override; ``/v2`` is derived from it.
+        owner_address: The owner wallet's address, for the sub-account check. Defaults to
+            ``owner_signer.address`` when the signer has one (``LocalOwnerSigner`` does).
+        check_subaccounts: Before the owner signs, refuse sub-accounts that are not the wallet's own EVM
+            sub-accounts, as :func:`register_session` does.
 
     Returns:
-        The server's response.
+        The server's response: the ``accounts`` the approval covers and the ``approval`` as stored.
     """
     _validate_env(env, "register_builder_approval")
     _check_grant_environment(env, approval)
     client = http_client or HttpClient()
     base = api_base_url or f"https://api.{env}.paradex.trade/v1"
+    v2_base = base.replace("/v1", "/v2")
     try:
+        if check_subaccounts and approval.subaccounts:
+            address = owner_address or getattr(owner_signer, "address", None)
+            if address:
+                _check_subaccounts_listed(client, v2_base, address, approval, "register_builder_approval")
         chain_id = owner_signer.signature_chain_id
         typed_data = approval.eip712_typed_data(chain_id)
         signature = owner_signer.sign_typed_data(typed_data)
@@ -291,7 +303,7 @@ def register_builder_approval(
                 " cannot sign builder approvals"
             )
         return client.request(
-            url=f"{base.replace('/v1', '/v2')}/builders/approvals",
+            url=f"{v2_base}/builders/approvals",
             http_method=HttpMethod.POST,
             payload={
                 "approval": typed_data["message"],
@@ -315,7 +327,13 @@ def _listed_address(entry: Any) -> int | None:
         return None
 
 
-def _check_subaccounts_listed(client: HttpClient, v2_base: str, owner_address: str, grant: SessionGrant) -> None:
+def _check_subaccounts_listed(
+    client: HttpClient,
+    v2_base: str,
+    owner_address: str,
+    grant: SessionGrant | BuilderApproval,
+    caller: str = "register_session",
+) -> None:
     """Refuse sub-accounts that are not the owner wallet's own EVM sub-accounts, before it signs.
 
     The server checks every listed sub-account again, so when the listing cannot be read the check is
@@ -329,17 +347,17 @@ def _check_subaccounts_listed(client: HttpClient, v2_base: str, owner_address: s
             headers=client.client.headers,
         )
     except Exception as e:
-        logging.getLogger(__name__).warning(f"register_session: sub-account listing unavailable, not checked: {e}")
+        logging.getLogger(__name__).warning(f"{caller}: sub-account listing unavailable, not checked: {e}")
         return
     results = listed.get("results") if isinstance(listed, dict) else None
     if not isinstance(results, list):
-        logging.getLogger(__name__).warning("register_session: sub-account listing unreadable, not checked")
+        logging.getLogger(__name__).warning(f"{caller}: sub-account listing unreadable, not checked")
         return
     owned = {address for entry in results if (address := _listed_address(entry)) is not None}
     unknown = [address for address in grant.to_message()["subaccounts"] if int(address, 16) not in owned]
     if unknown:
         raise_value_error(
-            f"register_session: {unknown} are not sub-accounts of {owner_address}'s account; a grant may list"
+            f"{caller}: {unknown} are not sub-accounts of {owner_address}'s account; a grant may list"
             " only the owner wallet's own EVM sub-accounts (see fetch_evm_subaccounts)"
         )
 
