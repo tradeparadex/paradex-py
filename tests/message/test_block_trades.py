@@ -1,5 +1,7 @@
 from decimal import Decimal
 
+import pytest
+
 from paradex_py.api.generated.requests import (
     BlockOfferInfo,
     BlockOfferRequest,
@@ -17,6 +19,7 @@ from paradex_py.api.generated.responses import (
     OrderType as DTOOrderType,
 )
 from paradex_py.message.block_trades import (
+    BLOCK_TRADE_BUILDER_PAYLOAD_VERSION,
     BLOCK_TRADE_PAYLOAD_VERSION,
     BlockTrade,
     BlockTradeOffer,
@@ -25,6 +28,7 @@ from paradex_py.message.block_trades import (
     block_trade_from_request,
     block_trade_from_response,
     block_trade_offer_from_request,
+    block_trade_version,
     build_block_trade_message,
     build_block_trade_offer_message,
 )
@@ -581,3 +585,167 @@ def test_block_trade_offer_from_request_binds_block_trade_id_and_empties_taker()
     assert trade.taker_order is not None
     assert trade.taker_order.account == ""
     assert trade.taker_order.size == Decimal(0)
+
+
+# Version 3: the pinned §12 trades with the taker paying builder 0x3333 at 4 bps on both legs.
+# The hashes are the server's reference vectors.
+_BUILDER = "0x3333"
+_BUILDER_RATE = Decimal("0.0004")
+_V3_HASH = "0x579815ae88465158604c041503a9b3d97ca9127cf5aff79e49da4e4ff79575b"
+_V2_HASH = "0x426f5dd572deed472db9aa9ac2469f4a456a3a72854b723065daf3ccc350812"
+
+
+def _builder_block_trade(**taker_overrides) -> BlockTrade:
+    def leg(market: str, price: str, size: str, overrides: dict) -> Trade:
+        taker = {"builder": _BUILDER, "builder_fee_rate": _BUILDER_RATE, **overrides}
+        return Trade.fill(
+            market,
+            Decimal(price),
+            Decimal(size),
+            BlockTradeOrder("0x1111", "SELL", "LIMIT", Decimal(size), Decimal(price)),
+            BlockTradeOrder("0x2222", "BUY", "LIMIT", Decimal(size), Decimal(price), **taker),
+        )
+
+    return BlockTrade(
+        nonce="1234567890",
+        expiration=1700000000000,
+        trades=[
+            leg("BTC-USD-PERP", "73000", "0.1", taker_overrides.get("BTC-USD-PERP", {})),
+            leg("ETH-USD-PERP", "3000", "1", taker_overrides.get("ETH-USD-PERP", {})),
+        ],
+    )
+
+
+def _message_hash(message, account: str) -> str:
+    from starknet_py.utils.typed_data import TypedData
+
+    return f"0x{TypedData.from_dict(message).message_hash(int(account, 16)):x}"
+
+
+def test_block_trade_version():
+    assert _builder_block_trade().version == BLOCK_TRADE_BUILDER_PAYLOAD_VERSION
+    assert block_trade_version([]) == BLOCK_TRADE_PAYLOAD_VERSION
+    maker, taker = _eth_perp_orders()
+    assert block_trade_version([Trade.fill("ETH-USD-PERP", Decimal(1), Decimal(1), maker, taker)]) == "2"
+    maker_only = BlockTradeOrder("0x1111", "SELL", "LIMIT", Decimal(1), Decimal(1), _BUILDER, _BUILDER_RATE)
+    one_builder = [Trade.fill("ETH-USD-PERP", Decimal(1), Decimal(1), maker_only, None)]
+    assert block_trade_version(one_builder) == "3", "one order naming a builder makes the payload version 3"
+    assert BlockTradeOffer("n", 1, "parent", one_builder).version == "3"
+
+
+def test_builder_block_trade_message_hash_pinned():
+    assert _message_hash(build_block_trade_message(1, _builder_block_trade()), "0x2222") == _V3_HASH
+
+
+def test_builder_block_trade_leaf_encoding():
+    message = build_block_trade_message(1, _builder_block_trade())
+    assert message["message"]["version"] == "3"
+    assert [f["name"] for f in message["types"]["BlockTradeOrder"]][-2:] == ["builder", "builder_fee_rate"]
+    leaf = message["message"]["trades"][0]
+    assert leaf["taker_order"] == {
+        "account": "0x2222",
+        "side": "1",
+        "type": "LIMIT",
+        "size": "10000000",
+        "price": "7300000000000",
+        "builder": "0x3333",
+        "builder_fee_rate": "40000",
+    }
+    # An order naming no builder signs both fields as 0, and so does an empty side.
+    assert leaf["maker_order"]["builder"] == "0"
+    assert leaf["maker_order"]["builder_fee_rate"] == "0"
+    offer = BlockTradeOffer("n", 1, "parent", _builder_block_trade().trades[:1])
+    offer.trades[0].maker_order = None
+    empty = build_block_trade_offer_message(1, offer)["message"]["trades"][0]["maker_order"]
+    assert empty == {
+        "account": "0",
+        "side": "0",
+        "type": "0",
+        "size": "0",
+        "price": "0",
+        "builder": "0",
+        "builder_fee_rate": "0",
+    }
+
+
+def test_builder_block_trade_binds_builder_and_rate():
+    base = _message_hash(build_block_trade_message(1, _builder_block_trade()), "0x2222")
+    padded = _builder_block_trade(**{"BTC-USD-PERP": {"builder": "0x0003333"}})
+    assert _message_hash(build_block_trade_message(1, padded), "0x2222") == base
+    other_builder = _builder_block_trade(**{"BTC-USD-PERP": {"builder": "0x4444"}})
+    assert _message_hash(build_block_trade_message(1, other_builder), "0x2222") != base
+    other_rate = _builder_block_trade(**{"ETH-USD-PERP": {"builder_fee_rate": Decimal("0.0005")}})
+    assert _message_hash(build_block_trade_message(1, other_rate), "0x2222") != base
+
+
+def test_block_trade_without_builder_keeps_v2_hash():
+    plain = _builder_block_trade(
+        **{m: {"builder": "", "builder_fee_rate": None} for m in ("BTC-USD-PERP", "ETH-USD-PERP")}
+    )
+    assert plain.version == BLOCK_TRADE_PAYLOAD_VERSION
+    v2 = _message_hash(build_block_trade_message(1, plain), "0x1111")
+    assert v2 == _V2_HASH
+
+
+def test_block_trade_refuses_a_version_its_trades_do_not_call_for():
+    """The server derives the version from the orders, so any other one could never verify."""
+    bt = _builder_block_trade()
+    bt.version = BLOCK_TRADE_PAYLOAD_VERSION
+    with pytest.raises(ValueError, match="version 3"):
+        build_block_trade_message(1, bt)
+    maker, taker = _eth_perp_orders()
+    trades = [Trade.fill("ETH-USD-PERP", Decimal(1), Decimal("0.1"), maker, taker)]
+    for version in (BLOCK_TRADE_BUILDER_PAYLOAD_VERSION, "1"):
+        with pytest.raises(ValueError, match="version 2"):
+            build_block_trade_message(1, BlockTrade("n", 1, trades, version=version))
+        with pytest.raises(ValueError, match="version 2"):
+            build_block_trade_offer_message(1, BlockTradeOffer("n", 1, "parent", trades, version=version))
+
+
+def test_block_trade_order_builder_validation():
+    with pytest.raises(ValueError, match="together"):
+        BlockTradeOrder("0x1", "BUY", "LIMIT", Decimal(1), Decimal(1), builder=_BUILDER)
+    with pytest.raises(ValueError, match="8 decimal places"):
+        BlockTradeOrder("0x1", "BUY", "LIMIT", Decimal(1), Decimal(1), _BUILDER, Decimal("0.000000001"))
+
+
+def test_block_trade_from_request_carries_builder():
+    """The builder fields are not in the published models yet; they ride as extra fields."""
+    taker = BlockTradeOrderDTO(
+        account="0x2222",
+        side=DTOOrderSide.order_side_buy,
+        type=DTOOrderType.order_type_limit,
+        price="1500",
+        size="0.1",
+        builder=_BUILDER,
+        builder_fee_rate="0.0004",
+    )
+    request = BlockTradeRequest(
+        nonce="bt_nonce",
+        block_expiration=1700000300000,
+        required_signers=["0xMAKER", "0x2222"],
+        signatures={},
+        trades={"ETH-USD-PERP": BlockTradeInfo(maker_order=maker_dto(), taker_order=taker, price="1500", size="0.1")},
+    )
+    bt = block_trade_from_request(request)
+    assert bt.version == BLOCK_TRADE_BUILDER_PAYLOAD_VERSION
+    taker_order = bt.trades[0].taker_order
+    assert taker_order is not None
+    assert taker_order.builder == _BUILDER
+    assert taker_order.builder_fee_rate == Decimal("0.0004")
+    assert bt.trades[0].maker_order is not None
+    assert bt.trades[0].maker_order.builder == ""
+
+
+def test_block_trade_from_response_carries_builder():
+    maker = _FakeOrder("0x1111", "SELL", "LIMIT", "0.1", "1500")
+    taker = _FakeOrder("0x2222", "BUY", "LIMIT", "0.1", "1500")
+    taker.builder = _BUILDER
+    taker.builder_fee_rate = "0.0004"
+    response = _FakeBlockResponse(
+        {"ETH-USD-PERP": _FakeTradeDetail(maker_order=maker, taker_order=taker, price="1500", size="0.1")}
+    )
+    bt = block_trade_from_response(response, nonce="n", expiration=1)
+    assert bt.version == BLOCK_TRADE_BUILDER_PAYLOAD_VERSION
+    assert bt.trades[0].taker_order is not None
+    assert bt.trades[0].taker_order.builder_fee_rate == Decimal("0.0004")
