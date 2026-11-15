@@ -7,6 +7,7 @@ import pytest
 from starknet_py.hash.utils import verify_message_signature
 
 from paradex_py.message.session import (
+    CEILING_LIMITS_MESSAGE,
     Ceiling,
     Limits,
     Passkey,
@@ -22,6 +23,8 @@ KEYS = DATA["keys"]
 def _build(primary_type: str, m: dict):
     if primary_type == "SessionGrant":
         return SessionGrant.from_message(m)
+    if primary_type == "SessionMint":
+        return _mint(m)
     common = {"paradex_chain": m["paradexChain"], "environment": m["environment"], "account": m["account"]}
     if primary_type == "PasskeyGrant":
         p, c = m["passkey"], m["ceiling"]
@@ -41,12 +44,16 @@ def _build(primary_type: str, m: dict):
             issued_at=int(m["issuedAt"]),
             expires_at=int(m["expiresAt"]),
         )
+    raise AssertionError(primary_type)
+
+
+def _mint(m: dict) -> SessionMint:
     return SessionMint(
-        **common,
-        credential_id=m["credentialId"],
+        paradex_chain=m["paradexChain"],
+        environment=m["environment"],
         session_key=m["sessionKey"],
         scopes=m["scopes"],
-        limits=Limits.from_message(m["limits"]),
+        limits=None if m["limits"] == CEILING_LIMITS_MESSAGE else Limits.from_message(m["limits"]),
         subaccounts=m["subaccounts"],
         nonce=m["nonce"],
         expires_at=int(m["expiresAt"]),

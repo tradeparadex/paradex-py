@@ -8,7 +8,9 @@ never withdraw. Three messages share one set of field semantics:
   listed ``subaccounts``, within ``scopes`` and ``limits``, until ``expiresAt``.
 - ``PasskeyGrant``: the owner lets a passkey open sessions within a ``ceiling``.
 - ``SessionMint``: what a passkey signs (as the WebAuthn challenge) to open one
-  session within that ceiling.
+  session within that ceiling. It names neither the account nor the passkey:
+  the server finds the passkey by the assertion's credential id, and its grant
+  names the account.
 
 Each has two encodings with the same field names and order:
 
@@ -60,11 +62,13 @@ from paradex_py.utils import raise_value_error
 
 __all__ = [
     "ALL_MARKETS",
+    "CEILING_LIMITS_MESSAGE",
     "DEFAULT_LIMIT_CAPS",
     "DOMAIN_NAME",
     "DOMAIN_VERSION",
     "FIRST_PARTY_PASSKEY_SCOPES",
     "GRANTABLE_SCOPES",
+    "MINT_HASH_ACCOUNT",
     "NO_LIMIT",
     "REFUSED_SCOPES",
     "Builder",
@@ -380,8 +384,6 @@ _PASSKEY_GRANT = (
 _SESSION_MINT = (
     ("paradexChain", "string", "shortstring"),
     ("environment", "string", "shortstring"),
-    ("account", "string", "ContractAddress"),
-    ("credentialId", "string", "string"),
     ("sessionKey", "string", "felt"),
     ("scopes", "string[]", "shortstring*"),
     ("limits", "Limits", "Limits"),
@@ -776,19 +778,39 @@ class PasskeyGrant(_TypedMessage):
         }
 
 
+# The account a SessionMint's SNIP-12 message hash is taken for: a mint names no account.
+MINT_HASH_ACCOUNT = 0
+
+# The limits a SessionMint states to take its passkey's ceiling: every amount empty and no markets.
+CEILING_LIMITS_MESSAGE: dict[str, Any] = {
+    "maxOrderNotional": "",
+    "maxOpenNotional": "",
+    "dailyNotional": "",
+    "maxLoss": "",
+    "maxLeverage": "",
+    "markets": [],
+}
+
+
 @dataclass(frozen=True)
 class SessionMint(_TypedMessage):
-    """What a passkey signs to open one session; its hash is the WebAuthn challenge."""
+    """What a passkey signs to open one session; its hash is the WebAuthn challenge.
+
+    It names neither the account nor the passkey, so a client can let the user pick any passkey they
+    hold (an empty ``allowCredentials``). The server finds the passkey by the assertion's credential id
+    and answers with the account it opened a session for.
+
+    ``limits=None`` takes the passkey's ceiling: the server applies its value for each limit it enforces
+    and ``"none"`` for the rest. Stated limits must fit the ceiling.
+    """
 
     paradex_chain: str
     environment: str
-    account: str
-    credential_id: str
     session_key: str
     scopes: Sequence[str]
-    limits: Limits
     expires_at: int
     nonce: str  # from POST /v2/passkeys/challenge; the server refuses a nonce it did not issue
+    limits: Limits | None = None
     subaccounts: Sequence[str] = ()
 
     _PRIMARY = "SessionMint"
@@ -796,21 +818,20 @@ class SessionMint(_TypedMessage):
     _STRUCTS = {"Limits": _LIMITS}  # noqa: RUF012
 
     def to_message(self) -> dict[str, Any]:
-        account = _hex(self.account, "account")
-        if not self.credential_id:
-            raise_value_error("credentialId is required")
         return {
             "paradexChain": _shortstring(self.paradex_chain, "paradexChain"),
             "environment": _environment(self.environment),
-            "account": account,
-            "credentialId": self.credential_id,
             "sessionKey": _hex(self.session_key, "sessionKey"),
             "scopes": _scopes(self.scopes),
-            "limits": self.limits.to_message(),
-            "subaccounts": _subaccounts(account, self.subaccounts),
+            "limits": dict(CEILING_LIMITS_MESSAGE) if self.limits is None else self.limits.to_message(),
+            "subaccounts": _subaccounts("", self.subaccounts),
             "nonce": _nonce(self.nonce),
             "expiresAt": _uint(self.expires_at, "expiresAt"),
         }
+
+    def snip12_hash(self) -> int:
+        """The SNIP-12 message hash, taken for :data:`MINT_HASH_ACCOUNT`: a mint names no account."""
+        return typed_data_to_message_hash(self.snip12_typed_data(), MINT_HASH_ACCOUNT)
 
     def webauthn_challenge(self) -> str:
         """The WebAuthn challenge: base64url (unpadded) of the 32-byte big-endian SNIP-12 hash."""
@@ -822,19 +843,21 @@ class SessionMint(_TypedMessage):
 
         Under a numeric ceiling limit the mint states a number at or below it; under a ``"none"`` ceiling
         limit anything goes. Markets must be a subset of the ceiling's, unless the ceiling is ``["*"]``.
+        A mint taking the ceiling's limits (``limits=None``) fits by definition.
         """
         message, granted = self.to_message(), grant.to_message()
         ceiling = granted["ceiling"]
-        for name in ("account", "paradexChain", "environment"):
+        for name in ("paradexChain", "environment"):
             if message[name] != granted[name]:
                 raise_value_error(f"mint {name} is not the grant's")
-        if message["credentialId"] != granted["passkey"]["credentialId"]:
-            raise_value_error("mint credentialId is not the grant's passkey")
         if not set(message["scopes"]) <= set(ceiling["scopes"]):
             raise_value_error(f"mint scopes {message['scopes']} exceed the ceiling's {ceiling['scopes']}")
-        _check_limits_within(message["limits"], ceiling["limits"])
+        if self.limits is not None:
+            _check_limits_within(message["limits"], ceiling["limits"])
         if not ceiling["includeFutureSubaccounts"] and not set(message["subaccounts"]) <= set(ceiling["subaccounts"]):
             raise_value_error("mint lists sub-accounts the ceiling does not")
+        if granted["account"] in message["subaccounts"]:
+            raise_value_error("subaccounts must not list the anchor account itself")
         now = int(time.time()) if now is None else now
         if message["expiresAt"] <= now:
             raise_value_error("mint has already expired")

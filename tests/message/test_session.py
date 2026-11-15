@@ -7,6 +7,7 @@ from eth_account.messages import encode_typed_data
 from starknet_py.hash.utils import private_to_stark_key, verify_message_signature
 
 from paradex_py.message.session import (
+    CEILING_LIMITS_MESSAGE,
     Builder,
     Ceiling,
     Limits,
@@ -67,8 +68,6 @@ def _mint(**overrides) -> SessionMint:
     fields = {
         "paradex_chain": MAINNET,
         "environment": "mainnet",
-        "account": "0x1234",
-        "credential_id": "Y3JlZA",
         "session_key": "0x5",
         "scopes": ["trade"],
         "limits": LIMITS,
@@ -115,8 +114,8 @@ def _mint(**overrides) -> SessionMint:
         ),
         (
             _mint(),
-            "e97f338d6aedcc360546135858b94aac97eefea5cac8906d75541f6b6de8e4f6",
-            0x2C5FCA078BFA403E8E72CE892ACDE7C5F88EF5E67913492576DEC54767B6A7D,
+            "723ae7e88f9e9890339cc2512dd88c2d6447c1ec48a0f54832eb12b87bb97de0",
+            0x53C3E5DA2CD8E8851F56A8D0283285CE95465F1B66C7C3CFC8D34B8DD0E3873,
         ),
     ],
     ids=["session-grant-builder", "session-grant-minimal", "passkey-grant", "session-mint"],
@@ -420,8 +419,8 @@ def test_builder_passkey_without_future_subaccounts_is_accepted():
 @pytest.mark.parametrize(
     ("overrides", "error"),
     [
-        ({"credential_id": ""}, "credentialId is required"),
         ({"scopes": ["trade:isolated"]}, "reserved and refused"),
+        ({"subaccounts": ["0x99", "0x99"]}, "must not repeat"),
         ({"expires_at": 2**64}, "2\\^53"),
         ({"session_key": "0xzz"}, "0x hex"),
     ],
@@ -453,8 +452,6 @@ def test_session_mint_field_order():
     assert names == [
         "paradexChain",
         "environment",
-        "account",
-        "credentialId",
         "sessionKey",
         "scopes",
         "limits",
@@ -514,8 +511,7 @@ def test_mint_limits_must_match_the_ceiling(ceiling, mint, error):
 @pytest.mark.parametrize(
     ("mint", "ceiling", "error"),
     [
-        ({"account": "0x9"}, {}, "mint account is not the grant's"),
-        ({"credential_id": "other"}, {}, "credentialId is not the grant's passkey"),
+        ({"subaccounts": ["0x1234"]}, {"include_future_subaccounts": True}, "anchor account itself"),
         ({"paradex_chain": "PRIVATE_SN_PARACLEAR_TESTNET"}, {}, "mint paradexChain is not the grant's"),
         ({"environment": "testnet"}, {}, "mint environment is not the grant's"),
         ({"expires_at": 1500}, {}, "already expired"),
@@ -530,6 +526,24 @@ def test_mint_refused_outside_the_ceiling(mint, ceiling, error):
     fields.update(mint)
     with pytest.raises(ValueError, match=error):
         _mint(**fields).check_within(grant, now=1500)
+
+
+def test_mint_names_no_account_or_passkey():
+    message = _mint().to_message()
+    assert "account" not in message
+    assert "credentialId" not in message
+
+
+def test_mint_without_limits_takes_the_ceiling():
+    mint = _mint(limits=None, subaccounts=[], expires_at=2000)
+    assert mint.to_message()["limits"] == CEILING_LIMITS_MESSAGE
+    mint.check_within(_ceiling_grant(LIMITS), now=1500)
+
+
+def test_mint_hash_is_bound_to_chain_and_environment():
+    base = _mint().snip12_hash()
+    assert _mint(environment="testnet").snip12_hash() != base
+    assert _mint(paradex_chain="PRIVATE_SN_PARACLEAR_TESTNET").snip12_hash() != base
 
 
 def test_mint_may_name_future_subaccounts_when_the_ceiling_allows():
