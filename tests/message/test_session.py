@@ -536,9 +536,38 @@ def test_mint_outliving_the_passkey_is_not_refused():
         issued_at=1000,
         expires_at=1500 + 3 * 86400,
     )
-    _mint(limits=None, subaccounts=[], expires_at=1500 + 7 * 86400).check_within(grant, now=1500)
+    week = 1500 + 7 * 86400
+    _mint(limits=None, subaccounts=[], expires_at=week).check_within(grant, now=1500, clock_skew_seconds=0)
     with pytest.raises(ValueError, match="outlives"):
-        _mint(limits=None, subaccounts=[], expires_at=1500 + 7 * 86400 + 1).check_within(grant, now=1500)
+        _mint(limits=None, subaccounts=[], expires_at=week + 1).check_within(grant, now=1500, clock_skew_seconds=0)
+
+
+def test_mint_expiry_is_kept_under_the_ceiling_by_the_clock_skew():
+    grant = _ceiling_grant(LIMITS)  # maxSessionTtl 86400
+    _mint(limits=None, subaccounts=[], expires_at=1500 + 86400 - 300).check_within(grant, now=1500)
+    with pytest.raises(ValueError, match="outlives"):
+        _mint(limits=None, subaccounts=[], expires_at=1500 + 86400 - 299).check_within(grant, now=1500)
+    # The longest session is the server's to work out, by its own clock.
+    _mint(limits=None, subaccounts=[], expires_at=LONGEST_SESSION).check_within(grant, now=1500)
+
+
+def test_mint_refused_under_a_ceiling_shorter_than_the_clock_skew():
+    grant = _passkey_grant(
+        ceiling=Ceiling(scopes=["trade"], limits=LIMITS, max_session_ttl=300, max_concurrent_sessions=5),
+        issued_at=1000,
+        expires_at=10**6,
+    )
+    with pytest.raises(ValueError, match="clock skew"):
+        _mint(limits=None, subaccounts=[], expires_at=1600).check_within(grant, now=1500)
+
+
+def test_builder_passkey_mint_refused_until_max_loss_is_enforced():
+    ceiling = Ceiling(["trade"], Limits(max_loss="100"), 86400, 5)
+    grant = _passkey_grant(ceiling=ceiling, builder_account="0xb1", issued_at=1000, expires_at=10**6)
+    mint = _mint(limits=None, subaccounts=[], expires_at=2000)
+    with pytest.raises(ValueError, match="loss cap"):
+        mint.check_within(grant, now=1500)
+    mint.check_within(grant, now=1500, enforced_limits={"maxLoss"})
 
 
 def test_mint_names_no_account_or_passkey():

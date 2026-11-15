@@ -46,7 +46,7 @@ import base64
 import re
 import secrets
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from decimal import Decimal
 from fnmatch import fnmatchcase
@@ -69,6 +69,7 @@ __all__ = [
     "FIRST_PARTY_PASSKEY_SCOPES",
     "GRANTABLE_SCOPES",
     "LONGEST_SESSION",
+    "MAX_CLOCK_SKEW_SECONDS",
     "MINT_HASH_ACCOUNT",
     "NO_LIMIT",
     "REFUSED_SCOPES",
@@ -785,6 +786,9 @@ MINT_HASH_ACCOUNT = 0
 # A SessionMint expires_at asking for the longest session the passkey allows.
 LONGEST_SESSION = 0
 
+# How far ahead of the server a client's clock may run when checking a mint's expiry, in seconds.
+MAX_CLOCK_SKEW_SECONDS = 5 * 60
+
 # The limits a SessionMint states to take its passkey's ceiling: every amount empty and no markets.
 CEILING_LIMITS_MESSAGE: dict[str, Any] = {
     "maxOrderNotional": "",
@@ -845,15 +849,30 @@ class SessionMint(_TypedMessage):
         digest = self.snip12_hash().to_bytes(32, "big")
         return base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
 
-    def check_within(self, grant: PasskeyGrant, *, now: int | None = None) -> None:
+    def check_within(
+        self,
+        grant: PasskeyGrant,
+        *,
+        now: int | None = None,
+        enforced_limits: Collection[str] = (),
+        clock_skew_seconds: int = MAX_CLOCK_SKEW_SECONDS,
+    ) -> None:
         """Refuse a mint the server would refuse against ``grant``'s ceiling, before the passkey signs it.
 
         Under a numeric ceiling limit the mint states a number at or below it; under a ``"none"`` ceiling
         limit anything goes. Markets must be a subset of the ceiling's, unless the ceiling is ``["*"]``.
         A mint taking the ceiling's limits (``limits=None``) fits by definition.
+
+        ``enforced_limits`` names the limits the server enforces (``"maxLoss"`` and the rest of the
+        signed limit names). A mint under a builder passkey is refused until it enforces ``maxLoss``,
+        as builder grants are. The server bounds a stated ``expires_at`` by its own clock plus the
+        ceiling's ``maxSessionTtl``, so the bound here is kept ``clock_skew_seconds`` under it, for a
+        client clock running ahead; pass 0 when ``now`` comes from the server's clock.
         """
         message, granted = self.to_message(), grant.to_message()
         ceiling = granted["ceiling"]
+        if int(granted["builderAccount"], 16) != 0 and "maxLoss" not in enforced_limits:
+            raise_value_error("builder passkeys need a loss cap, which the server does not enforce yet")
         for name in ("paradexChain", "environment"):
             if message[name] != granted[name]:
                 raise_value_error(f"mint {name} is not the grant's")
@@ -865,18 +884,22 @@ class SessionMint(_TypedMessage):
             raise_value_error("mint lists sub-accounts the ceiling does not")
         if granted["account"] in message["subaccounts"]:
             raise_value_error("subaccounts must not list the anchor account itself")
-        _check_expiry_within(message["expiresAt"], granted, int(time.time()) if now is None else now)
+        now = int(time.time()) if now is None else now
+        _check_expiry_within(message["expiresAt"], granted, now, clock_skew_seconds)
 
 
-def _check_expiry_within(expires_at: int, granted: dict[str, Any], now: int) -> None:
+def _check_expiry_within(expires_at: int, granted: dict[str, Any], now: int, skew: int) -> None:
     if granted["expiresAt"] <= now:
         raise_value_error("the passkey has expired")
     if expires_at == LONGEST_SESSION:
         return
     if expires_at <= now:
         raise_value_error("mint has already expired")
+    ttl = granted["ceiling"]["maxSessionTtl"]
+    if ttl <= skew:
+        raise_value_error(f"ceiling maxSessionTtl {ttl}s leaves no time after {skew}s of clock skew")
     # A session that would outlive the passkey ends with it, so only the ceiling's length is checked.
-    if expires_at > now + granted["ceiling"]["maxSessionTtl"]:
+    if expires_at > now + ttl - skew:
         raise_value_error("mint outlives the ceiling's maxSessionTtl")
 
 
