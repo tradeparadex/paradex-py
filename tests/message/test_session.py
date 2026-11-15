@@ -529,6 +529,18 @@ def test_mint_refused_outside_the_ceiling(mint, ceiling, error):
         _mint(**fields).check_within(grant, now=1500)
 
 
+def test_mint_outliving_the_passkey_is_not_refused():
+    # The server ends the session when the passkey expires.
+    grant = _passkey_grant(
+        ceiling=Ceiling(scopes=["trade"], limits=LIMITS, max_session_ttl=7 * 86400, max_concurrent_sessions=5),
+        issued_at=1000,
+        expires_at=1500 + 3 * 86400,
+    )
+    _mint(limits=None, subaccounts=[], expires_at=1500 + 7 * 86400).check_within(grant, now=1500)
+    with pytest.raises(ValueError, match="outlives"):
+        _mint(limits=None, subaccounts=[], expires_at=1500 + 7 * 86400 + 1).check_within(grant, now=1500)
+
+
 def test_mint_names_no_account_or_passkey():
     message = _mint().to_message()
     assert "account" not in message
@@ -670,13 +682,6 @@ def test_builder_grants_and_passkeys_need_a_numeric_max_loss():
     assert _grant(limits=Limits(max_loss="5000")).to_message()["limits"]["maxLoss"] == "5000"
     first_party = _passkey_grant(ceiling=Ceiling(["trade"], Limits(), 86400, 5)).to_message()
     assert first_party["ceiling"]["limits"]["maxLoss"] == "none"
-
-
-def test_mint_may_not_outlive_its_grant():
-    grant = _ceiling_grant(LIMITS)  # expires at 10**6
-    mint = _mint(limits=LIMITS, subaccounts=[], expires_at=10**6 + 1)
-    with pytest.raises(ValueError, match="outlives"):
-        mint.check_within(grant, now=10**6 - 100)
 
 
 def test_builder_approval_may_end_with_its_grant():

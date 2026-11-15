@@ -807,7 +807,8 @@ class SessionMint(_TypedMessage):
     ``limits=None`` takes the passkey's ceiling: the server applies its value for each limit it enforces
     and ``"none"`` for the rest. Stated limits must fit the ceiling. ``expires_at=0``
     (:data:`LONGEST_SESSION`) asks for the longest session the passkey allows: until it expires or for
-    the ceiling's ``maxSessionTtl``, whichever is sooner, by the server's clock.
+    the ceiling's ``maxSessionTtl``, whichever is sooner, by the server's clock. A stated ``expires_at``
+    past the passkey's own expiry is not refused: the session ends when the passkey does.
     """
 
     paradex_chain: str
@@ -874,8 +875,9 @@ def _check_expiry_within(expires_at: int, granted: dict[str, Any], now: int) -> 
         return
     if expires_at <= now:
         raise_value_error("mint has already expired")
-    if expires_at > min(granted["expiresAt"], now + granted["ceiling"]["maxSessionTtl"]):
-        raise_value_error("mint outlives the grant or the ceiling's maxSessionTtl")
+    # A session that would outlive the passkey ends with it, so only the ceiling's length is checked.
+    if expires_at > now + granted["ceiling"]["maxSessionTtl"]:
+        raise_value_error("mint outlives the ceiling's maxSessionTtl")
 
 
 def _check_limits_within(mint: dict[str, Any], ceiling: dict[str, Any]) -> None:
