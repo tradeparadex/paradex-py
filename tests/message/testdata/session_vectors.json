@@ -13,7 +13,7 @@
         "A market contains a letter, * or - and does not start with -, 0x, 0b or 0o in either case; symbols are case-sensitive and may contain _ (\"kPEPE-USD-PERP\", \"NEAR-USD-27NOV26-5_4-C\").",
         "An enforced mint limit under a numeric ceiling is a number at or below it; under a \"none\" ceiling it may be anything valid. An unenforced one is \"none\" under any ceiling. Each mint market must be listed by the ceiling, matched by a ceiling pattern, or covered by a [\"*\"] ceiling; a mint pattern is covered only by the same pattern.",
         "SessionMint's WebAuthn challenge is the 32-byte SNIP-12 message hash, base64url-encoded without padding (mintChallenge).",
-        "A SessionMint names neither account nor passkey: the server finds the passkey by the assertion's credential id. Limits with every amount \"\" and markets [] ask for the ceiling's limits; any other empty value is invalid.",
+        "A SessionMint names neither account nor passkey: the server finds the passkey by the assertion's credential id. Limits with every amount \"\" and markets [] ask for the ceiling's limits; any other empty value is invalid. expiresAt 0 asks for the longest session the passkey allows.",
         "EIP-712 signatures are 65-byte r||s||v with v in {27, 28} and low s. Stark signatures are [r, s] over the SNIP-12 message hash.",
         "The keys below are public test keys: never use them for anything else."
     ],
@@ -3404,7 +3404,7 @@
                 },
                 "subaccounts": [],
                 "nonce": "0x88888888888888888888888888888888",
-                "expiresAt": 1767312000
+                "expiresAt": 0
             },
             "eip712": {
                 "signatureChainId": 1,
@@ -3416,7 +3416,7 @@
                     },
                     "message": {
                         "environment": "mainnet",
-                        "expiresAt": 1767312000,
+                        "expiresAt": 0,
                         "limits": {
                             "dailyNotional": "",
                             "markets": [],
@@ -3512,8 +3512,8 @@
                     }
                 },
                 "domainSeparator": "0x829c2852d73f9458839f9c1e8d096d73c457b487e19241fa0d514ddace4a0a5d",
-                "structHash": "0x3d523929d8a1c285cc894c592cbdfb2e08e96bea470178959b9cb54d3dccdb4b",
-                "digest": "0x818ed35b510e82b12a25ab236db6220e81a237e792052ef0da824b775cc41cb9"
+                "structHash": "0xc3af212f83bff0d4043d1ee9dcb800d40d658272c6a389ca33e3f935b5eba357",
+                "digest": "0x8da624fcbf6a2b328c4807394b8cfae15d0a7732b7d555b2ab63475fc2745e1d"
             },
             "snip12": {
                 "typedData": {
@@ -3525,7 +3525,7 @@
                     },
                     "message": {
                         "environment": "mainnet",
-                        "expiresAt": "1767312000",
+                        "expiresAt": "0",
                         "limits": {
                             "dailyNotional": "",
                             "markets": [],
@@ -3625,10 +3625,10 @@
                     }
                 },
                 "domainHash": "0x754ed8f2b3555aa6168733b3b1ffffd1f17bd7693fe5778295acd4ce43b5b50",
-                "structHash": "0x55a8dbecf81a1bd82f9c772956b1390f3ce3bae4e8544e121eea03a48c41fa0",
-                "messageHash": "0x582ec036760e33fa7b6e63586f63e9cccd828ef6c6ec802012604616c8b51a1"
+                "structHash": "0x49e23ec1370c733f99a4f0ac9bdc80514120e0cd90583ba194521ec9955ec95",
+                "messageHash": "0x7ade0dbe39be946ad9cd280bf4cfaf6bc9e82ba11727024dd5d2320219dcd11"
             },
-            "mintChallenge": "BYLsA2dg4z-ntuY1hvY-nMzYKO9sbsgCASYEYWyLUaE"
+            "mintChallenge": "B63g2-Ob6UatnNKAv0z69ryegroRcnAk3V0jICGdzRE"
         }
     ]
 }

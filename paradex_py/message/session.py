@@ -68,6 +68,7 @@ __all__ = [
     "DOMAIN_VERSION",
     "FIRST_PARTY_PASSKEY_SCOPES",
     "GRANTABLE_SCOPES",
+    "LONGEST_SESSION",
     "MINT_HASH_ACCOUNT",
     "NO_LIMIT",
     "REFUSED_SCOPES",
@@ -781,6 +782,9 @@ class PasskeyGrant(_TypedMessage):
 # The account a SessionMint's SNIP-12 message hash is taken for: a mint names no account.
 MINT_HASH_ACCOUNT = 0
 
+# A SessionMint expires_at asking for the longest session the passkey allows.
+LONGEST_SESSION = 0
+
 # The limits a SessionMint states to take its passkey's ceiling: every amount empty and no markets.
 CEILING_LIMITS_MESSAGE: dict[str, Any] = {
     "maxOrderNotional": "",
@@ -801,16 +805,18 @@ class SessionMint(_TypedMessage):
     and answers with the account it opened a session for.
 
     ``limits=None`` takes the passkey's ceiling: the server applies its value for each limit it enforces
-    and ``"none"`` for the rest. Stated limits must fit the ceiling.
+    and ``"none"`` for the rest. Stated limits must fit the ceiling. ``expires_at=0``
+    (:data:`LONGEST_SESSION`) asks for the longest session the passkey allows: until it expires or for
+    the ceiling's ``maxSessionTtl``, whichever is sooner, by the server's clock.
     """
 
     paradex_chain: str
     environment: str
     session_key: str
     scopes: Sequence[str]
+    limits: Limits | None  # None: the ceiling's
     expires_at: int
     nonce: str  # from POST /v2/passkeys/challenge; the server refuses a nonce it did not issue
-    limits: Limits | None = None
     subaccounts: Sequence[str] = ()
 
     _PRIMARY = "SessionMint"
@@ -858,11 +864,18 @@ class SessionMint(_TypedMessage):
             raise_value_error("mint lists sub-accounts the ceiling does not")
         if granted["account"] in message["subaccounts"]:
             raise_value_error("subaccounts must not list the anchor account itself")
-        now = int(time.time()) if now is None else now
-        if message["expiresAt"] <= now:
-            raise_value_error("mint has already expired")
-        if message["expiresAt"] > min(granted["expiresAt"], now + ceiling["maxSessionTtl"]):
-            raise_value_error("mint outlives the grant or the ceiling's maxSessionTtl")
+        _check_expiry_within(message["expiresAt"], granted, int(time.time()) if now is None else now)
+
+
+def _check_expiry_within(expires_at: int, granted: dict[str, Any], now: int) -> None:
+    if granted["expiresAt"] <= now:
+        raise_value_error("the passkey has expired")
+    if expires_at == LONGEST_SESSION:
+        return
+    if expires_at <= now:
+        raise_value_error("mint has already expired")
+    if expires_at > min(granted["expiresAt"], now + granted["ceiling"]["maxSessionTtl"]):
+        raise_value_error("mint outlives the grant or the ceiling's maxSessionTtl")
 
 
 def _check_limits_within(mint: dict[str, Any], ceiling: dict[str, Any]) -> None:

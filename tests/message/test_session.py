@@ -8,6 +8,7 @@ from starknet_py.hash.utils import private_to_stark_key, verify_message_signatur
 
 from paradex_py.message.session import (
     CEILING_LIMITS_MESSAGE,
+    LONGEST_SESSION,
     Builder,
     Ceiling,
     Limits,
@@ -532,6 +533,20 @@ def test_mint_names_no_account_or_passkey():
     message = _mint().to_message()
     assert "account" not in message
     assert "credentialId" not in message
+
+
+def test_mint_with_zero_expiry_takes_the_longest_session():
+    grant = _ceiling_grant(LIMITS)
+    mint = _mint(limits=None, subaccounts=[], expires_at=LONGEST_SESSION)
+    assert mint.to_message()["expiresAt"] == 0
+    mint.check_within(grant, now=1500)
+    with pytest.raises(ValueError, match="passkey has expired"):
+        mint.check_within(grant, now=10**6)
+
+
+def test_mint_limits_must_be_given_even_to_take_the_ceiling():
+    with pytest.raises(TypeError, match="limits"):
+        SessionMint(MAINNET, "mainnet", "0x5", ["trade"], expires_at=100, nonce=_nonce(3))  # type: ignore[call-arg]
 
 
 def test_mint_without_limits_takes_the_ceiling():
