@@ -7,7 +7,6 @@ import pytest
 from starknet_py.hash.utils import verify_message_signature
 
 from paradex_py.message.session import (
-    CEILING_LIMITS_MESSAGE,
     Ceiling,
     Limits,
     Passkey,
@@ -18,6 +17,16 @@ from paradex_py.message.session import (
 
 DATA = json.loads((Path(__file__).parent / "testdata" / "session_vectors.json").read_text())
 KEYS = DATA["keys"]
+
+# What a mint states to take its passkey's ceiling.
+CEILING_LIMITS = {
+    "maxOrderNotional": "",
+    "maxOpenNotional": "",
+    "dailyNotional": "",
+    "maxLoss": "",
+    "maxLeverage": "",
+    "markets": [],
+}
 
 
 def _build(primary_type: str, m: dict):
@@ -53,7 +62,7 @@ def _mint(m: dict) -> SessionMint:
         environment=m["environment"],
         session_key=m["sessionKey"],
         scopes=m["scopes"],
-        limits=None if m["limits"] == CEILING_LIMITS_MESSAGE else Limits.from_message(m["limits"]),
+        limits=None if m["limits"] == CEILING_LIMITS else Limits.from_message(m["limits"]),
         subaccounts=m["subaccounts"],
         nonce=m["nonce"],
         expires_at=int(m["expiresAt"]),

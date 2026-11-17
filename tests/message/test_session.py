@@ -7,7 +7,6 @@ from eth_account.messages import encode_typed_data
 from starknet_py.hash.utils import private_to_stark_key, verify_message_signature
 
 from paradex_py.message.session import (
-    CEILING_LIMITS_MESSAGE,
     LONGEST_SESSION,
     Builder,
     Ceiling,
@@ -25,6 +24,19 @@ LIMITS = Limits("25000", "100000", "500000", "5000.5", "10", ["BTC-USD-PERP", "*
 ARBITRUM = 42161
 PUB_X = "0x" + "ab" * 32
 PUB_Y = "0x" + "cd" * 32
+
+# Every limit the server can enforce, for tests comparing stated limits with a ceiling.
+ALL_LIMITS = {"maxOrderNotional", "maxOpenNotional", "dailyNotional", "maxLoss", "maxLeverage", "markets"}
+
+# What a mint states to take its passkey's ceiling.
+CEILING_LIMITS = {
+    "maxOrderNotional": "",
+    "maxOpenNotional": "",
+    "dailyNotional": "",
+    "maxLoss": "",
+    "maxLeverage": "",
+    "markets": [],
+}
 
 
 def _nonce(n: int) -> str:
@@ -398,7 +410,7 @@ def test_first_party_passkey_ceiling_carries_the_app_scopes():
 def test_mint_may_use_the_app_scopes_under_a_first_party_ceiling():
     grant = _ceiling_grant(LIMITS, scopes=["trade", "trade:rfq", "account:settings"])
     _mint(scopes=["trade:rfq", "account:settings"], limits=LIMITS, subaccounts=[], expires_at=2000).check_within(
-        grant, now=1500
+        grant, now=1500, enforced_limits=ALL_LIMITS
     )
 
 
@@ -503,10 +515,10 @@ def test_mint_limits_must_match_the_ceiling(ceiling, mint, error):
     grant = _ceiling_grant(ceiling)
     session_mint = _mint(limits=mint, subaccounts=[], expires_at=2000)
     if error is None:
-        session_mint.check_within(grant, now=1500)
+        session_mint.check_within(grant, now=1500, enforced_limits=ALL_LIMITS)
     else:
         with pytest.raises(ValueError, match=error):
-            session_mint.check_within(grant, now=1500)
+            session_mint.check_within(grant, now=1500, enforced_limits=ALL_LIMITS)
 
 
 @pytest.mark.parametrize(
@@ -526,7 +538,7 @@ def test_mint_refused_outside_the_ceiling(mint, ceiling, error):
     fields = {"limits": LIMITS, "subaccounts": [], "expires_at": 2000}
     fields.update(mint)
     with pytest.raises(ValueError, match=error):
-        _mint(**fields).check_within(grant, now=1500)
+        _mint(**fields).check_within(grant, now=1500, enforced_limits=ALL_LIMITS)
 
 
 def test_mint_outliving_the_passkey_is_not_refused():
@@ -557,17 +569,64 @@ def test_mint_refused_under_a_ceiling_shorter_than_the_clock_skew():
         issued_at=1000,
         expires_at=10**6,
     )
-    with pytest.raises(ValueError, match="clock skew"):
+    with pytest.raises(ValueError, match="clock_skew_seconds"):
         _mint(limits=None, subaccounts=[], expires_at=1600).check_within(grant, now=1500)
 
 
-def test_builder_passkey_mint_refused_until_max_loss_is_enforced():
+def test_builder_passkey_mint_is_checked_like_any_other():
+    # The server checks maxLoss when a builder passkey registers, not on its mints.
     ceiling = Ceiling(["trade"], Limits(max_loss="100"), 86400, 5)
     grant = _passkey_grant(ceiling=ceiling, builder_account="0xb1", issued_at=1000, expires_at=10**6)
-    mint = _mint(limits=None, subaccounts=[], expires_at=2000)
-    with pytest.raises(ValueError, match="loss cap"):
-        mint.check_within(grant, now=1500)
-    mint.check_within(grant, now=1500, enforced_limits={"maxLoss"})
+    _mint(limits=None, subaccounts=[], expires_at=2000).check_within(grant, now=1500)
+
+
+def test_unenforced_limits_must_be_none():
+    grant = _ceiling_grant(Limits())
+    with pytest.raises(ValueError, match="maxOrderNotional must be 'none'"):
+        _mint(limits=LIMITS, subaccounts=[], expires_at=2000).check_within(grant, now=1500)
+    with pytest.raises(ValueError, match=r"markets must be \['\*'\]"):
+        _mint(limits=Limits(markets=["BTC-USD-PERP"]), subaccounts=[], expires_at=2000).check_within(grant, now=1500)
+    _mint(limits=Limits(), subaccounts=[], expires_at=2000).check_within(grant, now=1500)
+    _mint(limits=Limits(markets=["BTC-USD-PERP"]), subaccounts=[], expires_at=2000).check_within(
+        grant, now=1500, enforced_limits={"markets"}
+    )
+
+
+@pytest.mark.parametrize(
+    ("enforced", "error"),
+    [
+        ("maxLoss", "not the string"),
+        ({"max_loss"}, "unknown limits"),
+        ({"maxLossX"}, "unknown limits"),
+    ],
+)
+def test_enforced_limits_must_name_known_limits(enforced, error):
+    with pytest.raises(ValueError, match=error):
+        _mint(limits=None, subaccounts=[], expires_at=2000).check_within(
+            _ceiling_grant(LIMITS), now=1500, enforced_limits=enforced
+        )
+
+
+@pytest.mark.parametrize("skew", [-1, 1.5, True])
+def test_clock_skew_must_be_a_non_negative_integer(skew):
+    with pytest.raises(ValueError, match="clock_skew_seconds"):
+        _mint(limits=None, subaccounts=[], expires_at=2000).check_within(
+            _ceiling_grant(LIMITS), now=1500, clock_skew_seconds=skew
+        )
+
+
+def test_anchor_listed_as_subaccount_is_named_before_the_ceiling_check():
+    grant = _passkey_grant(
+        ceiling=Ceiling(["trade"], Limits(), 86400, 5, ["0x99"], False), issued_at=1000, expires_at=10**6
+    )
+    with pytest.raises(ValueError, match="anchor account itself"):
+        _mint(limits=None, subaccounts=["0x1234"], expires_at=2000).check_within(grant, now=1500)
+
+
+def test_ceiling_limits_message_is_not_shared():
+    first = _mint(limits=None, subaccounts=[]).to_message()["limits"]
+    first["markets"].append("BTC-USD-PERP")
+    assert _mint(limits=None, subaccounts=[]).to_message()["limits"] == CEILING_LIMITS
 
 
 def test_mint_names_no_account_or_passkey():
@@ -592,7 +651,7 @@ def test_mint_limits_must_be_given_even_to_take_the_ceiling():
 
 def test_mint_without_limits_takes_the_ceiling():
     mint = _mint(limits=None, subaccounts=[], expires_at=2000)
-    assert mint.to_message()["limits"] == CEILING_LIMITS_MESSAGE
+    assert mint.to_message()["limits"] == CEILING_LIMITS
     mint.check_within(_ceiling_grant(LIMITS), now=1500)
 
 
@@ -604,7 +663,9 @@ def test_mint_hash_is_bound_to_chain_and_environment():
 
 def test_mint_may_name_future_subaccounts_when_the_ceiling_allows():
     grant = _ceiling_grant(LIMITS, subaccounts=[], include_future_subaccounts=True)
-    _mint(limits=LIMITS, subaccounts=["0x77"], expires_at=2000).check_within(grant, now=1500)
+    _mint(limits=LIMITS, subaccounts=["0x77"], expires_at=2000).check_within(
+        grant, now=1500, enforced_limits=ALL_LIMITS
+    )
 
 
 def test_first_party_grants_may_carry_block_and_settings_scopes():
