@@ -2,7 +2,7 @@
     "description": "Reference vectors for the Paradex session grant typed data (EIP-712 and SNIP-12 revision 1), as produced by the Paradex server. Implementations must reproduce every hash byte for byte.",
     "notes": [
         "EIP-712 domain: {name: \"Paradex Session\", version: \"1\", chainId: signatureChainId (the wallet's current EVM chain)}.",
-        "SNIP-12 rev 1 domain: {name: \"Paradex Session\", version: \"1\", chainId: paradexChain, revision: \"1\"}; the message hash account is message.account.",
+        "SNIP-12 rev 1 domain: {name: \"Paradex Session\", version: \"1\", chainId: paradexChain, revision: \"1\"}; the message hash account is message.account, and \"0x0\" for a SessionMint, which names no account.",
         "Field order is the order of each type in typedData.types and is frozen.",
         "Hex strings (accounts, keys, nonces) are signed exactly as written: use lowercase 0x hex without leading zeros (\"0x0\" for none). Nonces are non-zero and at most 128 bits.",
         "Integers are JSON numbers in EIP-712 messages and decimal strings in SNIP-12 messages; both encode the same value.",
@@ -13,6 +13,7 @@
         "A market contains a letter, * or - and does not start with -, 0x, 0b or 0o in either case; symbols are case-sensitive and may contain _ (\"kPEPE-USD-PERP\", \"NEAR-USD-27NOV26-5_4-C\").",
         "An enforced mint limit under a numeric ceiling is a number at or below it; under a \"none\" ceiling it may be anything valid. An unenforced one is \"none\" under any ceiling. Each mint market must be listed by the ceiling, matched by a ceiling pattern, or covered by a [\"*\"] ceiling; a mint pattern is covered only by the same pattern.",
         "SessionMint's WebAuthn challenge is the 32-byte SNIP-12 message hash, base64url-encoded without padding (mintChallenge).",
+        "A SessionMint names neither account nor passkey: the server finds the passkey by the assertion's credential id. Limits with every amount \"\" and markets [] ask for the ceiling's limits; any other empty value is invalid. expiresAt 0 asks for the longest session the passkey allows.",
         "EIP-712 signatures are 65-byte r||s||v with v in {27, 28} and low s. Stark signatures are [r, s] over the SNIP-12 message hash.",
         "The keys below are public test keys: never use them for anything else."
     ],
@@ -2524,8 +2525,6 @@
             "message": {
                 "paradexChain": "PRIVATE_SN_PARACLEAR_MAINNET",
                 "environment": "mainnet",
-                "account": "0x62cfa432ed8abe082192a9687dd569194596096f2ebd3d498df34c1ff2f14f",
-                "credentialId": "dGVzdC1jcmVkZW50aWFsLWlk",
                 "sessionKey": "0x1f2e3d4c5b6a79881726354453627180f9e8d7c6b5a493827160f5e4d3c2b1a",
                 "scopes": ["trade"],
                 "limits": {
@@ -2549,8 +2548,6 @@
                         "version": "1"
                     },
                     "message": {
-                        "account": "0x62cfa432ed8abe082192a9687dd569194596096f2ebd3d498df34c1ff2f14f",
-                        "credentialId": "dGVzdC1jcmVkZW50aWFsLWlk",
                         "environment": "mainnet",
                         "expiresAt": 1767312000,
                         "limits": {
@@ -2619,14 +2616,6 @@
                                 "type": "string"
                             },
                             {
-                                "name": "account",
-                                "type": "string"
-                            },
-                            {
-                                "name": "credentialId",
-                                "type": "string"
-                            },
-                            {
                                 "name": "sessionKey",
                                 "type": "string"
                             },
@@ -2654,8 +2643,8 @@
                     }
                 },
                 "domainSeparator": "0x829c2852d73f9458839f9c1e8d096d73c457b487e19241fa0d514ddace4a0a5d",
-                "structHash": "0xdb69d3183d3bc3380692b8a2c8d3b0544ee36038df3a4154a2018507fdabd0df",
-                "digest": "0xe394b0178ed1d8f57e58fd4f08d963e4091a45050f27da53e69bcf50ac91bef2"
+                "structHash": "0xcfdbecf32b2f9ecafe5a480e0642a38903ff963d7e558bbda568d606db9ad268",
+                "digest": "0xbe3a97c5b355bfe83c393446c695111607ecb8dd5ca8c61daf37bc65bbcf90ec"
             },
             "snip12": {
                 "typedData": {
@@ -2666,8 +2655,6 @@
                         "version": "1"
                     },
                     "message": {
-                        "account": "0x62cfa432ed8abe082192a9687dd569194596096f2ebd3d498df34c1ff2f14f",
-                        "credentialId": "dGVzdC1jcmVkZW50aWFsLWlk",
                         "environment": "mainnet",
                         "expiresAt": "1767312000",
                         "limits": {
@@ -2722,14 +2709,6 @@
                                 "type": "shortstring"
                             },
                             {
-                                "name": "account",
-                                "type": "ContractAddress"
-                            },
-                            {
-                                "name": "credentialId",
-                                "type": "string"
-                            },
-                            {
                                 "name": "sessionKey",
                                 "type": "felt"
                             },
@@ -2775,10 +2754,10 @@
                     }
                 },
                 "domainHash": "0x754ed8f2b3555aa6168733b3b1ffffd1f17bd7693fe5778295acd4ce43b5b50",
-                "structHash": "0x38d714f35eefd66f25665495f26f6da95928724e72c727c0da742c83441ff5d",
-                "messageHash": "0x4648eea1863eb978b5cf5cdcc1dd28213044444ec170677b3e7df814568e2d8"
+                "structHash": "0x472276bcc0abfbdbf6186f6d8f4879c9423437d0442b56da4fa5002e168b4e3",
+                "messageHash": "0x694b5e5863df727be6c47316f3aa29b6d037b39c4505998f531d339d73c08bb"
             },
-            "mintChallenge": "BGSO6hhj65eLXPXNzB3SghMERETsFwZ3s-ffgUVo4tg"
+            "mintChallenge": "BpS15YY99ye-bEcxbzqim20DeznEUFmY9THTOdc8CLs"
         },
         {
             "name": "session-mint-builder-limits",
@@ -2787,8 +2766,6 @@
             "message": {
                 "paradexChain": "PRIVATE_SN_PARACLEAR_MAINNET",
                 "environment": "mainnet",
-                "account": "0x62cfa432ed8abe082192a9687dd569194596096f2ebd3d498df34c1ff2f14f",
-                "credentialId": "dGVzdC1jcmVkZW50aWFsLWlk",
                 "sessionKey": "0x1f2e3d4c5b6a79881726354453627180f9e8d7c6b5a493827160f5e4d3c2b1a",
                 "scopes": ["trade"],
                 "limits": {
@@ -2812,8 +2789,6 @@
                         "version": "1"
                     },
                     "message": {
-                        "account": "0x62cfa432ed8abe082192a9687dd569194596096f2ebd3d498df34c1ff2f14f",
-                        "credentialId": "dGVzdC1jcmVkZW50aWFsLWlk",
                         "environment": "mainnet",
                         "expiresAt": 1767312000,
                         "limits": {
@@ -2882,14 +2857,6 @@
                                 "type": "string"
                             },
                             {
-                                "name": "account",
-                                "type": "string"
-                            },
-                            {
-                                "name": "credentialId",
-                                "type": "string"
-                            },
-                            {
                                 "name": "sessionKey",
                                 "type": "string"
                             },
@@ -2917,8 +2884,8 @@
                     }
                 },
                 "domainSeparator": "0x829c2852d73f9458839f9c1e8d096d73c457b487e19241fa0d514ddace4a0a5d",
-                "structHash": "0x5d4ced3fd82b5dffe964601962216c245db595d2691f51ff9fafda42264a0811",
-                "digest": "0xc35d488de7a2b1653e8775f031e69616341675db8bbf8814791b12f0a30593bf"
+                "structHash": "0xf6645f104256d5ddeec69cc84fdbfba518cedb42fb10cc365e5093cc7b5deea9",
+                "digest": "0x3a19dfa2cc0783bcf1aa244ade1b9565e1cdcbf8acf5727196451171108cb5f0"
             },
             "snip12": {
                 "typedData": {
@@ -2929,8 +2896,6 @@
                         "version": "1"
                     },
                     "message": {
-                        "account": "0x62cfa432ed8abe082192a9687dd569194596096f2ebd3d498df34c1ff2f14f",
-                        "credentialId": "dGVzdC1jcmVkZW50aWFsLWlk",
                         "environment": "mainnet",
                         "expiresAt": "1767312000",
                         "limits": {
@@ -2985,14 +2950,6 @@
                                 "type": "shortstring"
                             },
                             {
-                                "name": "account",
-                                "type": "ContractAddress"
-                            },
-                            {
-                                "name": "credentialId",
-                                "type": "string"
-                            },
-                            {
                                 "name": "sessionKey",
                                 "type": "felt"
                             },
@@ -3038,10 +2995,10 @@
                     }
                 },
                 "domainHash": "0x754ed8f2b3555aa6168733b3b1ffffd1f17bd7693fe5778295acd4ce43b5b50",
-                "structHash": "0x5588529579c351458a2afada2997bfec9a12691e2055e1bca2ab08aebcf45c8",
-                "messageHash": "0x1bcbe2b01f4d97a9798c9ec68840edad3412729f3f12a9b3703257c679de3f"
+                "structHash": "0x7d7b74c3755ed7eb94c5f61d4869b9b727676ff53d610f02bd38dfc9fec084e",
+                "messageHash": "0x69ac334ed4f03e0d871042abd968e9adf50a70b751237cad61fe9fa4cd06c6a"
             },
-            "mintChallenge": "ABvL4rAfTZepeYyexohA7a00EnKfPxKps3AyV8Z53j8"
+            "mintChallenge": "BprDNO1PA-DYcQQqvZaOmt9Qpwt1EjfK1h_p-kzQbGo"
         },
         {
             "name": "session-mint-subaccount",
@@ -3050,8 +3007,6 @@
             "message": {
                 "paradexChain": "PRIVATE_SN_PARACLEAR_MAINNET",
                 "environment": "mainnet",
-                "account": "0x5d8b9a1c6c8e1f3b7a2d4e6f8091a2b3c4d5e6f708192a3b4c5d6e7f8091a2b",
-                "credentialId": "dGVzdC1jcmVkZW50aWFsLWlk",
                 "sessionKey": "0x1f2e3d4c5b6a79881726354453627180f9e8d7c6b5a493827160f5e4d3c2b1a",
                 "scopes": ["trade"],
                 "limits": {
@@ -3077,8 +3032,6 @@
                         "version": "1"
                     },
                     "message": {
-                        "account": "0x5d8b9a1c6c8e1f3b7a2d4e6f8091a2b3c4d5e6f708192a3b4c5d6e7f8091a2b",
-                        "credentialId": "dGVzdC1jcmVkZW50aWFsLWlk",
                         "environment": "mainnet",
                         "expiresAt": 1767312000,
                         "limits": {
@@ -3149,14 +3102,6 @@
                                 "type": "string"
                             },
                             {
-                                "name": "account",
-                                "type": "string"
-                            },
-                            {
-                                "name": "credentialId",
-                                "type": "string"
-                            },
-                            {
                                 "name": "sessionKey",
                                 "type": "string"
                             },
@@ -3184,8 +3129,8 @@
                     }
                 },
                 "domainSeparator": "0x829c2852d73f9458839f9c1e8d096d73c457b487e19241fa0d514ddace4a0a5d",
-                "structHash": "0xeeb9c422033fe7be97f8e1768e5cb256bee6cf6e042ae0e76d591f724cab8852",
-                "digest": "0x99d1fb067a574c66e8a3d797cea6c31fc343389ea3414603870722d21cdce9b6"
+                "structHash": "0xecd222d38e9d17d5d4f726de43dd3b36b56c362531bfbf6896ed82eeee7b2b62",
+                "digest": "0xbd52f2565266aeb3408c78feb3d14b791f5870731f335faf61436b60ce3088af"
             },
             "snip12": {
                 "typedData": {
@@ -3196,8 +3141,6 @@
                         "version": "1"
                     },
                     "message": {
-                        "account": "0x5d8b9a1c6c8e1f3b7a2d4e6f8091a2b3c4d5e6f708192a3b4c5d6e7f8091a2b",
-                        "credentialId": "dGVzdC1jcmVkZW50aWFsLWlk",
                         "environment": "mainnet",
                         "expiresAt": "1767312000",
                         "limits": {
@@ -3254,12 +3197,245 @@
                                 "type": "shortstring"
                             },
                             {
-                                "name": "account",
-                                "type": "ContractAddress"
+                                "name": "sessionKey",
+                                "type": "felt"
                             },
                             {
-                                "name": "credentialId",
+                                "name": "scopes",
+                                "type": "shortstring*"
+                            },
+                            {
+                                "name": "limits",
+                                "type": "Limits"
+                            },
+                            {
+                                "name": "subaccounts",
+                                "type": "ContractAddress*"
+                            },
+                            {
+                                "name": "nonce",
+                                "type": "felt"
+                            },
+                            {
+                                "name": "expiresAt",
+                                "type": "timestamp"
+                            }
+                        ],
+                        "StarknetDomain": [
+                            {
+                                "name": "name",
+                                "type": "shortstring"
+                            },
+                            {
+                                "name": "version",
+                                "type": "shortstring"
+                            },
+                            {
+                                "name": "chainId",
+                                "type": "shortstring"
+                            },
+                            {
+                                "name": "revision",
+                                "type": "shortstring"
+                            }
+                        ]
+                    }
+                },
+                "domainHash": "0x754ed8f2b3555aa6168733b3b1ffffd1f17bd7693fe5778295acd4ce43b5b50",
+                "structHash": "0x3c33c72d85c11481d0935a8d529b20b1cfd00a81aa0981d7c80e0d134765504",
+                "messageHash": "0x3a33c9d19a61028cf25229bc6c23d6c6f6d966a596fbeeab50c0cc00417085e"
+            },
+            "mintChallenge": "A6M8nRmmECjPJSKbxsI9bG9tlmpZb77qtQwMwAQXCF4"
+        },
+        {
+            "name": "session-mint-ceiling-limits",
+            "primaryType": "SessionMint",
+            "signer": "passkey",
+            "message": {
+                "paradexChain": "PRIVATE_SN_PARACLEAR_MAINNET",
+                "environment": "mainnet",
+                "sessionKey": "0x1f2e3d4c5b6a79881726354453627180f9e8d7c6b5a493827160f5e4d3c2b1a",
+                "scopes": ["trade"],
+                "limits": {
+                    "maxOrderNotional": "",
+                    "maxOpenNotional": "",
+                    "dailyNotional": "",
+                    "maxLoss": "",
+                    "maxLeverage": "",
+                    "markets": []
+                },
+                "subaccounts": [],
+                "nonce": "0x88888888888888888888888888888888",
+                "expiresAt": 0
+            },
+            "eip712": {
+                "signatureChainId": 1,
+                "typedData": {
+                    "domain": {
+                        "chainId": 1,
+                        "name": "Paradex Session",
+                        "version": "1"
+                    },
+                    "message": {
+                        "environment": "mainnet",
+                        "expiresAt": 0,
+                        "limits": {
+                            "dailyNotional": "",
+                            "markets": [],
+                            "maxLeverage": "",
+                            "maxLoss": "",
+                            "maxOpenNotional": "",
+                            "maxOrderNotional": ""
+                        },
+                        "nonce": "0x88888888888888888888888888888888",
+                        "paradexChain": "PRIVATE_SN_PARACLEAR_MAINNET",
+                        "scopes": ["trade"],
+                        "sessionKey": "0x1f2e3d4c5b6a79881726354453627180f9e8d7c6b5a493827160f5e4d3c2b1a",
+                        "subaccounts": []
+                    },
+                    "primaryType": "SessionMint",
+                    "types": {
+                        "EIP712Domain": [
+                            {
+                                "name": "name",
                                 "type": "string"
+                            },
+                            {
+                                "name": "version",
+                                "type": "string"
+                            },
+                            {
+                                "name": "chainId",
+                                "type": "uint256"
+                            }
+                        ],
+                        "Limits": [
+                            {
+                                "name": "maxOrderNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxOpenNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "dailyNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxLoss",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxLeverage",
+                                "type": "string"
+                            },
+                            {
+                                "name": "markets",
+                                "type": "string[]"
+                            }
+                        ],
+                        "SessionMint": [
+                            {
+                                "name": "paradexChain",
+                                "type": "string"
+                            },
+                            {
+                                "name": "environment",
+                                "type": "string"
+                            },
+                            {
+                                "name": "sessionKey",
+                                "type": "string"
+                            },
+                            {
+                                "name": "scopes",
+                                "type": "string[]"
+                            },
+                            {
+                                "name": "limits",
+                                "type": "Limits"
+                            },
+                            {
+                                "name": "subaccounts",
+                                "type": "string[]"
+                            },
+                            {
+                                "name": "nonce",
+                                "type": "string"
+                            },
+                            {
+                                "name": "expiresAt",
+                                "type": "uint64"
+                            }
+                        ]
+                    }
+                },
+                "domainSeparator": "0x829c2852d73f9458839f9c1e8d096d73c457b487e19241fa0d514ddace4a0a5d",
+                "structHash": "0xc3af212f83bff0d4043d1ee9dcb800d40d658272c6a389ca33e3f935b5eba357",
+                "digest": "0x8da624fcbf6a2b328c4807394b8cfae15d0a7732b7d555b2ab63475fc2745e1d"
+            },
+            "snip12": {
+                "typedData": {
+                    "domain": {
+                        "chainId": "PRIVATE_SN_PARACLEAR_MAINNET",
+                        "name": "Paradex Session",
+                        "revision": "1",
+                        "version": "1"
+                    },
+                    "message": {
+                        "environment": "mainnet",
+                        "expiresAt": "0",
+                        "limits": {
+                            "dailyNotional": "",
+                            "markets": [],
+                            "maxLeverage": "",
+                            "maxLoss": "",
+                            "maxOpenNotional": "",
+                            "maxOrderNotional": ""
+                        },
+                        "nonce": "0x88888888888888888888888888888888",
+                        "paradexChain": "PRIVATE_SN_PARACLEAR_MAINNET",
+                        "scopes": ["trade"],
+                        "sessionKey": "0x1f2e3d4c5b6a79881726354453627180f9e8d7c6b5a493827160f5e4d3c2b1a",
+                        "subaccounts": []
+                    },
+                    "primaryType": "SessionMint",
+                    "types": {
+                        "Limits": [
+                            {
+                                "name": "maxOrderNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxOpenNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "dailyNotional",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxLoss",
+                                "type": "string"
+                            },
+                            {
+                                "name": "maxLeverage",
+                                "type": "string"
+                            },
+                            {
+                                "name": "markets",
+                                "type": "shortstring*"
+                            }
+                        ],
+                        "SessionMint": [
+                            {
+                                "name": "paradexChain",
+                                "type": "shortstring"
+                            },
+                            {
+                                "name": "environment",
+                                "type": "shortstring"
                             },
                             {
                                 "name": "sessionKey",
@@ -3307,10 +3483,10 @@
                     }
                 },
                 "domainHash": "0x754ed8f2b3555aa6168733b3b1ffffd1f17bd7693fe5778295acd4ce43b5b50",
-                "structHash": "0x12d4604dcb57dfea70f1630b23dcf82b78cc0f96d84a3026f36b2b06f584d7e",
-                "messageHash": "0x4ab94c1d735558eacb3ae5bb715d623860f83fab5b07265b719cf007e557a79"
+                "structHash": "0x49e23ec1370c733f99a4f0ac9bdc80514120e0cd90583ba194521ec9955ec95",
+                "messageHash": "0x7ade0dbe39be946ad9cd280bf4cfaf6bc9e82ba11727024dd5d2320219dcd11"
             },
-            "mintChallenge": "BKuUwdc1VY6ss65btxXWI4YPg_q1sHJltxnPAH5Venk"
+            "mintChallenge": "B63g2-Ob6UatnNKAv0z69ryegroRcnAk3V0jICGdzRE"
         }
     ]
 }

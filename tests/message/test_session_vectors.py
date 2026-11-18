@@ -18,10 +18,22 @@ from paradex_py.message.session import (
 DATA = json.loads((Path(__file__).parent / "testdata" / "session_vectors.json").read_text())
 KEYS = DATA["keys"]
 
+# What a mint states to take its passkey's ceiling.
+CEILING_LIMITS = {
+    "maxOrderNotional": "",
+    "maxOpenNotional": "",
+    "dailyNotional": "",
+    "maxLoss": "",
+    "maxLeverage": "",
+    "markets": [],
+}
+
 
 def _build(primary_type: str, m: dict):
     if primary_type == "SessionGrant":
         return SessionGrant.from_message(m)
+    if primary_type == "SessionMint":
+        return _mint(m)
     common = {"paradex_chain": m["paradexChain"], "environment": m["environment"], "account": m["account"]}
     if primary_type == "PasskeyGrant":
         p, c = m["passkey"], m["ceiling"]
@@ -41,12 +53,16 @@ def _build(primary_type: str, m: dict):
             issued_at=int(m["issuedAt"]),
             expires_at=int(m["expiresAt"]),
         )
+    raise AssertionError(primary_type)
+
+
+def _mint(m: dict) -> SessionMint:
     return SessionMint(
-        **common,
-        credential_id=m["credentialId"],
+        paradex_chain=m["paradexChain"],
+        environment=m["environment"],
         session_key=m["sessionKey"],
         scopes=m["scopes"],
-        limits=Limits.from_message(m["limits"]),
+        limits=None if m["limits"] == CEILING_LIMITS else Limits.from_message(m["limits"]),
         subaccounts=m["subaccounts"],
         nonce=m["nonce"],
         expires_at=int(m["expiresAt"]),

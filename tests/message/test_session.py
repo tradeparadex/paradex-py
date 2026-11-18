@@ -7,6 +7,7 @@ from eth_account.messages import encode_typed_data
 from starknet_py.hash.utils import private_to_stark_key, verify_message_signature
 
 from paradex_py.message.session import (
+    LONGEST_SESSION,
     Builder,
     Ceiling,
     Limits,
@@ -23,6 +24,19 @@ LIMITS = Limits("25000", "100000", "500000", "5000.5", "10", ["BTC-USD-PERP", "*
 ARBITRUM = 42161
 PUB_X = "0x" + "ab" * 32
 PUB_Y = "0x" + "cd" * 32
+
+# Every limit the server can enforce, for tests comparing stated limits with a ceiling.
+ALL_LIMITS = {"maxOrderNotional", "maxOpenNotional", "dailyNotional", "maxLoss", "maxLeverage", "markets"}
+
+# What a mint states to take its passkey's ceiling.
+CEILING_LIMITS = {
+    "maxOrderNotional": "",
+    "maxOpenNotional": "",
+    "dailyNotional": "",
+    "maxLoss": "",
+    "maxLeverage": "",
+    "markets": [],
+}
 
 
 def _nonce(n: int) -> str:
@@ -67,8 +81,6 @@ def _mint(**overrides) -> SessionMint:
     fields = {
         "paradex_chain": MAINNET,
         "environment": "mainnet",
-        "account": "0x1234",
-        "credential_id": "Y3JlZA",
         "session_key": "0x5",
         "scopes": ["trade"],
         "limits": LIMITS,
@@ -115,8 +127,8 @@ def _mint(**overrides) -> SessionMint:
         ),
         (
             _mint(),
-            "e97f338d6aedcc360546135858b94aac97eefea5cac8906d75541f6b6de8e4f6",
-            0x2C5FCA078BFA403E8E72CE892ACDE7C5F88EF5E67913492576DEC54767B6A7D,
+            "723ae7e88f9e9890339cc2512dd88c2d6447c1ec48a0f54832eb12b87bb97de0",
+            0x53C3E5DA2CD8E8851F56A8D0283285CE95465F1B66C7C3CFC8D34B8DD0E3873,
         ),
     ],
     ids=["session-grant-builder", "session-grant-minimal", "passkey-grant", "session-mint"],
@@ -398,7 +410,7 @@ def test_first_party_passkey_ceiling_carries_the_app_scopes():
 def test_mint_may_use_the_app_scopes_under_a_first_party_ceiling():
     grant = _ceiling_grant(LIMITS, scopes=["trade", "trade:rfq", "account:settings"])
     _mint(scopes=["trade:rfq", "account:settings"], limits=LIMITS, subaccounts=[], expires_at=2000).check_within(
-        grant, now=1500
+        grant, now=1500, enforced_limits=ALL_LIMITS
     )
 
 
@@ -420,8 +432,8 @@ def test_builder_passkey_without_future_subaccounts_is_accepted():
 @pytest.mark.parametrize(
     ("overrides", "error"),
     [
-        ({"credential_id": ""}, "credentialId is required"),
         ({"scopes": ["trade:isolated"]}, "reserved and refused"),
+        ({"subaccounts": ["0x99", "0x99"]}, "must not repeat"),
         ({"expires_at": 2**64}, "2\\^53"),
         ({"session_key": "0xzz"}, "0x hex"),
     ],
@@ -453,8 +465,6 @@ def test_session_mint_field_order():
     assert names == [
         "paradexChain",
         "environment",
-        "account",
-        "credentialId",
         "sessionKey",
         "scopes",
         "limits",
@@ -505,17 +515,16 @@ def test_mint_limits_must_match_the_ceiling(ceiling, mint, error):
     grant = _ceiling_grant(ceiling)
     session_mint = _mint(limits=mint, subaccounts=[], expires_at=2000)
     if error is None:
-        session_mint.check_within(grant, now=1500)
+        session_mint.check_within(grant, now=1500, enforced_limits=ALL_LIMITS)
     else:
         with pytest.raises(ValueError, match=error):
-            session_mint.check_within(grant, now=1500)
+            session_mint.check_within(grant, now=1500, enforced_limits=ALL_LIMITS)
 
 
 @pytest.mark.parametrize(
     ("mint", "ceiling", "error"),
     [
-        ({"account": "0x9"}, {}, "mint account is not the grant's"),
-        ({"credential_id": "other"}, {}, "credentialId is not the grant's passkey"),
+        ({"subaccounts": ["0x1234"]}, {"include_future_subaccounts": True}, "anchor account itself"),
         ({"paradex_chain": "PRIVATE_SN_PARACLEAR_TESTNET"}, {}, "mint paradexChain is not the grant's"),
         ({"environment": "testnet"}, {}, "mint environment is not the grant's"),
         ({"expires_at": 1500}, {}, "already expired"),
@@ -529,12 +538,134 @@ def test_mint_refused_outside_the_ceiling(mint, ceiling, error):
     fields = {"limits": LIMITS, "subaccounts": [], "expires_at": 2000}
     fields.update(mint)
     with pytest.raises(ValueError, match=error):
-        _mint(**fields).check_within(grant, now=1500)
+        _mint(**fields).check_within(grant, now=1500, enforced_limits=ALL_LIMITS)
+
+
+def test_mint_outliving_the_passkey_is_not_refused():
+    # The server ends the session when the passkey expires.
+    grant = _passkey_grant(
+        ceiling=Ceiling(scopes=["trade"], limits=LIMITS, max_session_ttl=7 * 86400, max_concurrent_sessions=5),
+        issued_at=1000,
+        expires_at=1500 + 3 * 86400,
+    )
+    week = 1500 + 7 * 86400
+    _mint(limits=None, subaccounts=[], expires_at=week).check_within(grant, now=1500, clock_skew_seconds=0)
+    with pytest.raises(ValueError, match="outlives"):
+        _mint(limits=None, subaccounts=[], expires_at=week + 1).check_within(grant, now=1500, clock_skew_seconds=0)
+
+
+def test_mint_expiry_is_kept_under_the_ceiling_by_the_clock_skew():
+    grant = _ceiling_grant(LIMITS)  # maxSessionTtl 86400
+    _mint(limits=None, subaccounts=[], expires_at=1500 + 86400 - 300).check_within(grant, now=1500)
+    with pytest.raises(ValueError, match="outlives"):
+        _mint(limits=None, subaccounts=[], expires_at=1500 + 86400 - 299).check_within(grant, now=1500)
+    # The longest session is the server's to work out, by its own clock.
+    _mint(limits=None, subaccounts=[], expires_at=LONGEST_SESSION).check_within(grant, now=1500)
+
+
+def test_mint_refused_under_a_ceiling_shorter_than_the_clock_skew():
+    grant = _passkey_grant(
+        ceiling=Ceiling(scopes=["trade"], limits=LIMITS, max_session_ttl=300, max_concurrent_sessions=5),
+        issued_at=1000,
+        expires_at=10**6,
+    )
+    with pytest.raises(ValueError, match="clock_skew_seconds"):
+        _mint(limits=None, subaccounts=[], expires_at=1600).check_within(grant, now=1500)
+
+
+def test_builder_passkey_mint_is_checked_like_any_other():
+    # The server checks maxLoss when a builder passkey registers, not on its mints.
+    ceiling = Ceiling(["trade"], Limits(max_loss="100"), 86400, 5)
+    grant = _passkey_grant(ceiling=ceiling, builder_account="0xb1", issued_at=1000, expires_at=10**6)
+    _mint(limits=None, subaccounts=[], expires_at=2000).check_within(grant, now=1500)
+
+
+def test_unenforced_limits_must_be_none():
+    grant = _ceiling_grant(Limits())
+    with pytest.raises(ValueError, match="maxOrderNotional must be 'none' unless named in enforced_limits"):
+        _mint(limits=LIMITS, subaccounts=[], expires_at=2000).check_within(grant, now=1500)
+    with pytest.raises(ValueError, match=r"markets must be \['\*'\] unless named in enforced_limits"):
+        _mint(limits=Limits(markets=["BTC-USD-PERP"]), subaccounts=[], expires_at=2000).check_within(grant, now=1500)
+    _mint(limits=Limits(), subaccounts=[], expires_at=2000).check_within(grant, now=1500)
+    _mint(limits=Limits(markets=["BTC-USD-PERP"]), subaccounts=[], expires_at=2000).check_within(
+        grant, now=1500, enforced_limits={"markets"}
+    )
+
+
+@pytest.mark.parametrize(
+    ("enforced", "error"),
+    [
+        ("maxLoss", "not the string"),
+        ({"max_loss"}, "unknown limits"),
+        ({"maxLossX"}, "unknown limits"),
+    ],
+)
+def test_enforced_limits_must_name_known_limits(enforced, error):
+    with pytest.raises(ValueError, match=error):
+        _mint(limits=None, subaccounts=[], expires_at=2000).check_within(
+            _ceiling_grant(LIMITS), now=1500, enforced_limits=enforced
+        )
+
+
+@pytest.mark.parametrize("skew", [-1, 1.5, True])
+def test_clock_skew_must_be_a_non_negative_integer(skew):
+    with pytest.raises(ValueError, match="clock_skew_seconds"):
+        _mint(limits=None, subaccounts=[], expires_at=2000).check_within(
+            _ceiling_grant(LIMITS), now=1500, clock_skew_seconds=skew
+        )
+
+
+def test_anchor_listed_as_subaccount_is_named_before_the_ceiling_check():
+    grant = _passkey_grant(
+        ceiling=Ceiling(["trade"], Limits(), 86400, 5, ["0x99"], False), issued_at=1000, expires_at=10**6
+    )
+    with pytest.raises(ValueError, match="anchor account itself"):
+        _mint(limits=None, subaccounts=["0x1234"], expires_at=2000).check_within(grant, now=1500)
+
+
+def test_ceiling_limits_message_is_not_shared():
+    first = _mint(limits=None, subaccounts=[]).to_message()["limits"]
+    first["markets"].append("BTC-USD-PERP")
+    assert _mint(limits=None, subaccounts=[]).to_message()["limits"] == CEILING_LIMITS
+
+
+def test_mint_names_no_account_or_passkey():
+    message = _mint().to_message()
+    assert "account" not in message
+    assert "credentialId" not in message
+
+
+def test_mint_with_zero_expiry_takes_the_longest_session():
+    grant = _ceiling_grant(LIMITS)
+    mint = _mint(limits=None, subaccounts=[], expires_at=LONGEST_SESSION)
+    assert mint.to_message()["expiresAt"] == 0
+    mint.check_within(grant, now=1500)
+    with pytest.raises(ValueError, match="passkey has expired"):
+        mint.check_within(grant, now=10**6)
+
+
+def test_mint_limits_must_be_given_even_to_take_the_ceiling():
+    with pytest.raises(TypeError, match="limits"):
+        SessionMint(MAINNET, "mainnet", "0x5", ["trade"], expires_at=100, nonce=_nonce(3))  # type: ignore[call-arg]
+
+
+def test_mint_without_limits_takes_the_ceiling():
+    mint = _mint(limits=None, subaccounts=[], expires_at=2000)
+    assert mint.to_message()["limits"] == CEILING_LIMITS
+    mint.check_within(_ceiling_grant(LIMITS), now=1500)
+
+
+def test_mint_hash_is_bound_to_chain_and_environment():
+    base = _mint().snip12_hash()
+    assert _mint(environment="testnet").snip12_hash() != base
+    assert _mint(paradex_chain="PRIVATE_SN_PARACLEAR_TESTNET").snip12_hash() != base
 
 
 def test_mint_may_name_future_subaccounts_when_the_ceiling_allows():
     grant = _ceiling_grant(LIMITS, subaccounts=[], include_future_subaccounts=True)
-    _mint(limits=LIMITS, subaccounts=["0x77"], expires_at=2000).check_within(grant, now=1500)
+    _mint(limits=LIMITS, subaccounts=["0x77"], expires_at=2000).check_within(
+        grant, now=1500, enforced_limits=ALL_LIMITS
+    )
 
 
 def test_first_party_grants_may_carry_block_and_settings_scopes():
@@ -641,13 +772,6 @@ def test_builder_grants_and_passkeys_need_a_numeric_max_loss():
     assert _grant(limits=Limits(max_loss="5000")).to_message()["limits"]["maxLoss"] == "5000"
     first_party = _passkey_grant(ceiling=Ceiling(["trade"], Limits(), 86400, 5)).to_message()
     assert first_party["ceiling"]["limits"]["maxLoss"] == "none"
-
-
-def test_mint_may_not_outlive_its_grant():
-    grant = _ceiling_grant(LIMITS)  # expires at 10**6
-    mint = _mint(limits=LIMITS, subaccounts=[], expires_at=10**6 + 1)
-    with pytest.raises(ValueError, match="outlives"):
-        mint.check_within(grant, now=10**6 - 100)
 
 
 def test_builder_approval_may_end_with_its_grant():

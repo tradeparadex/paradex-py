@@ -8,7 +8,9 @@ never withdraw. Three messages share one set of field semantics:
   listed ``subaccounts``, within ``scopes`` and ``limits``, until ``expiresAt``.
 - ``PasskeyGrant``: the owner lets a passkey open sessions within a ``ceiling``.
 - ``SessionMint``: what a passkey signs (as the WebAuthn challenge) to open one
-  session within that ceiling.
+  session within that ceiling. It names neither the account nor the passkey:
+  the server finds the passkey by the assertion's credential id, and its grant
+  names the account.
 
 Each has two encodings with the same field names and order:
 
@@ -44,7 +46,7 @@ import base64
 import re
 import secrets
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from decimal import Decimal
 from fnmatch import fnmatchcase
@@ -65,6 +67,9 @@ __all__ = [
     "DOMAIN_VERSION",
     "FIRST_PARTY_PASSKEY_SCOPES",
     "GRANTABLE_SCOPES",
+    "LONGEST_SESSION",
+    "MAX_CLOCK_SKEW_SECONDS",
+    "MINT_HASH_ACCOUNT",
     "NO_LIMIT",
     "REFUSED_SCOPES",
     "Builder",
@@ -380,8 +385,6 @@ _PASSKEY_GRANT = (
 _SESSION_MINT = (
     ("paradexChain", "string", "shortstring"),
     ("environment", "string", "shortstring"),
-    ("account", "string", "ContractAddress"),
-    ("credentialId", "string", "string"),
     ("sessionKey", "string", "felt"),
     ("scopes", "string[]", "shortstring*"),
     ("limits", "Limits", "Limits"),
@@ -776,17 +779,44 @@ class PasskeyGrant(_TypedMessage):
         }
 
 
+# The account a SessionMint's SNIP-12 message hash is taken for: a mint names no account.
+MINT_HASH_ACCOUNT = 0
+
+# A SessionMint expires_at asking for the longest session the passkey allows.
+LONGEST_SESSION = 0
+
+# How far ahead of the server a client's clock may run when checking a mint's expiry, in seconds.
+MAX_CLOCK_SKEW_SECONDS = 5 * 60
+
+# The limits the server may enforce, as SessionMint.check_within's ``enforced_limits`` names them.
+_ENFORCEABLE_LIMITS = frozenset((*_LIMIT_NAMES, "markets"))
+
+
+def _ceiling_limits_message() -> dict[str, Any]:
+    """The limits a SessionMint states to take its passkey's ceiling: every amount empty and no markets."""
+    return dict.fromkeys(_LIMIT_NAMES, "") | {"markets": []}
+
+
 @dataclass(frozen=True)
 class SessionMint(_TypedMessage):
-    """What a passkey signs to open one session; its hash is the WebAuthn challenge."""
+    """What a passkey signs to open one session; its hash is the WebAuthn challenge.
+
+    It names neither the account nor the passkey, so a client can let the user pick any passkey they
+    hold (an empty ``allowCredentials``). The server finds the passkey by the assertion's credential id
+    and answers with the account it opened a session for.
+
+    ``limits=None`` takes the passkey's ceiling: the server applies its value for each limit it enforces
+    and ``"none"`` for the rest. Stated limits must fit the ceiling. ``expires_at=0``
+    (:data:`LONGEST_SESSION`) asks for the longest session the passkey allows: until it expires or for
+    the ceiling's ``maxSessionTtl``, whichever is sooner, by the server's clock. A stated ``expires_at``
+    past the passkey's own expiry is not refused: the session ends when the passkey does.
+    """
 
     paradex_chain: str
     environment: str
-    account: str
-    credential_id: str
     session_key: str
     scopes: Sequence[str]
-    limits: Limits
+    limits: Limits | None  # None: the ceiling's
     expires_at: int
     nonce: str  # from POST /v2/passkeys/challenge; the server refuses a nonce it did not issue
     subaccounts: Sequence[str] = ()
@@ -796,58 +826,118 @@ class SessionMint(_TypedMessage):
     _STRUCTS = {"Limits": _LIMITS}  # noqa: RUF012
 
     def to_message(self) -> dict[str, Any]:
-        account = _hex(self.account, "account")
-        if not self.credential_id:
-            raise_value_error("credentialId is required")
         return {
             "paradexChain": _shortstring(self.paradex_chain, "paradexChain"),
             "environment": _environment(self.environment),
-            "account": account,
-            "credentialId": self.credential_id,
             "sessionKey": _hex(self.session_key, "sessionKey"),
             "scopes": _scopes(self.scopes),
-            "limits": self.limits.to_message(),
-            "subaccounts": _subaccounts(account, self.subaccounts),
+            "limits": _ceiling_limits_message() if self.limits is None else self.limits.to_message(),
+            "subaccounts": _subaccounts("", self.subaccounts),
             "nonce": _nonce(self.nonce),
             "expiresAt": _uint(self.expires_at, "expiresAt"),
         }
+
+    def snip12_hash(self) -> int:
+        """The SNIP-12 message hash, taken for :data:`MINT_HASH_ACCOUNT`: a mint names no account."""
+        return typed_data_to_message_hash(self.snip12_typed_data(), MINT_HASH_ACCOUNT)
 
     def webauthn_challenge(self) -> str:
         """The WebAuthn challenge: base64url (unpadded) of the 32-byte big-endian SNIP-12 hash."""
         digest = self.snip12_hash().to_bytes(32, "big")
         return base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
 
-    def check_within(self, grant: PasskeyGrant, *, now: int | None = None) -> None:
+    def check_within(
+        self,
+        grant: PasskeyGrant,
+        *,
+        now: int | None = None,
+        enforced_limits: Collection[str] = (),
+        clock_skew_seconds: int = MAX_CLOCK_SKEW_SECONDS,
+    ) -> None:
         """Refuse a mint the server would refuse against ``grant``'s ceiling, before the passkey signs it.
 
-        Under a numeric ceiling limit the mint states a number at or below it; under a ``"none"`` ceiling
-        limit anything goes. Markets must be a subset of the ceiling's, unless the ceiling is ``["*"]``.
+        ``grant`` must be the grant of the passkey that will sign. The mint names no passkey, so this
+        holds only when the WebAuthn request pins ``allowCredentials`` to ``grant.passkey.credential_id``.
+        With an empty ``allowCredentials`` the user may pick another passkey, on another account or with
+        another ceiling, and the server checks the mint against that one: compare the account in the
+        response with ``grant.account``.
+
+        ``enforced_limits`` names the limits the server enforces, from ``maxOrderNotional``,
+        ``maxOpenNotional``, ``dailyNotional``, ``maxLoss``, ``maxLeverage`` and ``markets``. The API
+        does not say which those are, so the caller passes them; it defaults to none. A stated limit not
+        named there must be ``"none"``, and ``markets`` ``["*"]``. An enforced one
+        must be a number at or below a numeric ceiling limit (anything valid under ``"none"``), and each
+        market covered by the ceiling's. A mint taking the ceiling's limits (``limits=None``) fits by
+        definition.
+
+        The server bounds a stated ``expires_at`` by its own clock plus the ceiling's ``maxSessionTtl``,
+        so the bound here is kept ``clock_skew_seconds`` under it, for a client clock running ahead; pass
+        0 when ``now`` comes from the server's clock, or ask for :data:`LONGEST_SESSION`, which the server
+        works out itself.
         """
+        enforced = _enforced_limits(enforced_limits)
+        if isinstance(clock_skew_seconds, bool) or not isinstance(clock_skew_seconds, int) or clock_skew_seconds < 0:
+            raise_value_error(f"clock_skew_seconds must be a non-negative integer, not {clock_skew_seconds!r}")
         message, granted = self.to_message(), grant.to_message()
+        _subaccounts(granted["account"], self.subaccounts)
         ceiling = granted["ceiling"]
-        for name in ("account", "paradexChain", "environment"):
+        for name in ("paradexChain", "environment"):
             if message[name] != granted[name]:
                 raise_value_error(f"mint {name} is not the grant's")
-        if message["credentialId"] != granted["passkey"]["credentialId"]:
-            raise_value_error("mint credentialId is not the grant's passkey")
         if not set(message["scopes"]) <= set(ceiling["scopes"]):
             raise_value_error(f"mint scopes {message['scopes']} exceed the ceiling's {ceiling['scopes']}")
-        _check_limits_within(message["limits"], ceiling["limits"])
+        if self.limits is not None:
+            _check_limits_within(message["limits"], ceiling["limits"], enforced)
         if not ceiling["includeFutureSubaccounts"] and not set(message["subaccounts"]) <= set(ceiling["subaccounts"]):
             raise_value_error("mint lists sub-accounts the ceiling does not")
         now = int(time.time()) if now is None else now
-        if message["expiresAt"] <= now:
-            raise_value_error("mint has already expired")
-        if message["expiresAt"] > min(granted["expiresAt"], now + ceiling["maxSessionTtl"]):
-            raise_value_error("mint outlives the grant or the ceiling's maxSessionTtl")
+        _check_expiry_within(message["expiresAt"], granted, now, clock_skew_seconds)
 
 
-def _check_limits_within(mint: dict[str, Any], ceiling: dict[str, Any]) -> None:
+def _enforced_limits(names: Collection[str]) -> frozenset[str]:
+    if isinstance(names, str):
+        raise_value_error(f"enforced_limits must be a collection of limit names, not the string {names!r}")
+    unknown = sorted(set(names) - _ENFORCEABLE_LIMITS)
+    if unknown:
+        raise_value_error(f"enforced_limits names unknown limits {unknown}; known: {sorted(_ENFORCEABLE_LIMITS)}")
+    return frozenset(names)
+
+
+def _check_expiry_within(expires_at: int, granted: dict[str, Any], now: int, skew: int) -> None:
+    if granted["expiresAt"] <= now:
+        raise_value_error("the passkey has expired")
+    if expires_at == LONGEST_SESSION:
+        return
+    if expires_at <= now:
+        raise_value_error("mint has already expired")
+    ttl = granted["ceiling"]["maxSessionTtl"]
+    if ttl <= skew:
+        raise_value_error(
+            f"ceiling maxSessionTtl {ttl}s leaves no time after clock_skew_seconds={skew}; pass a smaller "
+            "clock_skew_seconds (0 with the server's clock) or expires_at=LONGEST_SESSION"
+        )
+    # A session that would outlive the passkey ends with it, so only the ceiling's length is checked.
+    if expires_at > now + ttl - skew:
+        raise_value_error(
+            f"mint outlives the ceiling's maxSessionTtl ({ttl}s) less clock_skew_seconds={skew}: expires_at "
+            f"must be at most {now + ttl - skew}, or LONGEST_SESSION for the longest the server allows"
+        )
+
+
+def _check_limits_within(mint: dict[str, Any], ceiling: dict[str, Any], enforced: frozenset[str]) -> None:
     for name in _LIMIT_NAMES:
+        if name not in enforced:
+            if mint[name] != NO_LIMIT:
+                raise_value_error(f"limits.{name} must be 'none' unless named in enforced_limits")
+            continue
         if ceiling[name] == NO_LIMIT:
-            continue  # anything goes under an uncapped ceiling
+            continue  # anything valid under an uncapped ceiling
         if mint[name] == NO_LIMIT or Decimal(mint[name]) > Decimal(ceiling[name]):
             raise_value_error(f"limits.{name} must be a number at most the ceiling's {ceiling[name]}")
+    if "markets" not in enforced:
+        if mint["markets"] != [ALL_MARKETS]:
+            raise_value_error(f"limits.markets must be ['{ALL_MARKETS}'] unless named in enforced_limits")
+        return
     if ceiling["markets"] != [ALL_MARKETS] and not all(
         _market_covered(market, ceiling["markets"]) for market in mint["markets"]
     ):
