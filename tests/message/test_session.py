@@ -582,9 +582,9 @@ def test_builder_passkey_mint_is_checked_like_any_other():
 
 def test_unenforced_limits_must_be_none():
     grant = _ceiling_grant(Limits())
-    with pytest.raises(ValueError, match="maxOrderNotional must be 'none'"):
+    with pytest.raises(ValueError, match="maxOrderNotional must be 'none' unless named in enforced_limits"):
         _mint(limits=LIMITS, subaccounts=[], expires_at=2000).check_within(grant, now=1500)
-    with pytest.raises(ValueError, match=r"markets must be \['\*'\]"):
+    with pytest.raises(ValueError, match=r"markets must be \['\*'\] unless named in enforced_limits"):
         _mint(limits=Limits(markets=["BTC-USD-PERP"]), subaccounts=[], expires_at=2000).check_within(grant, now=1500)
     _mint(limits=Limits(), subaccounts=[], expires_at=2000).check_within(grant, now=1500)
     _mint(limits=Limits(markets=["BTC-USD-PERP"]), subaccounts=[], expires_at=2000).check_within(

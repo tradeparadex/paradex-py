@@ -863,8 +863,9 @@ class SessionMint(_TypedMessage):
         response with ``grant.account``.
 
         ``enforced_limits`` names the limits the server enforces, from ``maxOrderNotional``,
-        ``maxOpenNotional``, ``dailyNotional``, ``maxLoss``, ``maxLeverage`` and ``markets``. A stated
-        limit the server does not enforce must be ``"none"``, and ``markets`` ``["*"]``. An enforced one
+        ``maxOpenNotional``, ``dailyNotional``, ``maxLoss``, ``maxLeverage`` and ``markets``. The API
+        does not say which those are, so the caller passes them; it defaults to none. A stated limit not
+        named there must be ``"none"``, and ``markets`` ``["*"]``. An enforced one
         must be a number at or below a numeric ceiling limit (anything valid under ``"none"``), and each
         market covered by the ceiling's. A mint taking the ceiling's limits (``limits=None``) fits by
         definition.
@@ -927,7 +928,7 @@ def _check_limits_within(mint: dict[str, Any], ceiling: dict[str, Any], enforced
     for name in _LIMIT_NAMES:
         if name not in enforced:
             if mint[name] != NO_LIMIT:
-                raise_value_error(f"limits.{name} must be 'none': the server does not enforce it")
+                raise_value_error(f"limits.{name} must be 'none' unless named in enforced_limits")
             continue
         if ceiling[name] == NO_LIMIT:
             continue  # anything valid under an uncapped ceiling
@@ -935,7 +936,7 @@ def _check_limits_within(mint: dict[str, Any], ceiling: dict[str, Any], enforced
             raise_value_error(f"limits.{name} must be a number at most the ceiling's {ceiling[name]}")
     if "markets" not in enforced:
         if mint["markets"] != [ALL_MARKETS]:
-            raise_value_error(f"limits.markets must be ['{ALL_MARKETS}']: the server does not enforce it")
+            raise_value_error(f"limits.markets must be ['{ALL_MARKETS}'] unless named in enforced_limits")
         return
     if ceiling["markets"] != [ALL_MARKETS] and not all(
         _market_covered(market, ceiling["markets"]) for market in mint["markets"]
