@@ -104,6 +104,18 @@ def _off_increment(limit: str) -> bool:
         return False
 
 
+# Windows the Builder Codes stats endpoints serve.
+BUILDER_STATS_WINDOWS = frozenset({"24h", "7d", "30d", "all"})
+
+
+def _builder_address(builder_account: str) -> str:
+    """A builder account as a canonical 0x address for a URL path, refusing anything else."""
+    try:
+        return hex(int(builder_account, 16))
+    except (TypeError, ValueError):
+        raise ValueError(f"builder_account must be a 0x hex address, got {builder_account!r}") from None
+
+
 class ParadexApiClient(BlockTradesMixin, HttpClient):
     """Class to interact with Paradex REST API.
         Initialized along with `Paradex` class.
@@ -279,6 +291,83 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         """
         self._validate_auth()
         return self.post(api_url=self._v2_api_url, path="account/subaccounts")
+
+    def fetch_builder_approvals(self, include_inactive: bool = False) -> dict:
+        """List the builders the logged-in account has approved (Builder Codes).
+
+        .. warning::
+            Experimental: this SDK API may still change.
+
+        ``GET /v2/builders/approvals``. Needs the account owner's main-key login; a session or subkey
+        JWT is refused. Live approvals are listed newest first.
+
+        Args:
+            include_inactive: Also list revoked and expired approvals, for the approval history.
+
+        Returns:
+            dict with ``results``: a list of approvals, each with ``builder`` (``account``, ``name``),
+            ``status`` (``active``, ``revoked`` or ``expired``), ``max_fee_rate``, and ``expires_at``,
+            ``approved_at`` and ``revoked_at`` in milliseconds (``revoked_at`` is 0 while not revoked).
+        """
+        self._validate_auth()
+        params = {"include_inactive": "true"} if include_inactive else None
+        return self.get(api_url=self._v2_api_url, path="builders/approvals", params=params)
+
+    def revoke_builder_approval(self, builder_account: str) -> None:
+        """Revoke the logged-in account's approval of a builder (Builder Codes).
+
+        .. warning::
+            Experimental: this SDK API may still change.
+
+        ``DELETE /v2/builders/approvals/{builder_account}``. Needs the account owner's main-key login.
+        New orders naming the builder are refused at once, on the account and its sub-accounts. The
+        server answers 404 when the account has no live approval of the builder.
+
+        Args:
+            builder_account: The builder's account address.
+        """
+        self._validate_auth()
+        self.delete(api_url=self._v2_api_url, path=f"builders/approvals/{_builder_address(builder_account)}")
+
+    def fetch_builder_stats(self, builder_account: str) -> dict:
+        """Fetch a builder's Builder Codes stats. Public endpoint.
+
+        .. warning::
+            Experimental: this SDK API may still change.
+
+        ``GET /v1/builders/{builder_account}/stats``: one row per window (``24h``, ``7d``, ``30d``,
+        ``all``). ``fees_paid`` is what traders paid the builder in USDC, before any protocol share. A
+        window with no paid fill, or with too few paying users, is zeros, and stats lag the fills they
+        count. The server answers 404 while it has no stats to serve.
+
+        Args:
+            builder_account: The builder's account address.
+
+        Returns:
+            dict with ``results``: rows with ``builder`` (``account``, ``name``), ``window``,
+            ``fees_paid``, ``volume``, ``users``, ``fills`` and ``as_of`` (milliseconds).
+        """
+        return self._get(path=f"builders/{_builder_address(builder_account)}/stats")
+
+    def fetch_builder_leaderboard(self, window: str | None = None) -> dict:
+        """Fetch builders ranked by the builder fees traders paid them. Public endpoint.
+
+        .. warning::
+            Experimental: this SDK API may still change.
+
+        ``GET /v1/builders/leaderboard``, ranked by ``fees_paid`` and then by volume. The server
+        answers 404 while it has no stats to serve.
+
+        Args:
+            window: ``24h``, ``7d``, ``30d`` or ``all``; the server's default is ``7d``.
+
+        Returns:
+            dict with ``results``: rows as :meth:`fetch_builder_stats` returns them, each with a
+            ``rank`` (1 for the builder paid the most).
+        """
+        if window is not None and window not in BUILDER_STATS_WINDOWS:
+            raise ValueError(f"window must be one of {sorted(BUILDER_STATS_WINDOWS)}, got {window!r}")
+        return self._get(path="builders/leaderboard", params={"window": window} if window else None)
 
     def onboarding(self):
         if self.account is None:
