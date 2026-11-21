@@ -268,3 +268,23 @@ class TestBuilderCodes:
         with pytest.raises(ValueError, match="window must be one of"):
             self.api_client.fetch_builder_leaderboard("1h")
         assert not self.requests
+
+
+def test_submit_algo_order_refuses_a_builder_before_signing():
+    from decimal import Decimal
+
+    from paradex_py.common.order import Order, OrderSide, OrderType
+
+    api_client = ParadexApiClient(env=TESTNET)
+    api_client._validate_auth = Mock()
+    order = Order(
+        market="BTC-USD-PERP",
+        order_type=OrderType.Market,
+        order_side=OrderSide.Buy,
+        size=Decimal("0.1"),
+        builder="0xb1",
+        builder_fee_rate=Decimal("0.0005"),
+    )
+    with patch.object(api_client, "post") as mock_post, pytest.raises(ValueError, match="algo orders take no builder"):
+        api_client.submit_algo_order(order, algo_type="TWAP", duration_seconds=60)
+    mock_post.assert_not_called()

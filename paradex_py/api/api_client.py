@@ -1360,7 +1360,7 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
             Private endpoint requires authorization.
 
         Args:
-            order: Order with type=MARKET, price=0, containing market/side/size.
+            order: Order with type=MARKET, price=0, containing market/side/size, and no builder.
             algo_type: Algo type (e.g. "TWAP").
             duration_seconds: Duration in seconds (30-86400, multiple of 30).
             frequency: Interval in seconds between child orders (default: 30).
@@ -1369,6 +1369,8 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         Returns:
             Algo order response dict.
         """
+        if order.builder:
+            raise ValueError("algo orders take no builder: Builder Codes are for single orders")
         signature_headers: dict[str, Any] = {}
         # Sign the order
         if signer is not None:
