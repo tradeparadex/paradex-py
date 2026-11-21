@@ -578,7 +578,7 @@ def test_mint_refused_under_a_ceiling_shorter_than_the_clock_skew():
 
 
 def test_builder_passkey_mint_is_checked_like_any_other():
-    # The server checks maxLoss when a builder passkey registers, not on its mints.
+    # A builder passkey follows the same limit rules as a first-party one.
     ceiling = Ceiling(["trade"], Limits(max_loss="100"), 86400, 5)
     grant = _passkey_grant(ceiling=ceiling, builder_account="0xb1", issued_at=1000, expires_at=10**6)
     _mint(limits=None, subaccounts=[], expires_at=2000).check_within(grant, now=1500)
