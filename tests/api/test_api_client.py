@@ -258,7 +258,7 @@ class TestBuilderCodes:
         self.api_client._validate_auth.assert_not_called()
 
     @pytest.mark.parametrize("call", ["fetch_builder_stats", "revoke_builder_approval"])
-    @pytest.mark.parametrize("address", ["builder", "", "0x", None])
+    @pytest.mark.parametrize("address", ["builder", "", "0x", None, "b1", "-0xb1", " 0x1_0 ", "0x" + "1" * 65])
     def test_refuses_a_builder_that_is_not_an_address(self, call, address):
         with pytest.raises(ValueError, match="builder_account must be a 0x hex address"):
             getattr(self.api_client, call)(address)

@@ -232,7 +232,7 @@ register_builder_approval("testnet", approval, LocalOwnerSigner("0x<owner-eth-ke
 The owner lists its approvals with `ParadexApiClient.fetch_builder_approvals()` (live ones, newest
 first; `include_inactive=True` adds revoked and expired ones, for the history) and revokes one with
 `revoke_builder_approval(builder_account)`. Both need the owner's main-key login; a session or subkey
-JWT is refused. Each approval reports its `status` (`active`, `revoked` or `expired`), `max_fee_rate`
+JWT is refused, and listing is also refused for an account Paradex has not enabled sessions for. Each approval reports its `status` (`active`, `revoked` or `expired`), `max_fee_rate`
 and its `expires_at`, `approved_at` and `revoked_at` times in milliseconds.
 
 ### Builder Codes stats
@@ -240,8 +240,8 @@ and its `expires_at`, `approved_at` and `revoked_at` times in milliseconds.
 `fetch_builder_stats(builder_account)` and `fetch_builder_leaderboard(window)` are public. Stats come
 per window (`24h`, `7d`, `30d`, `all`): `fees_paid` is what traders paid the builder in USDC, before
 any protocol share, with `volume`, `users` and `fills`. The leaderboard ranks builders by `fees_paid`
-over one window (`7d` by default). Stats lag the fills they count, and the server answers 404 while
-it has none to serve.
+over one window (`7d` by default). Stats lag the fills they count. The server answers 404 for a
+builder with no recorded stats, and while it has none to serve at all.
 
 ```python
 client = ParadexApiClient(env="testnet")

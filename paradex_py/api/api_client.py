@@ -104,16 +104,17 @@ def _off_increment(limit: str) -> bool:
         return False
 
 
+# A path address as the server accepts it: 0x and 1 to 64 hex digits.
+_HEX_ADDRESS = re.compile(r"^0x[0-9a-fA-F]{1,64}$")
 # Windows the Builder Codes stats endpoints serve.
 BUILDER_STATS_WINDOWS = frozenset({"24h", "7d", "30d", "all"})
 
 
 def _builder_address(builder_account: str) -> str:
     """A builder account as a canonical 0x address for a URL path, refusing anything else."""
-    try:
-        return hex(int(builder_account, 16))
-    except (TypeError, ValueError):
-        raise ValueError(f"builder_account must be a 0x hex address, got {builder_account!r}") from None
+    if not isinstance(builder_account, str) or not _HEX_ADDRESS.match(builder_account):
+        raise ValueError(f"builder_account must be a 0x hex address, got {builder_account!r}")
+    return hex(int(builder_account, 16))
 
 
 class ParadexApiClient(BlockTradesMixin, HttpClient):
@@ -299,7 +300,8 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
             Experimental: this SDK API may still change.
 
         ``GET /v2/builders/approvals``. Needs the account owner's main-key login; a session or subkey
-        JWT is refused. Live approvals are listed newest first.
+        JWT is refused, and so is an account Paradex has not enabled sessions for (403). Live approvals
+        are listed newest first.
 
         Args:
             include_inactive: Also list revoked and expired approvals, for the approval history.
@@ -338,7 +340,8 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         ``GET /v1/builders/{builder_account}/stats``: one row per window (``24h``, ``7d``, ``30d``,
         ``all``). ``fees_paid`` is what traders paid the builder in USDC, before any protocol share. A
         window with no paid fill, or with too few paying users, is zeros, and stats lag the fills they
-        count. The server answers 404 while it has no stats to serve.
+        count. The server answers 404 for a builder it has no stats for (none recorded yet), and
+        while it has no stats to serve at all.
 
         Args:
             builder_account: The builder's account address.
