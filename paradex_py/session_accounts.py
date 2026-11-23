@@ -26,7 +26,7 @@ import asyncio
 import logging
 import secrets
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -194,48 +194,28 @@ def register_session(
         The server's response: ``grant_id``, ``expires_at`` (milliseconds) and the ``accounts`` covered.
         Pass ``grant_id`` to :class:`SessionAccounts`.
     """
-    _validate_env(env, "register_session")
-    _check_grant_environment(env, grant)
-    client = http_client or HttpClient()
-    base = api_base_url or f"https://api.{env}.paradex.trade/v1"
-    v2_base = base.replace("/v1", "/v2")
-    try:
-        if check_subaccounts and grant.subaccounts:
-            address = owner_address or getattr(owner_signer, "address", None)
-            if address:
-                _check_subaccounts_listed(client, v2_base, address, grant)
-        chain_id = owner_signer.signature_chain_id
-        typed_data = grant.eip712_typed_data(chain_id)
-        signature = owner_signer.sign_typed_data(typed_data)
-        if isinstance(signature, str) and len(signature) > _EOA_SIGNATURE_HEX_LENGTH:
-            raise_value_error(
-                "register_session: the signature is longer than an EOA's 65 bytes; contract wallets cannot"
-                " sign session grants"
-            )
-        payload: dict[str, Any] = {
-            "grant": typed_data["message"],
-            "signature": signature,
-            "signature_type": "eip712",
-            "signature_chain_id": chain_id,
-        }
-        if referral_code:
-            payload["referral_code"] = referral_code
-        if marketing_code:
-            payload["marketing_code"] = marketing_code
-        if utm:
-            payload["utm"] = dict(utm)
-        headers = dict(client.client.headers)
-        if privy_access_token:
-            headers[PRIVY_ACCESS_TOKEN_HEADER] = privy_access_token
-        return client.request(
-            url=f"{v2_base}/sessions",
-            http_method=HttpMethod.POST,
-            payload=payload,
-            headers=headers,
-        )
-    finally:
-        if http_client is None:
-            client.client.close()
+    extra: dict[str, Any] = {}
+    if referral_code:
+        extra["referral_code"] = referral_code
+    if marketing_code:
+        extra["marketing_code"] = marketing_code
+    if utm:
+        extra["utm"] = dict(utm)
+    return _register_signed(
+        env,
+        grant,
+        owner_signer,
+        http_client,
+        api_base_url,
+        caller="register_session",
+        path="sessions",
+        payload_key="grant",
+        noun=("a grant", "session grants"),
+        owner_address=owner_address,
+        check_subaccounts=check_subaccounts,
+        extra_payload=extra,
+        extra_headers={PRIVY_ACCESS_TOKEN_HEADER: privy_access_token} if privy_access_token else {},
+    )
 
 
 def register_builder_approval(
@@ -284,34 +264,70 @@ def register_builder_approval(
     Returns:
         The server's response: the ``accounts`` the approval covers and the ``approval`` as stored.
     """
-    _validate_env(env, "register_builder_approval")
-    _check_grant_environment(env, approval)
+    return _register_signed(
+        env,
+        approval,
+        owner_signer,
+        http_client,
+        api_base_url,
+        caller="register_builder_approval",
+        path="builders/approvals",
+        payload_key="approval",
+        noun=("an approval", "builder approvals"),
+        owner_address=owner_address,
+        check_subaccounts=check_subaccounts,
+    )
+
+
+def _register_signed(
+    env: Environment,
+    message: SessionGrant | BuilderApproval,
+    owner_signer: OwnerSigner,
+    http_client: HttpClient | None,
+    api_base_url: str | None,
+    *,
+    caller: str,
+    path: str,
+    payload_key: str,
+    noun: tuple[str, str],
+    owner_address: str | None,
+    check_subaccounts: bool,
+    extra_payload: Mapping[str, Any] | None = None,
+    extra_headers: Mapping[str, str] | None = None,
+) -> dict:
+    """Have an EVM owner sign ``message`` (EIP-712) and ``POST`` it to ``/v2/{path}``.
+
+    ``noun`` names the message in errors: singular with its article, then plural.
+    """
+    _validate_env(env, caller)
+    _check_grant_environment(env, message)
     client = http_client or HttpClient()
     base = api_base_url or f"https://api.{env}.paradex.trade/v1"
     v2_base = base.replace("/v1", "/v2")
     try:
-        if check_subaccounts and approval.subaccounts:
+        if check_subaccounts and message.subaccounts:
             address = owner_address or getattr(owner_signer, "address", None)
             if address:
-                _check_subaccounts_listed(client, v2_base, address, approval, "register_builder_approval")
+                _check_subaccounts_listed(client, v2_base, address, message, caller, noun[0])
         chain_id = owner_signer.signature_chain_id
-        typed_data = approval.eip712_typed_data(chain_id)
+        typed_data = message.eip712_typed_data(chain_id)
         signature = owner_signer.sign_typed_data(typed_data)
         if isinstance(signature, str) and len(signature) > _EOA_SIGNATURE_HEX_LENGTH:
             raise_value_error(
-                "register_builder_approval: the signature is longer than an EOA's 65 bytes; contract wallets"
-                " cannot sign builder approvals"
+                f"{caller}: the signature is longer than an EOA's 65 bytes; contract wallets cannot sign {noun[1]}"
             )
+        payload: dict[str, Any] = {
+            payload_key: typed_data["message"],
+            "signature": signature,
+            "signature_type": "eip712",
+            "signature_chain_id": chain_id,
+            **(extra_payload or {}),
+        }
         return client.request(
-            url=f"{v2_base}/builders/approvals",
+            url=f"{v2_base}/{path}",
             http_method=HttpMethod.POST,
-            payload={
-                "approval": typed_data["message"],
-                "signature": signature,
-                "signature_type": "eip712",
-                "signature_chain_id": chain_id,
-            },
-            headers=client.client.headers,
+            payload=payload,
+            headers={**dict(client.client.headers), **(extra_headers or {})},
         )
     finally:
         if http_client is None:
@@ -333,6 +349,7 @@ def _check_subaccounts_listed(
     owner_address: str,
     grant: SessionGrant | BuilderApproval,
     caller: str = "register_session",
+    noun: str = "a grant",
 ) -> None:
     """Refuse sub-accounts that are not the owner wallet's own EVM sub-accounts, before it signs.
 
@@ -357,7 +374,7 @@ def _check_subaccounts_listed(
     unknown = [address for address in grant.to_message()["subaccounts"] if int(address, 16) not in owned]
     if unknown:
         raise_value_error(
-            f"{caller}: {unknown} are not sub-accounts of {owner_address}'s account; a grant may list"
+            f"{caller}: {unknown} are not sub-accounts of {owner_address}'s account; {noun} may list"
             " only the owner wallet's own EVM sub-accounts (see fetch_evm_subaccounts)"
         )
 
