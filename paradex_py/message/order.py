@@ -6,6 +6,15 @@ from paradex_py.common.order import Order
 
 
 def build_order_message(chain_id: int, o: Order) -> TypedDataDict:
+    """The SNIP-12 rev0 typed data an order is signed under.
+
+    An order naming a builder signs as ``BuilderOrder``: the ``Order`` fields, in order, then
+    ``builder`` (a felt) and ``builderFeeRate`` (the rate at 8 decimals). Its distinct type hash
+    keeps either signature from being replayed as the other. Without a builder an order keeps
+    the ``Order`` hash.
+    """
+    if o.builder:
+        return _build_builder_order_message(chain_id, o)
     message = {
         "domain": {"name": "Paradex", "chainId": hex(chain_id), "version": "1"},
         "primaryType": "Order",
@@ -37,6 +46,45 @@ def build_order_message(chain_id: int, o: Order) -> TypedDataDict:
             "orderType": o.order_type.value,  # As encoded short string
             "size": o.chain_size(),
             "price": o.chain_price(),
+        },
+    }
+    return cast(TypedDataDict, message)
+
+
+_BUILDER_ORDER_TYPE = [
+    {"name": "timestamp", "type": "felt"},
+    {"name": "market", "type": "felt"},
+    {"name": "side", "type": "felt"},
+    {"name": "orderType", "type": "felt"},
+    {"name": "size", "type": "felt"},
+    {"name": "price", "type": "felt"},
+    {"name": "builder", "type": "felt"},  # The builder's account address
+    {"name": "builderFeeRate", "type": "felt"},  # Fraction of notional with 8 decimals; "0.0005" -> 50000
+]
+
+
+def _build_builder_order_message(chain_id: int, o: Order) -> TypedDataDict:
+    """The ``BuilderOrder`` typed data for an order naming a builder (see :func:`build_order_message`)."""
+    message = {
+        "domain": {"name": "Paradex", "chainId": hex(chain_id), "version": "1"},
+        "primaryType": "BuilderOrder",
+        "types": {
+            "StarkNetDomain": [
+                {"name": "name", "type": "felt"},
+                {"name": "chainId", "type": "felt"},
+                {"name": "version", "type": "felt"},
+            ],
+            "BuilderOrder": _BUILDER_ORDER_TYPE,
+        },
+        "message": {
+            "timestamp": str(o.signature_timestamp),
+            "market": o.market,
+            "side": o.order_side.chain_side(),
+            "orderType": o.order_type.value,
+            "size": o.chain_size(),
+            "price": o.chain_price(),
+            "builder": o.builder,
+            "builderFeeRate": o.chain_builder_fee_rate(),
         },
     }
     return cast(TypedDataDict, message)

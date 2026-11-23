@@ -7,6 +7,7 @@ import pytest
 from starknet_py.hash.utils import verify_message_signature
 
 from paradex_py.message.session import (
+    BuilderApproval,
     Ceiling,
     Limits,
     Passkey,
@@ -32,6 +33,8 @@ CEILING_LIMITS = {
 def _build(primary_type: str, m: dict):
     if primary_type == "SessionGrant":
         return SessionGrant.from_message(m)
+    if primary_type == "BuilderApproval":
+        return BuilderApproval.from_message(m)
     if primary_type == "SessionMint":
         return _mint(m)
     common = {"paradex_chain": m["paradexChain"], "environment": m["environment"], "account": m["account"]}
@@ -94,7 +97,12 @@ def test_server_vector(vector):
 
 
 def test_vectors_cover_every_message_type():
-    assert {v["primaryType"] for v in DATA["vectors"]} == {"SessionGrant", "PasskeyGrant", "SessionMint"}
+    assert {v["primaryType"] for v in DATA["vectors"]} == {
+        "SessionGrant",
+        "PasskeyGrant",
+        "SessionMint",
+        "BuilderApproval",
+    }
 
 
 @pytest.mark.parametrize(

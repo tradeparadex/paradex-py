@@ -26,7 +26,7 @@ import asyncio
 import logging
 import secrets
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -39,7 +39,7 @@ from paradex_py.api.api_client import ParadexApiClient
 from paradex_py.api.http_client import HttpClient, HttpMethod
 from paradex_py.api.ws_client import ParadexWebsocketClient
 from paradex_py.environment import Environment, _validate_env
-from paradex_py.message.session import SessionGrant, grant_environment, sign_eip712_typed_data
+from paradex_py.message.session import BuilderApproval, SessionGrant, grant_environment, sign_eip712_typed_data
 from paradex_py.utils import raise_value_error
 
 if TYPE_CHECKING:
@@ -55,6 +55,7 @@ __all__ = [
     "SessionRevokeError",
     "SessionWebsocketError",
     "new_session_key",
+    "register_builder_approval",
     "register_session",
 ]
 
@@ -193,44 +194,140 @@ def register_session(
         The server's response: ``grant_id``, ``expires_at`` (milliseconds) and the ``accounts`` covered.
         Pass ``grant_id`` to :class:`SessionAccounts`.
     """
-    _validate_env(env, "register_session")
-    _check_grant_environment(env, grant)
+    extra: dict[str, Any] = {}
+    if referral_code:
+        extra["referral_code"] = referral_code
+    if marketing_code:
+        extra["marketing_code"] = marketing_code
+    if utm:
+        extra["utm"] = dict(utm)
+    return _register_signed(
+        env,
+        grant,
+        owner_signer,
+        http_client,
+        api_base_url,
+        caller="register_session",
+        path="sessions",
+        payload_key="grant",
+        noun=("a grant", "session grants"),
+        owner_address=owner_address,
+        check_subaccounts=check_subaccounts,
+        extra_payload=extra,
+        extra_headers={PRIVY_ACCESS_TOKEN_HEADER: privy_access_token} if privy_access_token else {},
+    )
+
+
+def register_builder_approval(
+    env: Environment,
+    approval: BuilderApproval,
+    owner_signer: OwnerSigner,
+    http_client: HttpClient | None = None,
+    api_base_url: str | None = None,
+    *,
+    owner_address: str | None = None,
+    check_subaccounts: bool = True,
+) -> dict:
+    """Have an EVM owner sign ``approval`` (EIP-712) and register it with ``POST /v2/builders/approvals``.
+
+    .. warning::
+        Experimental: this SDK API may still change.
+
+    The approval lets the builder charge the owner's accounts up to ``maxFeeRate`` until
+    ``expiresAt``, with no session. The request needs no JWT. Take ``issuedAt`` from the server's
+    clock, since the server refuses one in its future::
+
+        server_time = ParadexApiClient(env).fetch_system_time()["server_time"]
+        approval = BuilderApproval.new(
+            server_time=int(server_time) // 1000,
+            ttl_seconds=30 * 24 * 3600,
+            paradex_chain=config.starknet_chain_id,
+            environment=grant_environment(env),
+            account=account_address,
+            builder=Builder("0x<builder account>", "0.0005"),
+        )
+        register_builder_approval(env, approval, LocalOwnerSigner(eth_private_key))
+
+    Revoke it with ``DELETE /v2/builders/approvals/{builder_account}``.
+
+    Args:
+        env: Environment.
+        approval: The approval to register. Its ``environment`` must match ``env``.
+        owner_signer: Signs the EIP-712 approval; the owner's key never reaches the SDK.
+        http_client: Optional HTTP client.
+        api_base_url: Optional ``/v1`` base URL override; ``/v2`` is derived from it.
+        owner_address: The owner wallet's address, for the sub-account check. Defaults to
+            ``owner_signer.address`` when the signer has one (``LocalOwnerSigner`` does).
+        check_subaccounts: Before the owner signs, refuse sub-accounts that are not the wallet's own EVM
+            sub-accounts, as :func:`register_session` does.
+
+    Returns:
+        The server's response: the ``accounts`` the approval covers and the ``approval`` as stored.
+    """
+    return _register_signed(
+        env,
+        approval,
+        owner_signer,
+        http_client,
+        api_base_url,
+        caller="register_builder_approval",
+        path="builders/approvals",
+        payload_key="approval",
+        noun=("an approval", "builder approvals"),
+        owner_address=owner_address,
+        check_subaccounts=check_subaccounts,
+    )
+
+
+def _register_signed(
+    env: Environment,
+    message: SessionGrant | BuilderApproval,
+    owner_signer: OwnerSigner,
+    http_client: HttpClient | None,
+    api_base_url: str | None,
+    *,
+    caller: str,
+    path: str,
+    payload_key: str,
+    noun: tuple[str, str],
+    owner_address: str | None,
+    check_subaccounts: bool,
+    extra_payload: Mapping[str, Any] | None = None,
+    extra_headers: Mapping[str, str] | None = None,
+) -> dict:
+    """Have an EVM owner sign ``message`` (EIP-712) and ``POST`` it to ``/v2/{path}``.
+
+    ``noun`` names the message in errors: singular with its article, then plural.
+    """
+    _validate_env(env, caller)
+    _check_grant_environment(env, message)
     client = http_client or HttpClient()
     base = api_base_url or f"https://api.{env}.paradex.trade/v1"
     v2_base = base.replace("/v1", "/v2")
     try:
-        if check_subaccounts and grant.subaccounts:
+        if check_subaccounts and message.subaccounts:
             address = owner_address or getattr(owner_signer, "address", None)
             if address:
-                _check_subaccounts_listed(client, v2_base, address, grant)
+                _check_subaccounts_listed(client, v2_base, address, message, caller, noun[0])
         chain_id = owner_signer.signature_chain_id
-        typed_data = grant.eip712_typed_data(chain_id)
+        typed_data = message.eip712_typed_data(chain_id)
         signature = owner_signer.sign_typed_data(typed_data)
         if isinstance(signature, str) and len(signature) > _EOA_SIGNATURE_HEX_LENGTH:
             raise_value_error(
-                "register_session: the signature is longer than an EOA's 65 bytes; contract wallets cannot"
-                " sign session grants"
+                f"{caller}: the signature is longer than an EOA's 65 bytes; contract wallets cannot sign {noun[1]}"
             )
         payload: dict[str, Any] = {
-            "grant": typed_data["message"],
+            payload_key: typed_data["message"],
             "signature": signature,
             "signature_type": "eip712",
             "signature_chain_id": chain_id,
+            **(extra_payload or {}),
         }
-        if referral_code:
-            payload["referral_code"] = referral_code
-        if marketing_code:
-            payload["marketing_code"] = marketing_code
-        if utm:
-            payload["utm"] = dict(utm)
-        headers = dict(client.client.headers)
-        if privy_access_token:
-            headers[PRIVY_ACCESS_TOKEN_HEADER] = privy_access_token
         return client.request(
-            url=f"{v2_base}/sessions",
+            url=f"{v2_base}/{path}",
             http_method=HttpMethod.POST,
             payload=payload,
-            headers=headers,
+            headers={**dict(client.client.headers), **(extra_headers or {})},
         )
     finally:
         if http_client is None:
@@ -246,7 +343,14 @@ def _listed_address(entry: Any) -> int | None:
         return None
 
 
-def _check_subaccounts_listed(client: HttpClient, v2_base: str, owner_address: str, grant: SessionGrant) -> None:
+def _check_subaccounts_listed(
+    client: HttpClient,
+    v2_base: str,
+    owner_address: str,
+    grant: SessionGrant | BuilderApproval,
+    caller: str = "register_session",
+    noun: str = "a grant",
+) -> None:
     """Refuse sub-accounts that are not the owner wallet's own EVM sub-accounts, before it signs.
 
     The server checks every listed sub-account again, so when the listing cannot be read the check is
@@ -260,22 +364,22 @@ def _check_subaccounts_listed(client: HttpClient, v2_base: str, owner_address: s
             headers=client.client.headers,
         )
     except Exception as e:
-        logging.getLogger(__name__).warning(f"register_session: sub-account listing unavailable, not checked: {e}")
+        logging.getLogger(__name__).warning(f"{caller}: sub-account listing unavailable, not checked: {e}")
         return
     results = listed.get("results") if isinstance(listed, dict) else None
     if not isinstance(results, list):
-        logging.getLogger(__name__).warning("register_session: sub-account listing unreadable, not checked")
+        logging.getLogger(__name__).warning(f"{caller}: sub-account listing unreadable, not checked")
         return
     owned = {address for entry in results if (address := _listed_address(entry)) is not None}
     unknown = [address for address in grant.to_message()["subaccounts"] if int(address, 16) not in owned]
     if unknown:
         raise_value_error(
-            f"register_session: {unknown} are not sub-accounts of {owner_address}'s account; a grant may list"
+            f"{caller}: {unknown} are not sub-accounts of {owner_address}'s account; {noun} may list"
             " only the owner wallet's own EVM sub-accounts (see fetch_evm_subaccounts)"
         )
 
 
-def _check_grant_environment(env: Environment, grant: SessionGrant) -> None:
+def _check_grant_environment(env: Environment, grant: SessionGrant | BuilderApproval) -> None:
     expected = grant_environment(env)
     if grant.environment != expected:
         raise_value_error(f"grant environment is {grant.environment!r}; the {env!r} environment needs {expected!r}")

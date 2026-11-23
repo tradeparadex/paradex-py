@@ -12,6 +12,9 @@ never withdraw. Three messages share one set of field semantics:
   the server finds the passkey by the assertion's credential id, and its grant
   names the account.
 
+``BuilderApproval`` uses the same domain and field forms: an EVM owner approves
+a builder's fee on its own, with no session. It is signed with EIP-712 only.
+
 Each has two encodings with the same field names and order:
 
 - EIP-712 for EVM (EIP-191) owners. The domain is
@@ -62,6 +65,7 @@ from paradex_py.utils import raise_value_error
 
 __all__ = [
     "ALL_MARKETS",
+    "BUILDER_APPROVAL_MAX_SECONDS",
     "DEFAULT_LIMIT_CAPS",
     "DOMAIN_NAME",
     "DOMAIN_VERSION",
@@ -73,6 +77,7 @@ __all__ = [
     "NO_LIMIT",
     "REFUSED_SCOPES",
     "Builder",
+    "BuilderApproval",
     "Ceiling",
     "Limits",
     "Passkey",
@@ -104,6 +109,10 @@ SHORT_LIVED_SCOPE_MAX_SECONDS = 7 * DAY_SECONDS
 # The longest any session lives (IP-pinned API sessions); browser sessions are capped lower by the server.
 SESSION_MAX_SECONDS = 180 * DAY_SECONDS
 NO_BUILDER = "0x0"
+# A standalone builder approval lives at most this long after it is issued.
+BUILDER_APPROVAL_MAX_SECONDS = 180 * DAY_SECONDS
+# The most decimal places a builder's maxFeeRate may have. The server sets the highest rate it accepts.
+_BUILDER_FEE_RATE_PLACES = 8
 
 _NONCE_BITS = 128
 _SHORTSTRING_MAX = 31
@@ -356,6 +365,15 @@ _SESSION_GRANT = (
     ("issuedAt", "uint64", "timestamp"),
     ("expiresAt", "uint64", "timestamp"),
 )
+_BUILDER_APPROVAL = (
+    ("paradexChain", "string", "shortstring"),
+    ("environment", "string", "shortstring"),
+    ("account", "string", "ContractAddress"),
+    ("builder", "Builder", "Builder"),
+    ("subaccounts", "string[]", "ContractAddress*"),
+    ("nonce", "string", "felt"),
+    ("issuedAt", "uint64", "timestamp"),
+)
 _PASSKEY = (
     ("credentialId", "string", "string"),
     ("pubkeyX", "string", "string"),
@@ -417,7 +435,7 @@ class Limits:
     markets: Sequence[str] = (ALL_MARKETS,)
     caps: Mapping[str, str] = field(default_factory=lambda: DEFAULT_LIMIT_CAPS, compare=False, repr=False)
 
-    def to_message(self, *, numeric_max_loss: bool = False) -> dict[str, Any]:
+    def to_message(self) -> dict[str, Any]:
         message: dict[str, Any] = {
             "maxOrderNotional": _limit(self.max_order_notional, "maxOrderNotional"),
             "maxOpenNotional": _limit(self.max_open_notional, "maxOpenNotional"),
@@ -426,8 +444,6 @@ class Limits:
             "maxLeverage": _limit(self.max_leverage, "maxLeverage"),
             "markets": _markets(self.markets),
         }
-        if numeric_max_loss and message["maxLoss"] == NO_LIMIT:
-            raise_value_error("limits.maxLoss must be a number on builder grants, not 'none'")
         for name, cap in self.caps.items():
             if name not in _LIMIT_NAMES:
                 raise_value_error(f"limit cap names an unknown limit {name!r}")
@@ -467,9 +483,9 @@ def _markets(markets: Sequence[str]) -> list[str]:
 class Builder:
     """The builder a grant approves, with its maximum fee rate. ``account="0x0"`` means none.
 
-    ``expires_at=0`` makes the approval follow the session's own expiry. A grant that approves a builder
-    must give ``limits.maxLoss`` as a number, and the server refuses builder grants until it enforces
-    ``maxLoss``.
+    ``expires_at=0`` makes the approval follow the session's own expiry. A set builder's ``max_fee_rate``
+    is above 0 and has at most 8 decimal places; the server refuses a rate above its configured cap. A
+    grant that approves a builder follows the same limit rules as any other grant.
     """
 
     account: str = NO_BUILDER
@@ -486,8 +502,17 @@ class Builder:
             "maxFeeRate": _decimal(self.max_fee_rate, "builder.maxFeeRate"),
             "expiresAt": _uint(self.expires_at, "builder.expiresAt"),
         }
-        if message["account"] == NO_BUILDER and (message["maxFeeRate"] != "0" or message["expiresAt"] != 0):
-            raise_value_error('a grant without a builder uses builder {account: "0x0", maxFeeRate: "0", expiresAt: 0}')
+        if message["account"] == NO_BUILDER:
+            if message["maxFeeRate"] != "0" or message["expiresAt"] != 0:
+                raise_value_error(
+                    'a grant without a builder uses builder {account: "0x0", maxFeeRate: "0", expiresAt: 0}'
+                )
+            return message
+        rate = Decimal(message["maxFeeRate"])
+        if rate <= 0:
+            raise_value_error("builder.maxFeeRate must be above 0")
+        if len(message["maxFeeRate"].partition(".")[2]) > _BUILDER_FEE_RATE_PLACES:
+            raise_value_error(f"builder.maxFeeRate has more than {_BUILDER_FEE_RATE_PLACES} decimal places")
         return message
 
     @classmethod
@@ -621,6 +646,8 @@ class SessionGrant(_TypedMessage):
             raise_value_error("builder grants may not carry trade:block or account:settings")
         if self.builder.is_set and self.builder.expires_at and self.builder.expires_at > self.expires_at:
             raise_value_error("builder.expiresAt must not outlive the session")
+        if self.builder.is_set and self.builder.expires_at and self.builder.expires_at <= self.issued_at:
+            raise_value_error("builder.expiresAt must be after issuedAt")
         return {
             "paradexChain": _shortstring(self.paradex_chain, "paradexChain"),
             "environment": _environment(self.environment),
@@ -628,8 +655,7 @@ class SessionGrant(_TypedMessage):
             "sessionKey": _hex(self.session_key, "sessionKey"),
             "label": _label(self.label, "label"),
             "scopes": scopes,
-            # A builder grant must cap losses.
-            "limits": self.limits.to_message(numeric_max_loss=self.builder.is_set),
+            "limits": self.limits.to_message(),
             "builder": self.builder.to_message(),
             "subaccounts": _subaccounts(account, self.subaccounts),
             "nonce": _nonce(self.nonce),
@@ -676,6 +702,94 @@ class SessionGrant(_TypedMessage):
 
 
 @dataclass(frozen=True)
+class BuilderApproval(_TypedMessage):
+    """An EVM owner's standalone approval of a builder's fee, outside any session grant.
+
+    Register it with :func:`paradex_py.session_accounts.register_builder_approval`. It is signed with
+    EIP-712 only; the server refuses Stark-key owners.
+
+    Args:
+        paradex_chain: Paradex chain id string, e.g. ``"PRIVATE_SN_PARACLEAR_MAINNET"``.
+        environment: ``"mainnet"`` or ``"testnet"`` (see :func:`grant_environment`).
+        account: The anchor account; its owner signs the approval.
+        builder: The builder and its fee cap. ``expires_at`` is required and at most
+            :data:`BUILDER_APPROVAL_MAX_SECONDS` after ``issued_at``. ``max_fee_rate`` is above 0 and has
+            at most 8 decimal places.
+        subaccounts: Sub-accounts the approval also covers. Empty means the anchor only.
+        nonce: 128-bit random ``0x`` hex (see :func:`new_nonce`).
+        issued_at: Seconds since the epoch, by the server's clock. The server refuses an ``issuedAt``
+            in its future, so take it from the server (see :meth:`new`), not the local clock.
+    """
+
+    paradex_chain: str
+    environment: str
+    account: str
+    builder: Builder
+    issued_at: int
+    subaccounts: Sequence[str] = ()
+    nonce: str = field(default_factory=new_nonce)
+
+    _PRIMARY = "BuilderApproval"
+    _SPEC = _BUILDER_APPROVAL
+    _STRUCTS = {"Builder": _BUILDER}  # noqa: RUF012
+
+    @classmethod
+    def new(cls, *, server_time: int, ttl_seconds: int, **kwargs: Any) -> BuilderApproval:
+        """Build an approval issued at ``server_time`` (seconds), expiring ``ttl_seconds`` later.
+
+        ``kwargs`` carries the other fields; ``builder`` gives the account and fee rate, and its
+        ``expires_at`` is set here. ``issuedAt`` is ``server_time`` as is: the server refuses an approval
+        issued before the builder's last revoke, so a backdated one could not re-approve a builder just
+        revoked.
+        """
+        issued_at = _uint(server_time, "server_time")
+        expires_at = issued_at + _uint(ttl_seconds, "ttl_seconds")
+        builder = kwargs.pop("builder")
+        builder = Builder(builder.account, builder.max_fee_rate, expires_at)
+        return cls(issued_at=issued_at, builder=builder, **kwargs)
+
+    def to_message(self) -> dict[str, Any]:
+        """Validate and render the message, refusing what the server would refuse."""
+        account = _hex(self.account, "account")
+        builder = self.builder.to_message()
+        if builder["account"] == NO_BUILDER:
+            raise_value_error("a builder approval names a builder")
+        if builder["account"] == account:
+            raise_value_error("builder.account must not be the approving account")
+        if builder["expiresAt"] == 0:
+            raise_value_error("builder.expiresAt is required on a builder approval")
+        _window(self.issued_at, builder["expiresAt"])
+        if builder["expiresAt"] - self.issued_at > BUILDER_APPROVAL_MAX_SECONDS:
+            raise_value_error(f"a builder approval lives at most {BUILDER_APPROVAL_MAX_SECONDS // DAY_SECONDS} days")
+        return {
+            "paradexChain": _shortstring(self.paradex_chain, "paradexChain"),
+            "environment": _environment(self.environment),
+            "account": account,
+            "builder": builder,
+            "subaccounts": _subaccounts(account, self.subaccounts),
+            "nonce": _nonce(self.nonce),
+            "issuedAt": self.issued_at,
+        }
+
+    @classmethod
+    def from_message(cls, message: Mapping[str, Any]) -> BuilderApproval:
+        """Rebuild an approval from :meth:`to_message` output."""
+        return cls(
+            paradex_chain=message["paradexChain"],
+            environment=message["environment"],
+            account=message["account"],
+            builder=Builder.from_message(message["builder"]),
+            subaccounts=list(message["subaccounts"]),
+            nonce=message["nonce"],
+            issued_at=int(message["issuedAt"]),
+        )
+
+    def sign_snip12(self, stark_private_key: str | int) -> list[str]:
+        """Not supported: the server accepts builder approvals signed with EIP-712 only."""
+        raise_value_error("builder approvals are signed with EIP-712 only")
+
+
+@dataclass(frozen=True)
 class Passkey:
     """The passkey a ``PasskeyGrant`` registers (P-256 coordinates as ``0x`` hex)."""
 
@@ -710,7 +824,7 @@ class Ceiling:
     subaccounts: Sequence[str] = ()
     include_future_subaccounts: bool = False
 
-    def to_message(self, account: str, *, numeric_max_loss: bool = False, first_party: bool = False) -> dict[str, Any]:
+    def to_message(self, account: str, *, first_party: bool = False) -> dict[str, Any]:
         """Render the ceiling; ``first_party`` for a Paradex app passkey, which may carry more scopes."""
         ttl = _uint(self.max_session_ttl, "maxSessionTtl")
         if not 0 < ttl <= PASSKEY_MAX_SESSION_SECONDS:
@@ -726,7 +840,7 @@ class Ceiling:
             raise_value_error(f"includeFutureSubaccounts must be a bool, got {self.include_future_subaccounts!r}")
         return {
             "scopes": scopes,
-            "limits": self.limits.to_message(numeric_max_loss=numeric_max_loss),
+            "limits": self.limits.to_message(),
             "subaccounts": _subaccounts(account, self.subaccounts),
             "includeFutureSubaccounts": self.include_future_subaccounts,
             "maxSessionTtl": _uint(self.max_session_ttl, "maxSessionTtl"),
@@ -740,8 +854,7 @@ class PasskeyGrant(_TypedMessage):
 
     ``builder_account="0x0"`` binds the passkey to the Paradex app; any other address binds it to that
     builder. ``include_future_subaccounts`` is allowed only for the Paradex app's own passkeys. A builder
-    passkey must give ``maxLoss`` as a number, and the server refuses builder passkeys until it enforces
-    ``maxLoss``.
+    passkey follows the same limit rules as a first-party one.
     """
 
     paradex_chain: str
@@ -770,8 +883,8 @@ class PasskeyGrant(_TypedMessage):
             "environment": _environment(self.environment),
             "account": account,
             "passkey": self.passkey.to_message(),
-            # A builder passkey must cap losses and grants fewer scopes.
-            "ceiling": self.ceiling.to_message(account, numeric_max_loss=is_builder, first_party=not is_builder),
+            # A builder passkey grants fewer scopes.
+            "ceiling": self.ceiling.to_message(account, first_party=not is_builder),
             "builderAccount": builder_account,
             "nonce": _nonce(self.nonce),
             "issuedAt": self.issued_at,
