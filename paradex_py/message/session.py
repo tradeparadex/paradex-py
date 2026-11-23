@@ -72,7 +72,6 @@ __all__ = [
     "FIRST_PARTY_PASSKEY_SCOPES",
     "GRANTABLE_SCOPES",
     "LONGEST_SESSION",
-    "MAX_BUILDER_FEE_RATE",
     "MAX_CLOCK_SKEW_SECONDS",
     "MINT_HASH_ACCOUNT",
     "NO_LIMIT",
@@ -112,8 +111,7 @@ SESSION_MAX_SECONDS = 180 * DAY_SECONDS
 NO_BUILDER = "0x0"
 # A standalone builder approval lives at most this long after it is issued.
 BUILDER_APPROVAL_MAX_SECONDS = 180 * DAY_SECONDS
-# The highest maxFeeRate the server accepts on a builder approval, and the most decimal places it may have.
-MAX_BUILDER_FEE_RATE = "0.0025"
+# The most decimal places a builder's maxFeeRate may have. The server sets the highest rate it accepts.
 _BUILDER_FEE_RATE_PLACES = 8
 
 _NONCE_BITS = 128
@@ -486,8 +484,8 @@ class Builder:
     """The builder a grant approves, with its maximum fee rate. ``account="0x0"`` means none.
 
     ``expires_at=0`` makes the approval follow the session's own expiry. A set builder's ``max_fee_rate``
-    is above 0, has at most 8 decimal places and is at most :data:`MAX_BUILDER_FEE_RATE`. A grant that
-    approves a builder follows the same limit rules as any other grant.
+    is above 0 and has at most 8 decimal places; the server refuses a rate above its configured cap. A
+    grant that approves a builder follows the same limit rules as any other grant.
     """
 
     account: str = NO_BUILDER
@@ -511,8 +509,8 @@ class Builder:
                 )
             return message
         rate = Decimal(message["maxFeeRate"])
-        if rate <= 0 or rate > Decimal(MAX_BUILDER_FEE_RATE):
-            raise_value_error(f"builder.maxFeeRate must be above 0 and at most {MAX_BUILDER_FEE_RATE}")
+        if rate <= 0:
+            raise_value_error("builder.maxFeeRate must be above 0")
         if len(message["maxFeeRate"].partition(".")[2]) > _BUILDER_FEE_RATE_PLACES:
             raise_value_error(f"builder.maxFeeRate has more than {_BUILDER_FEE_RATE_PLACES} decimal places")
         return message
@@ -715,8 +713,8 @@ class BuilderApproval(_TypedMessage):
         environment: ``"mainnet"`` or ``"testnet"`` (see :func:`grant_environment`).
         account: The anchor account; its owner signs the approval.
         builder: The builder and its fee cap. ``expires_at`` is required and at most
-            :data:`BUILDER_APPROVAL_MAX_SECONDS` after ``issued_at``. ``max_fee_rate`` is above 0, has at
-            most 8 decimal places and is at most :data:`MAX_BUILDER_FEE_RATE`.
+            :data:`BUILDER_APPROVAL_MAX_SECONDS` after ``issued_at``. ``max_fee_rate`` is above 0 and has
+            at most 8 decimal places.
         subaccounts: Sub-accounts the approval also covers. Empty means the anchor only.
         nonce: 128-bit random ``0x`` hex (see :func:`new_nonce`).
         issued_at: Seconds since the epoch, by the server's clock. The server refuses an ``issuedAt``
@@ -740,14 +738,12 @@ class BuilderApproval(_TypedMessage):
         """Build an approval issued at ``server_time`` (seconds), expiring ``ttl_seconds`` later.
 
         ``kwargs`` carries the other fields; ``builder`` gives the account and fee rate, and its
-        ``expires_at`` is set here. ``issuedAt`` is stamped a minute before ``server_time``.
+        ``expires_at`` is set here. ``issuedAt`` is ``server_time`` as is: the server refuses an approval
+        issued before the builder's last revoke, so a backdated one could not re-approve a builder just
+        revoked.
         """
-        issued_at = _uint(server_time, "server_time") - _ISSUED_AT_BACKDATE_SECONDS
+        issued_at = _uint(server_time, "server_time")
         expires_at = issued_at + _uint(ttl_seconds, "ttl_seconds")
-        if expires_at <= server_time:
-            raise_value_error(
-                f"ttl_seconds must be over {_ISSUED_AT_BACKDATE_SECONDS}: the approval would already be expired"
-            )
         builder = kwargs.pop("builder")
         builder = Builder(builder.account, builder.max_fee_rate, expires_at)
         return cls(issued_at=issued_at, builder=builder, **kwargs)

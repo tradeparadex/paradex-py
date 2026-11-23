@@ -200,7 +200,7 @@ await session.connect_ws()
 ### Builder approvals
 
 An EVM owner can approve a builder's fee without opening a session: `BuilderApproval` names the
-builder, its `max_fee_rate` (above 0, at most 8 decimal places and at most `0.0025`) and a required
+builder, its `max_fee_rate` (above 0 and at most 8 decimal places; the server sets the highest rate) and a required
 `expires_at` at most 180 days out, and `register_builder_approval` has the owner sign it with
 EIP-712 and sends it to `POST /v2/builders/approvals`, which needs no JWT. The server refuses an
 `issuedAt` in its future, so take it from the server's clock. The owner revokes the approval with

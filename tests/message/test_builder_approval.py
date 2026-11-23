@@ -56,8 +56,8 @@ def test_new_stamps_issued_at_from_server_time():
         account="0x62cf",
         builder=Builder(BUILDER, "0.0005"),
     )
-    assert approval.issued_at == ISSUED - 60
-    assert approval.builder.expires_at == ISSUED - 60 + 3600
+    assert approval.issued_at == ISSUED
+    assert approval.builder.expires_at == ISSUED + 3600
     approval.to_message()
 
 
@@ -67,7 +67,6 @@ def test_new_stamps_issued_at_from_server_time():
         (Builder("0x0", "0", 0), "names a builder"),
         (Builder("0x62cf", "0.0005", ISSUED + 1), "must not be the approving account"),
         (Builder(BUILDER, "0", ISSUED + 1), "above 0"),
-        (Builder(BUILDER, "0.00251", ISSUED + 1), r"at most 0\.0025"),
         (Builder(BUILDER, "0.000000001", ISSUED + 1), "more than 8 decimal places"),
         (Builder(BUILDER, "0.000500000", ISSUED + 1), "more than 8 decimal places"),
         (Builder(BUILDER, "-0.0005", ISSUED + 1), "plain non-negative decimal"),
@@ -81,21 +80,23 @@ def test_refuses_what_the_server_refuses(builder, error):
         _approval(builder=builder).to_message()
 
 
-def test_new_refuses_a_ttl_the_backdate_would_expire():
-    for ttl in (30, 60):
-        with pytest.raises(ValueError, match="already be expired"):
-            BuilderApproval.new(
-                server_time=ISSUED,
-                ttl_seconds=ttl,
-                paradex_chain="PRIVATE_SN_PARACLEAR_MAINNET",
-                environment="mainnet",
-                account="0x62cf",
-                builder=Builder(BUILDER, "0.0005"),
-            )
+def test_new_refuses_a_zero_ttl():
+    approval = BuilderApproval.new(
+        server_time=ISSUED,
+        ttl_seconds=0,
+        paradex_chain="PRIVATE_SN_PARACLEAR_MAINNET",
+        environment="mainnet",
+        account="0x62cf",
+        builder=Builder(BUILDER, "0.0005"),
+    )
+    with pytest.raises(ValueError, match="must be after issuedAt"):
+        approval.to_message()
 
 
 def test_accepts_the_limits():
     _approval(builder=Builder(BUILDER, "0.0025", ISSUED + BUILDER_APPROVAL_MAX_SECONDS)).to_message()
+    # The server sets the highest rate it accepts, so a rate above 25 bps signs.
+    _approval(builder=Builder(BUILDER, "0.01", ISSUED + 1)).to_message()
     _approval(builder=Builder(BUILDER, "0.00000001", ISSUED + 1)).to_message()
 
 

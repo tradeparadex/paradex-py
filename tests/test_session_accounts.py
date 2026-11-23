@@ -1049,9 +1049,12 @@ def test_register_builder_approval_refuses_before_signing():
     signer = _CountingSigner()
     with pytest.raises(ValueError, match="environment"):
         register_builder_approval("prod", _builder_approval(), signer, http_client=client)
-    with pytest.raises(ValueError, match=r"at most 0\.0025"):
+    with pytest.raises(ValueError, match="more than 8 decimal places"):
         register_builder_approval(
-            TESTNET, _builder_approval(builder=Builder("0xb1", "0.003", 1_700_000_001)), signer, http_client=client
+            TESTNET,
+            _builder_approval(builder=Builder("0xb1", "0.000000001", 1_700_000_001)),
+            signer,
+            http_client=client,
         )
     with pytest.raises(ValueError, match="65 bytes"):
         register_builder_approval(TESTNET, _builder_approval(), _CountingSigner("0x" + "00" * 66), http_client=client)
