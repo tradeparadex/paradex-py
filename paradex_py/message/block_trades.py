@@ -8,15 +8,11 @@ from paradex_py.api.generated.responses import (
     BlockTradeDetailFullResponse,
 )
 from paradex_py.api.generated.responses import BlockTradeOrder as BlockTradeOrderResponse
-from paradex_py.common.order import OrderSide, chain_builder_fee_rate, decimal_zero, validate_builder
-from paradex_py.utils import raise_value_error
+from paradex_py.common.order import OrderSide, decimal_zero
 
 # BLOCK_TRADE_PAYLOAD_VERSION is the SNIP-12 BlockTrade schema version included in the
 # signed payload. Bump when the schema changes; client and server must agree.
 BLOCK_TRADE_PAYLOAD_VERSION = "2"
-# A payload in which any order names a builder is version 3: its BlockTradeOrder appends
-# builder and builder_fee_rate, so every signer commits to each order's builder fee.
-BLOCK_TRADE_BUILDER_PAYLOAD_VERSION = "3"
 
 
 class BlockTradeOrder:
@@ -33,20 +29,12 @@ class BlockTradeOrder:
         order_type: str = "",
         size: Decimal = decimal_zero,
         price: Decimal = decimal_zero,
-        builder: str = "",
-        builder_fee_rate: Decimal | None = None,
     ) -> None:
-        """``builder`` and ``builder_fee_rate`` (a fraction of the leg's notional,
-        ``Decimal("0.0005")`` = 5 bps) name a builder this order pays, debited from ``account``.
-        Set both or neither; any order naming one makes the payload version 3."""
-        builder = validate_builder(builder or None, builder_fee_rate) or ""
         self.account = account
         self.side = side
         self.order_type = order_type
         self.size = size
         self.price = price
-        self.builder = builder
-        self.builder_fee_rate = builder_fee_rate
 
 
 class Trade:
@@ -133,10 +121,9 @@ class BlockTrade:
         nonce: str,
         expiration: int,
         trades: list[Trade],
-        version: str | None = None,
+        version: str = BLOCK_TRADE_PAYLOAD_VERSION,
     ) -> None:
-        """``version`` defaults to the one the trades call for (:func:`block_trade_version`)."""
-        self.version = version or block_trade_version(trades)
+        self.version = version
         self.nonce = nonce
         self.expiration = expiration
         self.trades = trades
@@ -161,26 +148,13 @@ class BlockTradeOffer:
         expiration: int,
         block_trade_id: str,
         trades: list[Trade],
-        version: str | None = None,
+        version: str = BLOCK_TRADE_PAYLOAD_VERSION,
     ) -> None:
-        """``version`` defaults to the one the trades call for (:func:`block_trade_version`)."""
-        self.version = version or block_trade_version(trades)
+        self.version = version
         self.nonce = nonce
         self.expiration = expiration
         self.block_trade_id = block_trade_id
         self.trades = trades
-
-
-def block_trade_version(trades: list[Trade]) -> str:
-    """The payload version trades are signed under: 3 when any order names a builder, else 2.
-
-    The server derives the version from the orders it verifies, so a signer must too.
-    """
-    for trade in trades:
-        for order in (trade.maker_order, trade.taker_order):
-            if order is not None and order.builder:
-                return BLOCK_TRADE_BUILDER_PAYLOAD_VERSION
-    return BLOCK_TRADE_PAYLOAD_VERSION
 
 
 def _chain_decimal(d: Decimal) -> str:
@@ -188,21 +162,17 @@ def _chain_decimal(d: Decimal) -> str:
     return str(int(Decimal(d).scaleb(8)))
 
 
-def _empty_block_trade_order_message(with_builder: bool) -> dict:
+def _empty_block_trade_order_message() -> dict:
     """Zero-valued BlockTradeOrder used when one side of a Trade is empty (e.g. an offer
     where the offerer occupies maker side and taker side is empty until merge). All fields
     encoded as "0" so starknet-py can parse as felts."""
-    message = {
+    return {
         "account": "0",
         "side": "0",
         "type": "0",
         "size": "0",
         "price": "0",
     }
-    if with_builder:
-        message["builder"] = "0"
-        message["builder_fee_rate"] = "0"
-    return message
 
 
 def _felt_or_zero(s: str) -> str:
@@ -211,33 +181,25 @@ def _felt_or_zero(s: str) -> str:
     return s if s else "0"
 
 
-def _block_trade_order_message(order: BlockTradeOrder | None, with_builder: bool) -> dict:
-    """The BlockTradeOrder leaf; version 3 (``with_builder``) appends builder (a felt) and
-    builder_fee_rate (at 8 decimals), both "0" for an order naming none."""
+def _block_trade_order_message(order: BlockTradeOrder | None) -> dict:
     if order is None:
-        return _empty_block_trade_order_message(with_builder)
-    message = {
+        return _empty_block_trade_order_message()
+    return {
         "account": _felt_or_zero(order.account),
         "side": OrderSide(order.side).chain_side() if order.side else "0",
         "type": _felt_or_zero(order.order_type),
         "size": _chain_decimal(order.size),
         "price": _chain_decimal(order.price),
     }
-    if with_builder:
-        message["builder"] = _felt_or_zero(order.builder)
-        message["builder_fee_rate"] = (
-            chain_builder_fee_rate(order.builder_fee_rate) if order.builder_fee_rate is not None else "0"
-        )
-    return message
 
 
-def _trade_message(trade: Trade, with_builder: bool) -> dict:
+def _trade_message(trade: Trade) -> dict:
     return {
         "market": _felt_or_zero(trade.market),
         "price": _chain_decimal(trade.price),
         "size": _chain_decimal(trade.size),
-        "maker_order": _block_trade_order_message(trade.maker_order, with_builder),
-        "taker_order": _block_trade_order_message(trade.taker_order, with_builder),
+        "maker_order": _block_trade_order_message(trade.maker_order),
+        "taker_order": _block_trade_order_message(trade.taker_order),
         "min_size": _chain_decimal(trade.min_size),
         "max_size": _chain_decimal(trade.max_size),
         "min_price": _chain_decimal(trade.min_price),
@@ -293,18 +255,12 @@ def block_trade_from_response(response: BlockTradeDetailFullResponse, nonce: str
 
 def _block_trade_order_from_response(response_order: BlockTradeOrderResponse) -> BlockTradeOrder:
     """Convert a response-side BlockTradeOrder DTO into the signing-side BlockTradeOrder."""
-    # The builder fields are not in the published API models yet; they arrive as extra
-    # fields, which the generated models keep.
-    builder = getattr(response_order, "builder", None) or ""
-    builder_fee_rate = getattr(response_order, "builder_fee_rate", None)
     return BlockTradeOrder(
         account=response_order.account or "",
         side=response_order.side.value,
         order_type=response_order.type.value,
         size=Decimal(response_order.size or "0"),
         price=Decimal(response_order.price or "0"),
-        builder=builder,
-        builder_fee_rate=Decimal(str(builder_fee_rate)) if builder and builder_fee_rate else None,
     )
 
 
@@ -390,13 +346,6 @@ _BLOCK_TRADE_ORDER_TYPE = [
     {"name": "price", "type": "felt"},
 ]
 
-# Version 3 BlockTradeOrder: version 2's fields, then the builder this order pays.
-_BUILDER_BLOCK_TRADE_ORDER_TYPE = [
-    *_BLOCK_TRADE_ORDER_TYPE,
-    {"name": "builder", "type": "felt"},
-    {"name": "builder_fee_rate", "type": "felt"},
-]
-
 
 def _build_block_typed_data(
     chain_id: int,
@@ -404,22 +353,12 @@ def _build_block_typed_data(
     primary_fields: list[dict],
     primary_values: dict,
     trades: list[Trade],
-    version: str,
 ) -> TypedDataDict:
     """Build SNIP-12 revision 1 (Poseidon) typed data for a block-trade-shaped payload.
 
     Trades are sorted alphabetically by market — the canonical ordering both client and
     server agree on. Without this merkle root would not be deterministic.
-
-    Version 3 signs each BlockTradeOrder with its builder fields; version 2 keeps the
-    original schema and hash.
     """
-    # The server derives the version from the orders, so any other version signs a hash
-    # it can never verify.
-    expected = block_trade_version(trades)
-    if version != expected:
-        raise_value_error(f"these trades sign as payload version {expected}, not {version!r}")
-    with_builder = version == BLOCK_TRADE_BUILDER_PAYLOAD_VERSION
     sorted_trades = sorted(trades, key=lambda t: t.market)
     message = {
         "domain": {
@@ -433,11 +372,11 @@ def _build_block_typed_data(
             "StarknetDomain": _STARKNET_DOMAIN_TYPE,
             primary_type: primary_fields,
             "Trade": _TRADE_TYPE,
-            "BlockTradeOrder": _BUILDER_BLOCK_TRADE_ORDER_TYPE if with_builder else _BLOCK_TRADE_ORDER_TYPE,
+            "BlockTradeOrder": _BLOCK_TRADE_ORDER_TYPE,
         },
         "message": {
             **primary_values,
-            "trades": [_trade_message(t, with_builder) for t in sorted_trades],
+            "trades": [_trade_message(t) for t in sorted_trades],
         },
     }
     return cast(TypedDataDict, message)
@@ -467,7 +406,6 @@ def build_block_trade_offer_message(chain_id: int, offer: BlockTradeOffer) -> Ty
             "block_trade_id": offer.block_trade_id,
         },
         trades=offer.trades,
-        version=offer.version,
     )
 
 
@@ -493,5 +431,4 @@ def build_block_trade_message(chain_id: int, block_trade: BlockTrade) -> TypedDa
             "expiration": str(block_trade.expiration),
         },
         trades=block_trade.trades,
-        version=block_trade.version,
     )
