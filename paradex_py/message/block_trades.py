@@ -18,8 +18,9 @@ BLOCK_TRADE_PAYLOAD_VERSION = "2"
 # A payload in which any order names a builder is version 3: its BlockTradeOrder appends
 # builder and builder_fee_rate, so every signer commits to each order's builder fee.
 BLOCK_TRADE_BUILDER_PAYLOAD_VERSION = "3"
-# A builder fee rate as the server accepts it: a plain decimal with no trailing zeros.
-_CANONICAL_DECIMAL = re.compile(r"^(0|[1-9]\d*)(\.\d*[1-9])?$")
+# A builder fee rate spelled as the server accepts it: a plain ASCII decimal below 1000 with at most
+# 8 decimal places. Trailing zeros are fine; they scale to the same signed integer.
+_FEE_RATE_SPELLING = re.compile(r"(0|[1-9][0-9]{0,2})(\.[0-9]{1,8})?")
 
 
 class BlockTradeOrder:
@@ -314,7 +315,7 @@ def _block_trade_order_from_response(response_order: BlockTradeOrderResponse) ->
     if builder:
         # The request sends this extra as written, so only the spelling the server accepts
         # may be signed: anything else would sign one value and send another.
-        if not isinstance(builder_fee_rate, str) or not _CANONICAL_DECIMAL.match(builder_fee_rate):
+        if not isinstance(builder_fee_rate, str) or not _FEE_RATE_SPELLING.fullmatch(builder_fee_rate):
             raise_value_error(
                 f'builder_fee_rate must be a plain decimal string such as "0.0005", got {builder_fee_rate!r}'
             )

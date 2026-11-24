@@ -766,7 +766,9 @@ def test_block_trade_version_follows_trades_changed_after_construction():
     assert build_block_trade_offer_message(1, offer)["message"]["version"] == "3"
 
 
-@pytest.mark.parametrize("rate", [Decimal("0.0004"), 0.0004, "4E-4", "0.00040", "-0.0004", ""])
+@pytest.mark.parametrize(
+    "rate", [Decimal("0.0004"), 0.0004, "4E-4", "-0.0004", "", "0.0005\n", "0.\u0665", "1000", "0.000000001"]
+)
 def test_block_trade_from_request_refuses_a_fee_rate_it_would_not_send_as_signed(rate):
     """The request sends the extra as written, so only the canonical decimal string may be signed."""
     taker = BlockTradeOrderDTO(
@@ -787,3 +789,26 @@ def test_block_trade_from_request_refuses_a_fee_rate_it_would_not_send_as_signed
     )
     with pytest.raises(ValueError, match="plain decimal string"):
         block_trade_from_request(request)
+
+
+@pytest.mark.parametrize("rate", ["0.0004", "0.00040", "0.00040000"])
+def test_block_trade_from_request_signs_trailing_zeros_as_the_same_rate(rate):
+    """The server accepts trailing zeros and scales them to the same integer, so they sign as is."""
+    taker = BlockTradeOrderDTO(
+        account="0x2222",
+        side=DTOOrderSide.order_side_buy,
+        type=DTOOrderType.order_type_limit,
+        price="1500",
+        size="0.1",
+        builder=_BUILDER,
+        builder_fee_rate=rate,
+    )
+    request = BlockTradeRequest(
+        nonce="bt_nonce",
+        block_expiration=1700000300000,
+        required_signers=["0xMAKER", "0x2222"],
+        signatures={},
+        trades={"ETH-USD-PERP": BlockTradeInfo(maker_order=maker_dto(), taker_order=taker, price="1500", size="0.1")},
+    )
+    message = build_block_trade_message(1, block_trade_from_request(request))
+    assert message["message"]["trades"][0]["taker_order"]["builder_fee_rate"] == "40000"
