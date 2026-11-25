@@ -231,7 +231,8 @@ register_builder_approval("testnet", approval, LocalOwnerSigner("0x<owner-eth-ke
 
 The owner lists its approvals with `ParadexApiClient.fetch_builder_approvals()` (live ones, newest
 first; `include_inactive=True` adds revoked and expired ones, for the history) and revokes one with
-`revoke_builder_approval(builder_account)`. Both need the owner's main-key login; a session or subkey
+`revoke_builder_approval(builder_account)`, which also cancels the resting orders naming the builder on
+the account and its sub-accounts. Both need the owner's main-key login; a session or subkey
 JWT is refused, and listing is also refused for an account Paradex has not enabled sessions for. Each approval reports its `status` (`active`, `revoked` or `expired`), `max_fee_rate`
 and its `expires_at`, `approved_at` and `revoked_at` times in milliseconds.
 

@@ -2,6 +2,7 @@ from unittest.mock import Mock, patch
 
 import httpx
 import pytest
+from starknet_py.constants import FIELD_PRIME
 
 from paradex_py.api.api_client import ParadexApiClient
 from paradex_py.environment import TESTNET
@@ -258,15 +259,13 @@ class TestBuilderCodes:
         self.api_client._validate_auth.assert_not_called()
 
     @pytest.mark.parametrize("call", ["fetch_builder_stats", "revoke_builder_approval"])
-    @pytest.mark.parametrize("address", ["builder", "", "0x", None, "b1", "-0xb1", " 0x1_0 ", "0x" + "1" * 65])
+    @pytest.mark.parametrize(
+        "address",
+        ["builder", "", "0x", None, "b1", "-0xb1", " 0x1_0 ", "0x" + "1" * 65, "0x0", hex(FIELD_PRIME)],
+    )
     def test_refuses_a_builder_that_is_not_an_address(self, call, address):
-        with pytest.raises(ValueError, match="builder_account must be a 0x hex address"):
+        with pytest.raises(ValueError, match="builder_account must be a non-zero 0x hex account address"):
             getattr(self.api_client, call)(address)
-        assert not self.requests
-
-    def test_refuses_an_unknown_window(self):
-        with pytest.raises(ValueError, match="window must be one of"):
-            self.api_client.fetch_builder_leaderboard("1h")
         assert not self.requests
 
 

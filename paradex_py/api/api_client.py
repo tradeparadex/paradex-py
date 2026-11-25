@@ -27,7 +27,7 @@ from paradex_py.api.models import (
     SystemConfigSchema,
 )
 from paradex_py.api.protocols import AuthProvider, RetryStrategy, Signer
-from paradex_py.common.order import Order
+from paradex_py.common.order import Order, builder_address
 from paradex_py.constants import (
     MMP_LIMIT_MIN_INCREMENT,
     MMP_MAX_FROZEN_TIME_MS,
@@ -102,19 +102,6 @@ def _off_increment(limit: str) -> bool:
             return Decimal(limit) % MMP_LIMIT_MIN_INCREMENT != 0
     except InvalidOperation:
         return False
-
-
-# A path address as the server accepts it: 0x and 1 to 64 hex digits.
-_HEX_ADDRESS = re.compile(r"^0x[0-9a-fA-F]{1,64}$")
-# Windows the Builder Codes stats endpoints serve.
-BUILDER_STATS_WINDOWS = frozenset({"24h", "7d", "30d", "all"})
-
-
-def _builder_address(builder_account: str) -> str:
-    """A builder account as a canonical 0x address for a URL path, refusing anything else."""
-    if not isinstance(builder_account, str) or not _HEX_ADDRESS.match(builder_account):
-        raise ValueError(f"builder_account must be a 0x hex address, got {builder_account!r}")
-    return hex(int(builder_account, 16))
 
 
 class ParadexApiClient(BlockTradesMixin, HttpClient):
@@ -322,14 +309,16 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
             Experimental: this SDK API may still change.
 
         ``DELETE /v2/builders/approvals/{builder_account}``. Needs the account owner's main-key login.
-        New orders naming the builder are refused at once, on the account and its sub-accounts. The
-        server answers 404 when the account has no live approval of the builder.
+        New orders naming the builder are refused at once, on the account and its sub-accounts, and
+        the resting orders naming it on them are cancelled. The server answers 404 when the account has no live approval of the builder.
 
         Args:
             builder_account: The builder's account address.
         """
         self._validate_auth()
-        self.delete(api_url=self._v2_api_url, path=f"builders/approvals/{_builder_address(builder_account)}")
+        self.delete(
+            api_url=self._v2_api_url, path=f"builders/approvals/{builder_address(builder_account, 'builder_account')}"
+        )
 
     def fetch_builder_stats(self, builder_account: str) -> dict:
         """Fetch a builder's Builder Codes stats. Public endpoint.
@@ -350,7 +339,7 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
             dict with ``results``: rows with ``builder`` (``account``, ``name``), ``window``,
             ``fees_paid``, ``volume``, ``users``, ``fills`` and ``as_of`` (milliseconds).
         """
-        return self._get(path=f"builders/{_builder_address(builder_account)}/stats")
+        return self._get(path=f"builders/{builder_address(builder_account, 'builder_account')}/stats")
 
     def fetch_builder_leaderboard(self, window: str | None = None) -> dict:
         """Fetch builders ranked by the builder fees traders paid them. Public endpoint.
@@ -362,14 +351,13 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         answers 404 while it has no stats to serve.
 
         Args:
-            window: ``24h``, ``7d``, ``30d`` or ``all``; the server's default is ``7d``.
+            window: ``24h``, ``7d``, ``30d`` or ``all``; the server's default is ``7d``, and it answers
+                400 for any other value.
 
         Returns:
             dict with ``results``: rows as :meth:`fetch_builder_stats` returns them, each with a
             ``rank`` (1 for the builder paid the most).
         """
-        if window is not None and window not in BUILDER_STATS_WINDOWS:
-            raise ValueError(f"window must be one of {sorted(BUILDER_STATS_WINDOWS)}, got {window!r}")
         return self._get(path="builders/leaderboard", params={"window": window} if window else None)
 
     def onboarding(self):
