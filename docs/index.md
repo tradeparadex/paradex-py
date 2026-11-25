@@ -229,6 +229,27 @@ register_builder_approval("testnet", approval, LocalOwnerSigner("0x<owner-eth-ke
       show_source: false
       show_root_heading: true
 
+The owner lists its approvals with `ParadexApiClient.fetch_builder_approvals()` (live ones, newest
+first; `include_inactive=True` adds revoked and expired ones, for the history) and revokes one with
+`revoke_builder_approval(builder_account)`, which also cancels the resting orders naming the builder on
+the account and its sub-accounts. Both need the owner's main-key login; a session or subkey
+JWT is refused, and listing is also refused for an account Paradex has not enabled sessions for. Each approval reports its `status` (`active`, `revoked` or `expired`), `max_fee_rate`
+and its `expires_at`, `approved_at` and `revoked_at` times in milliseconds.
+
+### Builder Codes stats
+
+`fetch_builder_stats(builder_account)` and `fetch_builder_leaderboard(window)` are public. Stats come
+per window (`24h`, `7d`, `30d`, `all`): `fees_paid` is what traders paid the builder in USDC, before
+any protocol share, with `volume`, `users` and `fills`. The leaderboard ranks builders by `fees_paid`
+over one window (`7d` by default). Stats lag the fills they count. The server answers 404 for a
+builder with no recorded stats, and while it has none to serve at all.
+
+```python
+client = ParadexApiClient(env="testnet")
+client.fetch_builder_stats("0x<builder-account>")["results"]
+client.fetch_builder_leaderboard("30d")["results"][0]["rank"]  # 1
+```
+
 ## API Documentation Links
 
 Full details for REST API & WebSocket JSON-RPC API can be found at the following links:

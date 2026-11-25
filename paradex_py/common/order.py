@@ -30,6 +30,13 @@ def chain_builder_fee_rate(rate: Decimal) -> str:
     return str(int(scaled))
 
 
+def builder_address(builder: str, name: str = "builder") -> str:
+    """A builder account in canonical ``0x`` form, refusing anything but a non-zero felt address."""
+    if not isinstance(builder, str) or not _ADDRESS.match(builder) or not 0 < int(builder, 16) < FIELD_PRIME:
+        raise_value_error(f"{name} must be a non-zero 0x hex account address, got {builder!r}")
+    return hex(int(builder, 16))
+
+
 def validate_builder(builder: str | None, builder_fee_rate: Decimal | None) -> str | None:
     """Check a builder and its fee rate are given together, with a valid address and rate.
 
@@ -39,10 +46,9 @@ def validate_builder(builder: str | None, builder_fee_rate: Decimal | None) -> s
         return None
     if not builder or builder_fee_rate is None:
         raise_value_error("builder and builder_fee_rate must be set together")
-    if not isinstance(builder, str) or not _ADDRESS.match(builder) or not 0 < int(builder, 16) < FIELD_PRIME:
-        raise_value_error(f"builder must be a non-zero 0x hex account address, got {builder!r}")
+    address = builder_address(builder)
     chain_builder_fee_rate(builder_fee_rate)
-    return hex(int(builder, 16))
+    return address
 
 
 class OrderAction(Enum):

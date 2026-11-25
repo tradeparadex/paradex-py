@@ -27,7 +27,7 @@ from paradex_py.api.models import (
     SystemConfigSchema,
 )
 from paradex_py.api.protocols import AuthProvider, RetryStrategy, Signer
-from paradex_py.common.order import Order
+from paradex_py.common.order import Order, builder_address
 from paradex_py.constants import (
     MMP_LIMIT_MIN_INCREMENT,
     MMP_MAX_FROZEN_TIME_MS,
@@ -279,6 +279,86 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         """
         self._validate_auth()
         return self.post(api_url=self._v2_api_url, path="account/subaccounts")
+
+    def fetch_builder_approvals(self, include_inactive: bool = False) -> dict:
+        """List the builders the logged-in account has approved (Builder Codes).
+
+        .. warning::
+            Experimental: this SDK API may still change.
+
+        ``GET /v2/builders/approvals``. Needs the account owner's main-key login; a session or subkey
+        JWT is refused, and so is an account Paradex has not enabled sessions for (403). Live approvals
+        are listed newest first.
+
+        Args:
+            include_inactive: Also list revoked and expired approvals, for the approval history.
+
+        Returns:
+            dict with ``results``: a list of approvals, each with ``builder`` (``account``, ``name``),
+            ``status`` (``active``, ``revoked`` or ``expired``), ``max_fee_rate``, and ``expires_at``,
+            ``approved_at`` and ``revoked_at`` in milliseconds (``revoked_at`` is 0 while not revoked).
+        """
+        self._validate_auth()
+        params = {"include_inactive": "true"} if include_inactive else None
+        return self.get(api_url=self._v2_api_url, path="builders/approvals", params=params)
+
+    def revoke_builder_approval(self, builder_account: str) -> None:
+        """Revoke the logged-in account's approval of a builder (Builder Codes).
+
+        .. warning::
+            Experimental: this SDK API may still change.
+
+        ``DELETE /v2/builders/approvals/{builder_account}``. Needs the account owner's main-key login.
+        New orders naming the builder are refused at once, on the account and its sub-accounts, and
+        the resting orders naming it on them are cancelled. The server answers 404 when the account has no live approval of the builder.
+
+        Args:
+            builder_account: The builder's account address.
+        """
+        self._validate_auth()
+        self.delete(
+            api_url=self._v2_api_url, path=f"builders/approvals/{builder_address(builder_account, 'builder_account')}"
+        )
+
+    def fetch_builder_stats(self, builder_account: str) -> dict:
+        """Fetch a builder's Builder Codes stats. Public endpoint.
+
+        .. warning::
+            Experimental: this SDK API may still change.
+
+        ``GET /v1/builders/{builder_account}/stats``: one row per window (``24h``, ``7d``, ``30d``,
+        ``all``). ``fees_paid`` is what traders paid the builder in USDC, before any protocol share. A
+        window with no paid fill, or with too few paying users, is zeros, and stats lag the fills they
+        count. The server answers 404 for a builder it has no stats for (none recorded yet), and
+        while it has no stats to serve at all.
+
+        Args:
+            builder_account: The builder's account address.
+
+        Returns:
+            dict with ``results``: rows with ``builder`` (``account``, ``name``), ``window``,
+            ``fees_paid``, ``volume``, ``users``, ``fills`` and ``as_of`` (milliseconds).
+        """
+        return self._get(path=f"builders/{builder_address(builder_account, 'builder_account')}/stats")
+
+    def fetch_builder_leaderboard(self, window: str | None = None) -> dict:
+        """Fetch builders ranked by the builder fees traders paid them. Public endpoint.
+
+        .. warning::
+            Experimental: this SDK API may still change.
+
+        ``GET /v1/builders/leaderboard``, ranked by ``fees_paid`` and then by volume. The server
+        answers 404 while it has no stats to serve.
+
+        Args:
+            window: ``24h``, ``7d``, ``30d`` or ``all``; the server's default is ``7d``, and it answers
+                400 for any other value.
+
+        Returns:
+            dict with ``results``: rows as :meth:`fetch_builder_stats` returns them, each with a
+            ``rank`` (1 for the builder paid the most).
+        """
+        return self._get(path="builders/leaderboard", params={"window": window} if window else None)
 
     def onboarding(self):
         if self.account is None:
@@ -1271,7 +1351,7 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
             Private endpoint requires authorization.
 
         Args:
-            order: Order with type=MARKET, price=0, containing market/side/size.
+            order: Order with type=MARKET, price=0, containing market/side/size, and no builder.
             algo_type: Algo type (e.g. "TWAP").
             duration_seconds: Duration in seconds (30-86400, multiple of 30).
             frequency: Interval in seconds between child orders (default: 30).
@@ -1280,6 +1360,8 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         Returns:
             Algo order response dict.
         """
+        if order.builder:
+            raise ValueError("algo orders take no builder: Builder Codes are for single orders")
         signature_headers: dict[str, Any] = {}
         # Sign the order
         if signer is not None:

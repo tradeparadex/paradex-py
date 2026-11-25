@@ -1007,7 +1007,14 @@ def _builder_approval(**overrides) -> BuilderApproval:
 
 APPROVAL_RESPONSE = {
     "accounts": [MAIN],
-    "approval": {"builder": {"account": "0xb1"}, "max_fee_rate": "0.0005", "expires_at": 1_700_086_400_000},
+    "approval": {
+        "builder": {"account": "0xb1", "name": None},
+        "status": "active",
+        "max_fee_rate": "0.0005",
+        "expires_at": 1_700_086_400_000,
+        "approved_at": 1_700_000_000_000,
+        "revoked_at": 0,
+    },
 }
 
 

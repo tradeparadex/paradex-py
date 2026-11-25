@@ -1,6 +1,8 @@
 from unittest.mock import Mock, patch
 
+import httpx
 import pytest
+from starknet_py.constants import FIELD_PRIME
 
 from paradex_py.api.api_client import ParadexApiClient
 from paradex_py.environment import TESTNET
@@ -211,3 +213,77 @@ class TestEvmSubaccounts:
 
         mock_post.assert_called_once_with(api_url="https://api.testnet.paradex.trade/v2", path="account/subaccounts")
         self.api_client._validate_auth.assert_called_once()
+
+
+class TestBuilderCodes:
+    """Builder approvals (owner login) and Builder Codes stats (public), against a mock transport."""
+
+    def setup_method(self):
+        self.requests: list[httpx.Request] = []
+        self.api_client = ParadexApiClient(env=TESTNET)
+        self.api_client._validate_auth = Mock()
+        self.api_client.client = httpx.Client(transport=httpx.MockTransport(self._respond))
+
+    def _respond(self, request: httpx.Request) -> httpx.Response:
+        self.requests.append(request)
+        if request.method == "DELETE":
+            return httpx.Response(204)
+        return httpx.Response(200, json={"results": []})
+
+    def test_fetch_builder_approvals_needs_the_owner_login(self):
+        assert self.api_client.fetch_builder_approvals() == {"results": []}
+        self.api_client.fetch_builder_approvals(include_inactive=True)
+
+        live, history = self.requests
+        assert str(live.url) == "https://api.testnet.paradex.trade/v2/builders/approvals"
+        assert str(history.url) == "https://api.testnet.paradex.trade/v2/builders/approvals?include_inactive=true"
+        assert self.api_client._validate_auth.call_count == 2
+
+    def test_revoke_builder_approval_sends_the_canonical_address(self):
+        assert self.api_client.revoke_builder_approval("0x00B1") is None
+
+        (request,) = self.requests
+        assert request.method == "DELETE"
+        assert str(request.url) == "https://api.testnet.paradex.trade/v2/builders/approvals/0xb1"
+        self.api_client._validate_auth.assert_called_once()
+
+    def test_stats_and_leaderboard_are_public(self):
+        self.api_client.fetch_builder_stats("0x00B1")
+        self.api_client.fetch_builder_leaderboard()
+        self.api_client.fetch_builder_leaderboard("30d")
+
+        stats, board, board_30d = (str(r.url) for r in self.requests)
+        assert stats == "https://api.testnet.paradex.trade/v1/builders/0xb1/stats"
+        assert board == "https://api.testnet.paradex.trade/v1/builders/leaderboard"
+        assert board_30d == "https://api.testnet.paradex.trade/v1/builders/leaderboard?window=30d"
+        self.api_client._validate_auth.assert_not_called()
+
+    @pytest.mark.parametrize("call", ["fetch_builder_stats", "revoke_builder_approval"])
+    @pytest.mark.parametrize(
+        "address",
+        ["builder", "", "0x", None, "b1", "-0xb1", " 0x1_0 ", "0x" + "1" * 65, "0x0", hex(FIELD_PRIME)],
+    )
+    def test_refuses_a_builder_that_is_not_an_address(self, call, address):
+        with pytest.raises(ValueError, match="builder_account must be a non-zero 0x hex account address"):
+            getattr(self.api_client, call)(address)
+        assert not self.requests
+
+
+def test_submit_algo_order_refuses_a_builder_before_signing():
+    from decimal import Decimal
+
+    from paradex_py.common.order import Order, OrderSide, OrderType
+
+    api_client = ParadexApiClient(env=TESTNET)
+    api_client._validate_auth = Mock()
+    order = Order(
+        market="BTC-USD-PERP",
+        order_type=OrderType.Market,
+        order_side=OrderSide.Buy,
+        size=Decimal("0.1"),
+        builder="0xb1",
+        builder_fee_rate=Decimal("0.0005"),
+    )
+    with patch.object(api_client, "post") as mock_post, pytest.raises(ValueError, match="algo orders take no builder"):
+        api_client.submit_algo_order(order, algo_type="TWAP", duration_seconds=60)
+    mock_post.assert_not_called()
