@@ -760,7 +760,7 @@ class ParadexApiClient(BlockTradesMixin, HttpClient):
         Returns:
             results (list): List of Liquidations
         """
-        return self._get(path="liquidations", params=params)
+        return self._get_authorized(path="liquidations", params=params)
 
     def fetch_trades(self, params: dict) -> dict:
         """Fetch Paradex exchange trades for specific market.
