@@ -175,6 +175,17 @@ class TestAuthenticationEnhancements:
             mock_warning.assert_called_once()
 
     @patch.object(ParadexApiClient, "fetch_system_config", return_value=MagicMock())
+    def test_fetch_liquidations_refreshes_expired_token(self, mock_config):
+        """fetch_liquidations is private, so it has to refresh an expired JWT like the other account calls."""
+        client = ParadexApiClient(env=TESTNET, auto_auth=True)
+        client.account = MagicMock()
+        client.auth_timestamp = time.time() - 300
+
+        with patch.object(client, "auth") as mock_auth, patch.object(client, "get", return_value={"results": []}):
+            client.fetch_liquidations()
+            mock_auth.assert_called_once()
+
+    @patch.object(ParadexApiClient, "fetch_system_config", return_value=MagicMock())
     def test_init_account_with_auto_auth_already_onboarded(self, mock_config):
         """Test account initialization when already onboarded (auth succeeds immediately)."""
         client = ParadexApiClient(env=TESTNET, auto_auth=True)
