@@ -208,6 +208,10 @@ def normalise_market_data(
         if not sym:
             continue
         symbol = str(sym)
+        if "-" not in symbol:
+            # markets/summary?market=ALL also lists the collateral token ("USDC"). It is not a
+            # market: it has no underlying price and no market spec, and nothing reads it.
+            continue
         spec = specs.get(symbol, {})
         greeks = summary.get("greeks")
         empty_greeks: Mapping[str, object] = {}
