@@ -794,6 +794,17 @@ def test_normalise_market_data_enriches_fee_and_interest_rate():
     assert md["BTC-USD-PERP"]["interest_rate"] == 0.03
 
 
+def test_normalise_market_data_skips_collateral_token_row():
+    """markets/summary?market=ALL also lists the collateral token, which is not a market."""
+    summaries = [
+        {"symbol": "BTC-USD-PERP", "mark_price": "80000", "greeks": {"delta": "1"}, "underlying_price": "80010"},
+        {"symbol": "USDC", "mark_price": "0.99984467", "greeks": {"delta": "0"}, "underlying_price": ""},
+    ]
+    specs = {"BTC-USD-PERP": {"asset_kind": "PERP", "fee_config": {"api_fee": {"taker_fee": {"fee": "0.0002"}}}}}
+    md = normalise_market_data(summaries, market_specs=specs)
+    assert list(md) == ["BTC-USD-PERP"]
+
+
 def test_margin_inputs_from_api_responses_builds_compute_kwargs():
     mi = MarginInputs.from_api_responses(
         positions_resp={
